@@ -270,6 +270,7 @@ def show_art_over_time(id_name, file_numbers, time_interval,
     #fig = plt.figure(figsize=(10,nrows)) # height corresponds in inches to number of rows. auto dpi is 100
     #gs = fig.add_gridspec(nrows, ncols, hspace=0.05, wspace=0.05)
     fig, ax = plt.subplots(nrows, ncols, sharex=True, sharey=True)
+    print(ax.shape)
     #ax = gs.subplots(sharex=True, sharey=True)
     rowcount = 0
     colcount = 0
@@ -278,7 +279,7 @@ def show_art_over_time(id_name, file_numbers, time_interval,
         if len(ax.shape)==2:
             ax_single=ax[rowcount,colcount]
         else:
-            ax_single = ax[i]
+            ax_single = ax[i-1]
         ax_single.axis('off')
         if i < (num_time_steps + 1):
             time_inds = np.where(time_delta_hrs<=i*time_interval)[0]
