@@ -267,9 +267,10 @@ def show_art_over_time(id_name, file_numbers, time_interval,
 
     ncols = np.min([num_time_steps, 10])
     nrows = np.max([1, int(math.ceil(num_time_steps/10))])
-    fig = plt.figure(figsize=(10,nrows)) # height corresponds in inches to number of rows. auto dpi is 100
-    gs = fig.add_gridspec(nrows, ncols, hspace=0.05, wspace=0.05)
-    ax = gs.subplots(sharex=True, sharey=True)
+    #fig = plt.figure(figsize=(10,nrows)) # height corresponds in inches to number of rows. auto dpi is 100
+    #gs = fig.add_gridspec(nrows, ncols, hspace=0.05, wspace=0.05)
+    fig, ax = plt.subplots(nrows, ncols, sharex=True, sharey=True)
+    #ax = gs.subplots(sharex=True, sharey=True)
     rowcount = 0
     colcount = 0
     time_inds_list = []
