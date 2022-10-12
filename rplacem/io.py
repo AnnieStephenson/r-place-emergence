@@ -10,7 +10,14 @@ import pandas as pd
 import math
 import PIL as pil
 import seaborn as sns
+import json
+import sys
+import tracemalloc
+import gc
 
+tracemalloc.start()
+
+fname_base = '2022_place_canvas_history-0000000000'
 
 class Artwork:
     '''
@@ -32,6 +39,178 @@ class Artwork:
         self.border_path = border_path
         self.pixel_changes = pixel_changes
 
+
+def simplified_timestamp(date,hour):
+    '''
+    Transforms the date and time from the string timestamp into a simplified one, consisting of two ints
+    
+    parameters
+    ----------
+    two strings: the date (y-m-d), and the time (h:m:s.ms)
+    
+    returns
+    -------
+    one int for the seconds (second 0 being the start of rplace), and a second int for the milliseconds
+    '''
+    
+    day = int(date.split('-')[2])
+    hourlist = hour.split(':')
+    hour = int(hourlist[0])
+    minute = int(hourlist[1])
+    secms = hourlist[2].split('.')
+    sec = int(secms[0])
+
+    if(len(secms)==1): ##### special case of ms=0: no "." was found in split
+        ms = 0
+    else:
+        ms = int(secms[1])
+        if ms<10:
+            ms *= 100
+        elif ms<100:
+            ms *= 10
+
+    second = (day-1)*86400 + hour*3600 + minute*60 + sec
+    return (second,ms)
+
+def condense_data_part(fnum_start=0,fnum_end=79, maxevent=10000000000):
+    '''
+    Transform part of the dataset of pixel changes to a denser file
+    
+    parameters
+    ----------
+    start and end file numbers
+    
+    returns
+    -------
+    None, juste saves the final data file
+    '''
+
+    ####### output lists. Don't use numpy here, because 'append' is much slower (copies the whole array at each append operation)
+    eventNb = []
+    sec = []
+    user = []
+    color = []
+    canvasX = []
+    canvasY = []
+    colorDict = {} ####### dictionary of existing colors. Only the int keys of these colors are stored
+    userDict = {} ####### dictionary of existing users. Only the int keys of these users are stored
+    UniqueColNb = 0
+    UniqueUserNb = 0
+    
+    file_numbers = np.arange(fnum_start,fnum_end)
+    event = 0
+
+    ####### loop over files
+    for i in range(0, file_numbers.size):
+        if event>=maxevent:
+            break
+
+        if file_numbers[i]<=9:
+            extra_str = '0'
+        else:
+            extra_str = ''
+        data_file = fname_base + extra_str + str(file_numbers[i]) + '.csv'
+        print('open file number ',file_numbers[i])
+        file_path = os.path.join(os.getcwd(),'data',data_file)
+        
+        fin = open(file_path, 'r')
+        ####### loop on lines of this file 
+        for line in fin.readlines()[1:]: #######skip first line
+            if event>=maxevent:
+                break
+
+            if event%100000 == 0:
+                print("Ran ",event," lines")
+                print(tracemalloc.get_traced_memory())
+                #print("size of userDict = ",sys.getsizeof(userDict))
+                #print("size of sec = ",sys.getsizeof(sec))
+                #print("size of canvasX = ",sys.getsizeof(canvasX))
+                
+            eventNb.append(event)
+
+            l_elem = line.split()
+            l_elem2 = l_elem[2].split(",")
+            #######time (sec,ms), canvas position (X,Y)
+            (s,millis) = simplified_timestamp(l_elem[0], l_elem[1])
+            sec.append(float(s+0.001*millis))
+            canvasX.append( int((l_elem2[3])[1:]) ) #######remove "
+            canvasY.append( int((l_elem2[4])[:-1]) ) #######remove "
+
+            #######color
+            col = l_elem2[2]
+            colidx = colorDict.get(col)
+            if colidx==None: #######case when this color was not added yet in the colorDict
+                colorDict[col] = UniqueColNb
+                colidx = UniqueColNb
+                UniqueColNb += 1
+                #print("added in dict: color ",col)
+            color.append( colidx )
+                
+            #######user ID
+            userID = (l_elem2[1])[:-2] #######remove "=="
+            useridx = userDict.get(userID)
+            if useridx==None:  #######case when this user was not added yet in the userDict list
+                userDict[userID] = UniqueUserNb
+                useridx = UniqueUserNb
+                UniqueUserNb += 1
+            #print("added in dict: user ",userID)
+            user.append( useridx )
+            
+            #######ready for next event (=line)
+            event += 1
+        fin.close()
+        
+    #print( 'event number', len(eventNb), eventNb)
+    #print( 'seconds', len(sec), sec)
+    #print( 'color indices', len(color), color)
+    #print( 'pixel x-position', len(canvasX), canvasX)
+    #print( 'pixel y-position', len(canvasY), canvasY)
+    #print( 'user indices', len(user), user)
+    print( 'list of existing colors', len(colorDict), colorDict)
+    print( 'number of existing users', len(userDict))#, userDict)
+
+    ##### Inverse dictionaries for users and colors. Works because indices (dictionary values) are unique
+    colorFromIdx = {v: k for k, v in colorDict.items()}
+    userIDFromIdx = {v: k for k, v in userDict.items()}
+
+    ##### Sort all lists with respect to time
+    print('---------------------->>>>>>>>>>> Sorting all lists with respect to time')
+
+    ########### SAVE NPZ FROM HERE, LEAVE THE REST TO COMBINED FILE
+    
+    print(tracemalloc.get_traced_memory())
+    sorted_output = zip(*sorted(zip(sec,eventNb,user,color,canvasX,canvasY)))
+    sec,eventNb,user,color,canvasX,canvasY = [ list(tuple) for tuple in sorted_output] ##### Beware, use the same list names/variables than the unsorted ones above!
+    
+    print(tracemalloc.get_traced_memory())
+    #print (sec,'\n','\n',eventNb,'\n',user,'\n',color,'\n',canvasX,'\n',canvasY)
+
+    ##### Create numpy arrays for output
+    sec_out = np.array(sec, dtype='float32')
+    eventNbOriginal_out = np.array(eventNb, dtype='uint32')
+    #eventNb_out = np.array(np.arange(0,event), dtype='uint32')
+    userIdx_out = np.array(user, dtype='uint32')
+    colorIdx_out = np.array(color, dtype='uint8')
+    canvasX_out = np.array(canvasX, dtype='uint16')
+    canvasY_out = np.array(canvasY, dtype='uint16')
+    #print (sec_out,'\n',eventNb_out,'\n',userIdx_out,'\n',colorIdx_out,'\n',canvasX_out,'\n',canvasY_out)    
+
+    ##### Save arrays to npz file
+    np.savez(os.path.join(os.getcwd(),'data','PixelChangesCondensedData.npz') , seconds = sec_out, #eventNumber = eventNb_out,
+                                                                                eventNumberOriginal = eventNbOriginal_out, userIndex = userIdx_out, colorIndex = colorIdx_out, pixelXpos = canvasX_out, pixelYpos = canvasY_out )
+
+    ##### Save dictionaries to json file
+    fcol = open(os.path.join(os.getcwd(),'data',"ColorsFromIdx.json"),"w")
+    colorDict_json = json.dumps(colorFromIdx)
+    fcol.write(colorDict_json)
+    fcol.close()
+
+    fuser = open(os.path.join(os.getcwd(),'data',"userIDsFromIdx.json"),"w")
+    userDict_json = json.dumps(userIDFromIdx)
+    fuser.write(userDict_json)
+    fuser.close()
+
+    
 def hex_to_rgb(hex_str):
     '''
     Turns hex color string to rgb
@@ -361,7 +540,7 @@ def get_art_pixel_changes_over_time(id_name, file_numbers):
             extra_str = '0'
         else:
             extra_str = ''
-        data_file = '2022_place_canvas_history-0000000000' + extra_str + str(file_numbers[i]) + '.csv'
+        data_file = fname_base + extra_str + str(file_numbers[i]) + '.csv'
         artwork_pixel_changes = get_art_change_coords_colors(id_name, data_file)
         artwork_pixel_changes_combined = pd.concat([artwork_pixel_changes_combined, artwork_pixel_changes])
 
