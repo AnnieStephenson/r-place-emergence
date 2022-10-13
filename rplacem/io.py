@@ -5,19 +5,18 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import matplotlib
-import json
 import pandas as pd
 import math
 import PIL as pil
 import seaborn as sns
 import json
 import sys
-import tracemalloc
-import gc
+import ray
+import shutil
 
-tracemalloc.start()
-
+datapath = os.path.join(os.getcwd(),'data/')
 fname_base = '2022_place_canvas_history-0000000000'
+minimal_second = 45850 #number of seconds before start in the first day
 
 class Artwork:
     '''
@@ -39,7 +38,44 @@ class Artwork:
         self.border_path = border_path
         self.pixel_changes = pixel_changes
 
+def get_key(val,mydict):
+    ###### function to return key for any value ##### do not use for long lists, is quite slow
+    for key, value in mydict.items():
+        if val == value:
+            return key
+    ValueError("ERROR: key doesn't exist in get_key")
 
+def textTimestamp_fromSeconds(second):
+    '''
+    Gives the timestamp in the form of the original csv dataset
+
+    parameters
+    ----------
+    seconds in float (including milliseconds)
+
+    returns
+    ----------
+    Full text timestamp    
+    '''
+    seconds = second+minimal_second+1e-5
+    sec_int = int(seconds)
+    ms = int(1000*(seconds-float(sec_int)))
+    if ms==0:
+        ms_str = ''
+    else:
+        ms_str = '.'+'{:03d}'.format(ms)
+        if ms_str.endswith("0"):
+            ms_str = ms_str[:-1]
+        if ms_str.endswith("0"):
+            ms_str = ms_str[:-1]
+
+    day = sec_int//86400
+    hour = (sec_int-day*86400)//3600
+    minute = (sec_int-day*86400-hour*3600)//60
+    s = sec_int-day*86400-hour*3600-minute*60
+
+    return '2022-04-0'+str(day)+' '+ '{:02d}'.format(hour)+':'+ '{:02d}'.format(minute)+':'+ '{:02d}'.format(s)+ms_str+' UTC'
+    
 def simplified_timestamp(date,hour):
     '''
     Transforms the date and time from the string timestamp into a simplified one, consisting of two ints
@@ -63,16 +99,21 @@ def simplified_timestamp(date,hour):
     if(len(secms)==1): ##### special case of ms=0: no "." was found in split
         ms = 0
     else:
-        ms = int(secms[1])
-        if ms<10:
+        dummy_float_ms = float("0."+secms[1])+1e-5
+        ms = int(1000*dummy_float_ms)
+        '''
+        ms_src  = secms[1]
+        if ms<10 and (not ms_src[0:2]=='00' and not ms_src[0:1]=='0'):
             ms *= 100
-        elif ms<100:
+        if ms>9 and ms<100 and (not ms_src[0:1]=='0'):
             ms *= 10
-
-    second = (day-1)*86400 + hour*3600 + minute*60 + sec
+        '''
+        
+    second = (day-1)*86400 + hour*3600 + minute*60 + sec - minimal_second
     return (second,ms)
 
-def condense_data_part(fnum_start=0,fnum_end=79, maxevent=10000000000):
+@ray.remote
+def condense_data_part(fnum_start=0,fnum_end=79, maxevent=1e12):
     '''
     Transform part of the dataset of pixel changes to a denser file
     
@@ -85,6 +126,8 @@ def condense_data_part(fnum_start=0,fnum_end=79, maxevent=10000000000):
     None, juste saves the final data file
     '''
 
+    if fnum_end>79:
+        fnum_end = 79
     ####### output lists. Don't use numpy here, because 'append' is much slower (copies the whole array at each append operation)
     eventNb = []
     sec = []
@@ -95,23 +138,23 @@ def condense_data_part(fnum_start=0,fnum_end=79, maxevent=10000000000):
     colorDict = {} ####### dictionary of existing colors. Only the int keys of these colors are stored
     userDict = {} ####### dictionary of existing users. Only the int keys of these users are stored
     UniqueColNb = 0
-    UniqueUserNb = 0
-    
-    file_numbers = np.arange(fnum_start,fnum_end)
+    UniqueUserNb = 0    
     event = 0
 
     ####### loop over files
-    for i in range(0, file_numbers.size):
-        if event>=maxevent:
+    for i in range(fnum_start, fnum_end):
+        if (event-int(i*1e7)) >= maxevent :
             break
 
-        if file_numbers[i]<=9:
+        event = int(i*1e7) ###### so that parallel runs on different files gives different event numbers
+        
+        if i<=9:
             extra_str = '0'
         else:
             extra_str = ''
-        data_file = fname_base + extra_str + str(file_numbers[i]) + '.csv'
-        print('open file number ',file_numbers[i])
-        file_path = os.path.join(os.getcwd(),'data',data_file)
+        data_file = fname_base + extra_str + str(i) + '.csv'
+        print('open file number ',i)
+        file_path = datapath+data_file
         
         fin = open(file_path, 'r')
         ####### loop on lines of this file 
@@ -120,30 +163,25 @@ def condense_data_part(fnum_start=0,fnum_end=79, maxevent=10000000000):
                 break
 
             if event%100000 == 0:
-                print("Ran ",event," lines")
-                print(tracemalloc.get_traced_memory())
-                #print("size of userDict = ",sys.getsizeof(userDict))
-                #print("size of sec = ",sys.getsizeof(sec))
-                #print("size of canvasX = ",sys.getsizeof(canvasX))
+                print("Start event #",event)
                 
             eventNb.append(event)
 
             l_elem = line.split()
             l_elem2 = l_elem[2].split(",")
-            #######time (sec,ms), canvas position (X,Y)
+            ####### time (sec,ms), canvas position (X,Y)
             (s,millis) = simplified_timestamp(l_elem[0], l_elem[1])
             sec.append(float(s+0.001*millis))
             canvasX.append( int((l_elem2[3])[1:]) ) #######remove "
             canvasY.append( int((l_elem2[4])[:-1]) ) #######remove "
 
-            #######color
+            ####### color
             col = l_elem2[2]
             colidx = colorDict.get(col)
-            if colidx==None: #######case when this color was not added yet in the colorDict
+            if colidx==None: ####### case when this color was not added yet in the colorDict
                 colorDict[col] = UniqueColNb
                 colidx = UniqueColNb
                 UniqueColNb += 1
-                #print("added in dict: color ",col)
             color.append( colidx )
                 
             #######user ID
@@ -153,7 +191,6 @@ def condense_data_part(fnum_start=0,fnum_end=79, maxevent=10000000000):
                 userDict[userID] = UniqueUserNb
                 useridx = UniqueUserNb
                 UniqueUserNb += 1
-            #print("added in dict: user ",userID)
             user.append( useridx )
             
             #######ready for next event (=line)
@@ -169,26 +206,20 @@ def condense_data_part(fnum_start=0,fnum_end=79, maxevent=10000000000):
     print( 'list of existing colors', len(colorDict), colorDict)
     print( 'number of existing users', len(userDict))#, userDict)
 
-    ##### Inverse dictionaries for users and colors. Works because indices (dictionary values) are unique
-    colorFromIdx = {v: k for k, v in colorDict.items()}
-    userIDFromIdx = {v: k for k, v in userDict.items()}
 
+    '''
     ##### Sort all lists with respect to time
     print('---------------------->>>>>>>>>>> Sorting all lists with respect to time')
 
-    ########### SAVE NPZ FROM HERE, LEAVE THE REST TO COMBINED FILE
-    
-    print(tracemalloc.get_traced_memory())
     sorted_output = zip(*sorted(zip(sec,eventNb,user,color,canvasX,canvasY)))
     sec,eventNb,user,color,canvasX,canvasY = [ list(tuple) for tuple in sorted_output] ##### Beware, use the same list names/variables than the unsorted ones above!
-    
-    print(tracemalloc.get_traced_memory())
+    print('---------------------->>>>>>>>>>> Sorting finished')
     #print (sec,'\n','\n',eventNb,'\n',user,'\n',color,'\n',canvasX,'\n',canvasY)
-
+    '''
+    
     ##### Create numpy arrays for output
-    sec_out = np.array(sec, dtype='float32')
-    eventNbOriginal_out = np.array(eventNb, dtype='uint32')
-    #eventNb_out = np.array(np.arange(0,event), dtype='uint32')
+    sec_out = np.array(sec, dtype='float64')
+    eventNb_out = np.array(eventNb, dtype='uint32')
     userIdx_out = np.array(user, dtype='uint32')
     colorIdx_out = np.array(color, dtype='uint8')
     canvasX_out = np.array(canvasX, dtype='uint16')
@@ -196,21 +227,122 @@ def condense_data_part(fnum_start=0,fnum_end=79, maxevent=10000000000):
     #print (sec_out,'\n',eventNb_out,'\n',userIdx_out,'\n',colorIdx_out,'\n',canvasX_out,'\n',canvasY_out)    
 
     ##### Save arrays to npz file
-    np.savez(os.path.join(os.getcwd(),'data','PixelChangesCondensedData.npz') , seconds = sec_out, #eventNumber = eventNb_out,
-                                                                                eventNumberOriginal = eventNbOriginal_out, userIndex = userIdx_out, colorIndex = colorIdx_out, pixelXpos = canvasX_out, pixelYpos = canvasY_out )
+    str_fileNums = '_files'+str(fnum_start)+'to'+str(fnum_end-1)
+    np.savez(datapath+'PixelChangesCondensedData'+str_fileNums+'.npz' ,
+             seconds = sec_out, eventNumber = eventNb_out, userIndex = userIdx_out, colorIndex = colorIdx_out, pixelXpos = canvasX_out, pixelYpos = canvasY_out )
 
     ##### Save dictionaries to json file
-    fcol = open(os.path.join(os.getcwd(),'data',"ColorsFromIdx.json"),"w")
+    fcol = open(datapath+"ColorDict"+str_fileNums+".json","w")
+    colorDict_json = json.dumps(colorDict)
+    fcol.write(colorDict_json)
+    fcol.close()
+
+    fuser = open(datapath+"userDict"+str_fileNums+".json","w")
+    userDict_json = json.dumps(userDict)
+    fuser.write(userDict_json)
+    fuser.close()
+
+
+    
+def condense_data_merge():#ColorUserDicts
+    fileRangeList = [ ( i*4, (i+1)*4 ) for i in range(0,19) ]
+    fileRangeList.append((76,79))
+
+    ####### simply concatenate all 1D arrays for the 4 'simple' columns (seconds, pixelXpos, ...)
+    print(fileRangeList)
+    sec_out = np.concatenate([ a['seconds']
+                               for a in ( [np.load(datapath+'PixelChangesCondensedData_files'+str(fstart)+'to'+str(fend-1)+'.npz')
+                                           for (fstart,fend) in fileRangeList])
+                              ], dtype='float64')
+    eventNb_out = np.concatenate([ a['eventNumber']
+                                   for a in ( [np.load(datapath+'PixelChangesCondensedData_files'+str(fstart)+'to'+str(fend-1)+'.npz')
+                                               for (fstart,fend) in fileRangeList])
+                                  ], dtype='uint32')
+    canvasX_out = np.concatenate([ a['pixelXpos']
+                                   for a in ( [np.load(datapath+'PixelChangesCondensedData_files'+str(fstart)+'to'+str(fend-1)+'.npz')
+                                               for (fstart,fend) in fileRangeList])
+                                  ], dtype='uint16')
+    canvasY_out = np.concatenate([ a['pixelYpos']
+                                   for a in ( [np.load(datapath+'PixelChangesCondensedData_files'+str(fstart)+'to'+str(fend-1)+'.npz')
+                                               for (fstart,fend) in fileRangeList])
+                                  ], dtype='uint16')
+
+    
+    ####### Determine total color dictionary (the one from a given few-file output should be enough to have the 32 colors)
+    print("Redefining color indices")
+    colorDict = {}
+    for (fstart,fend) in fileRangeList:
+        colorDict = json.load(open(datapath+'ColorDict_files'+str(fstart)+'to'+str(fend-1)+'.json'))
+        if len(colorDict)>=32:
+            shutil.copyfile(datapath+'ColorDict_files'+str(fstart)+'to'+str(fend-1)+'.json', datapath+'ColorDict.json')
+            (fstart_finDict,fend_finDict) = (fstart,fend)
+            break
+
+    ###### Change color indices (adapt them to the unique color dictionary) in all few-file outputs, then concatenate them
+    colorIdx_out = np.array([],dtype='uint8')
+    for (fstart,fend) in fileRangeList:
+        print('files',fstart,'to',fend-1)
+        colarray_tmp = (np.load(datapath+'PixelChangesCondensedData_files'+str(fstart)+'to'+str(fend-1)+'.npz')) ['colorIndex']
+        if fstart==fstart_finDict:
+            colorIdx_out = np.concatenate((colorIdx_out, colarray_tmp),dtype='uint8')
+        else:
+            colorDictAlt = json.load(open(datapath+'ColorDict_files'+str(fstart)+'to'+str(fend-1)+'.json'))
+            DictTranslation = {oldidx:colorDict[color] for color,oldidx in colorDictAlt.items() }  ####### the magic is here: associates each of the 32 old color index with the new color index
+            col_tmp2 = [ DictTranslation[val] for val in colarray_tmp ]
+            colorIdx_out = np.concatenate((colorIdx_out, np.array(col_tmp2,dtype='uint8')))
+
+    ###### Change userID indices (adapt them to a unique dictionary to be determined) in all few-file outputs, then concatenate them
+    print("Redefining user indices")
+    userDict = {}
+    userIdx_out = np.array([], dtype='uint32')
+    for (fstart,fend) in fileRangeList:
+        print('files',fstart,'to',fend-1)
+        filesNbStr = '_files'+str(fstart)+'to'+str(fend-1)
+        userarray_tmp = (np.load(datapath+'PixelChangesCondensedData'+filesNbStr+'.npz')) ['userIndex']
+        if fstart==0:
+            userDict = json.load(open(datapath+'userDict'+filesNbStr+'.json'))
+            userIdx_out = userarray_tmp
+
+        else: ###### need to modify userDict indices for files other than the file using the reference dict
+            userDictAlt = json.load(open(datapath+'userDict'+filesNbStr+'.json'))
+            DictTranslation = {}
+            for user,oldidx in userDictAlt.items():
+                if user not in userDict: ##### case where this user is NOT already in the reference userDict
+                    userDict[user] = len(userDict)
+                DictTranslation[oldidx] = userDict[user] ###### index in the reference userDict, as a function of index in the alternative userDict
+
+            user_tmp2 = [ DictTranslation[val] for val in userarray_tmp ]
+            userIdx_out = np.concatenate((userIdx_out, np.array(user_tmp2,dtype='uint32')))
+
+
+            
+    for i in range(int(11e7),int(11e7)+10):
+        print('{:.3f}'.format(sec_out[i]),eventNb_out[i], canvasX_out[i],canvasY_out[i],get_key(colorIdx_out[i], colorDict), get_key(userIdx_out[i], userDict))
+
+            
+    print('save to',datapath+'PixelChangesCondensedData.npz')
+    np.savez(datapath+'PixelChangesCondensedData.npz', seconds = sec_out, eventNumber = eventNb_out, pixelXpos = canvasX_out, pixelYpos = canvasY_out, colorIndex = colorIdx_out, userIndex = userIdx_out)
+
+    ##### Inverse dictionaries for users and colors. Works because indices (dictionary values) are unique
+    colorFromIdx = {v: k for k, v in colorDict.items()}
+    userIDFromIdx = {v: k for k, v in userDict.items()}
+
+    ##### Save dictionaries to json file
+    fcol = open(datapath+"ColorsFromIdx.json","w")
     colorDict_json = json.dumps(colorFromIdx)
     fcol.write(colorDict_json)
     fcol.close()
 
-    fuser = open(os.path.join(os.getcwd(),'data',"userIDsFromIdx.json"),"w")
+    fuser = open(datapath+"userIDsFromIdx.json","w")
     userDict_json = json.dumps(userIDFromIdx)
     fuser.write(userDict_json)
     fuser.close()
 
-    
+    fuserIdx = open(datapath+"userDict.json","w")
+    useridxDict_json = json.dumps(userDict)
+    fuserIdx.write(useridxDict_json)
+    fuserIdx.close()
+
 def hex_to_rgb(hex_str):
     '''
     Turns hex color string to rgb
