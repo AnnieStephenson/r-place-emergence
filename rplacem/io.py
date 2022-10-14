@@ -1,16 +1,15 @@
 from operator import mod
 from re import T
 import cv2
-import numpy as np
-import os
 import matplotlib.pyplot as plt
 import matplotlib
-import json
 import pandas as pd
 import math
 import PIL as pil
 import seaborn as sns
 
+datapath = os.path.join(os.getcwd(),'data/')
+fname_base = '2022_place_canvas_history-0000000000'
 
 class Artwork:
     '''
@@ -31,7 +30,7 @@ class Artwork:
     def __init__(self, border_path, pixel_changes):
         self.border_path = border_path
         self.pixel_changes = pixel_changes
-
+    
 def hex_to_rgb(hex_str):
     '''
     Turns hex color string to rgb
@@ -361,7 +360,7 @@ def get_art_pixel_changes_over_time(id_name, file_numbers):
             extra_str = '0'
         else:
             extra_str = ''
-        data_file = '2022_place_canvas_history-0000000000' + extra_str + str(file_numbers[i]) + '.csv'
+        data_file = fname_base + extra_str + str(file_numbers[i]) + '.csv'
         artwork_pixel_changes = get_art_change_coords_colors(id_name, data_file)
         artwork_pixel_changes_combined = pd.concat([artwork_pixel_changes_combined, artwork_pixel_changes])
 
