@@ -1,15 +1,15 @@
 from operator import mod
 from re import T
 import cv2
-import numpy as np
-import os
 import matplotlib.pyplot as plt
 import matplotlib
-import json
 import pandas as pd
 import math
 import PIL as pil
 import seaborn as sns
+
+datapath = os.path.join(os.getcwd(),'data/')
+fname_base = '2022_place_canvas_history-0000000000'
 
 class CanvasPart(object):
     '''
