@@ -428,6 +428,7 @@ def misc_checks():
             modEventNumbers.add(eventNb[i])
     print('number of moderator events =',len(modEventNumbers))
 
+    '''
     ###### check if there are no duplicates. Using the fact that it's sorted in time
     for i in range(0,sec.size-1):
         if modEvent[i]: #no duplicates expected for moderated events
@@ -439,7 +440,8 @@ def misc_checks():
                 print(i, textTimestamp_fromSeconds(sec[i]),'{:.3f}'.format(sec[i]),eventNb[i], canvasX[i],canvasY[i],  colorDict[str(col[i])], userDict[str(user[i])], modEvent[i])
                 print(iend, textTimestamp_fromSeconds(sec[iend]),'{:.3f}'.format(sec[iend]),eventNb[iend], canvasX[iend],canvasY[iend],  colorDict[str(col[iend])], userDict[str(user[iend])], modEvent[i])
             iend += 1
-            
+    '''
+    
 def clean_data_dir():
 
     for f in glob.glob(datapath+'PixelChangesCondensedData_files*.npz'):

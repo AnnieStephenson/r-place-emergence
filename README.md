@@ -8,4 +8,5 @@ Python package for exploring emergent collective phenomena in the 2022 r/place d
 - Similarly, 'colorIndex' points to the index of one of the 32 used colors. 'ColorsFromIdx.json' translates this index into hex colors
 - 'seconds' are floats containing both the seconds and the milliseconds (three decimals places). Quantities <1e-3 in these numbers are nonsensical.
 - 'pixelXpos' and 'pixelYpos' contain the X and Y positions of the pixel change
+- 'moderatorEvent' contains a boolean saying if this pixel change comes from a moderator intervention (changing a whole rectangle into white)
 - The arrays are sorted in terms of the 'seconds', starting at second 0.315.
