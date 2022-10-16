@@ -7,9 +7,10 @@ import pandas as pd
 import math
 import PIL as pil
 import seaborn as sns
+import numpy as np
+import os
+import json
 
-datapath = os.path.join(os.getcwd(),'data/')
-fname_base = '2022_place_canvas_history-0000000000'
 
 class CanvasPart(object):
     '''
@@ -19,6 +20,8 @@ class CanvasPart(object):
     attributes
     ----------
     border_path: 
+    x_coords:
+    y_coords:
     pixel_changes: 2d pandas array
         columns are timestamp, user_id, x_coord, y_coord, color
     
@@ -32,364 +35,95 @@ class CanvasPart(object):
         calculates the file size of the raw bmp image and the losslessly compressed png image
         at given time intervals
     '''
-    def __init__(self, border_path, pixel_changes):
-        self.border_path = border_path
-        self.pixel_changes = pixel_changes
+    def __init__(self,
+                 border_path,
+                 pixel_changes_all,
+                 data_path = os.path.join(os.getcwd(),'data'),
+                 show_coords = False):
 
-    def draw_path(self, path0, show_path =False):
+        self.border_path = border_path
+        self.get_bounded_coords(show_coords = show_coords)
+        self.find_pixel_changes_boundary(pixel_changes_all)
+
+    def get_bounded_coords(self, show_coords =False):
         '''
         plot paths
         
         parameters
         ----------
-        path0: list of points describing contour of selected composition
+        show_coords: tells you whether to plot
         
         returns
         --------
         
         '''
-        img = np.ones((1000,1000))
-        mask = np.zeros((1000,1000))
-        cv2.fillPoly(mask, pts=[path0], color = [1,1,1])
+        img = np.ones((2000,2000))
+        mask = np.zeros((2000,2000))
+        cv2.fillPoly(mask, pts=[self.border_path], color = [1,1,1])
         masked_img = cv2.bitwise_and(img, mask)
 
-        if show_path==True:
+        if show_coords:
             plt.figure()
             plt.imshow(masked_img)
 
-        y_composition_coords, x_composition_coords = np.where(masked_img==1)
-        return x_composition_coords, y_composition_coords
+        y_coords_boundary, x_coords_boundary = np.where(masked_img==1)
 
-
-    def __get_all_pixel_change_coords(self, data_file, data_path=os.path.join(os.getcwd(),'data')):
-        '''
-        
-        parameters
-        ----------
-        
-        returns
-        -------
-        pixel_image: image of the pixel values
-        '''
-        print('data file: ' + data_file + '\n')
-        data_file_path = os.path.join(data_path, data_file)
-        tiles = pd.read_csv(data_file_path)
-        
-        # get coordinate array that includes all the coordinates of changed pixels from the .csv file
-        # colors array includes all the hex color values of changed pixels from the .csv file
-        color_changes_hex = np.array(tiles['pixel_color']) 
-        coords_change_string_array = np.array(tiles['coordinate'])
-        timestamp = np.array(tiles['timestamp'])
-        user_id = np.array(tiles['user_id']) 
-        coords_change_string_array=coords_change_string_array.astype(str)
-
-        # deal with the admin-created rectangle coordinates    
-        coords_change_split_xy = np.chararray.split(coords_change_string_array,sep=',')
-        coords_change_split_xy_array = np.array([np.array(i) for i in coords_change_split_xy], dtype=object)
-        coords_change_2d_array = np.zeros((coords_change_split_xy_array.shape[0],2))
-        
-        for i in range(0,  len(coords_change_split_xy_array)):
-            if coords_change_split_xy_array[i].size>2:
-                rect_corner_coords = coords_change_split_xy_array[i].astype(int)
-                rect_range_x = np.arange(rect_corner_coords[0], rect_corner_coords[2]+1)
-                rect_range_y = np.arange(rect_corner_coords[1], rect_corner_coords[3]+1)
-                rect_coords_x, rect_coords_y = np.meshgrid(rect_range_x, rect_range_y)
-                rect_coords_x = rect_coords_x.flatten()
-                rect_coords_y = rect_coords_y.flatten()
-                rect_coords = np.transpose(np.array([rect_coords_x, rect_coords_y]))
-                coords_change_2d_array = np.insert(coords_change_2d_array, i, rect_coords, axis=0)
-                
-                mod_rect_color_hex = np.repeat('#FFFFFF', rect_coords.shape[0])
-                color_changes_hex = np.insert(color_changes_hex, i, mod_rect_color_hex)
-
-                mod_user_id = np.repeat(user_id[i], rect_coords.shape[0])
-                user_id = np.insert(user_id, i, mod_user_id)
-
-                mod_timestamp = np.repeat(timestamp[i], rect_coords.shape[0])
-                timestamp = np.insert(timestamp, i, mod_timestamp)
-            else:
-                coords_change_2d_array[i] = coords_change_split_xy_array[i].astype(int)
-                
-        # split up into x and y for user 
-        x_change_coords = coords_change_2d_array[:,0]
-        y_change_coords = coords_change_2d_array[:,1]
-
-        # put these into a pandas df: sorted timestamp, x_coord, y_coord, user_id, color_hex
-        # sort the df by datetime
-        # return the df
-        timestamp = pd.to_datetime(list(timestamp), infer_datetime_format=True)
-        file_pixel_changes = pd.DataFrame(data={'timestamp': timestamp, 
-                                                'x_coord': x_change_coords, 
-                                                'y_coord': y_change_coords,
-                                                'user_id': user_id, 
-                                                'color_hex': color_changes_hex})
-        
-        
-        return file_pixel_changes 
+        self.y_coords = y_coords_boundary
+        self.x_coords = x_coords_boundary
     
-    def get_composition_colors(self, x_composition_coords, y_composition_coords, file_pixel_changes):     
+    def find_pixel_changes_boundary(self, pixel_changes_all, data_path=os.path.join(os.getcwd(),'data')):     
             '''
             
             parameters
             ----------
+            x_coords_boundary: all the x_coords within the CanvasPart boundary
+            y_coords_boundary: all the y_coords within the CanvasPart boundary
+            pixel_changes: pandas dataframe of all the data
             
             returns
-            --------
+            -------
+            pixel_changes_boundary: 
             
             '''
-            x_change_coords = np.array(file_pixel_changes['x_coord'])
-            y_change_coords = np.array(file_pixel_changes['y_coord'])
-            color_changes_hex = np.array(file_pixel_changes['color_hex'])
-            timestamp = np.array(file_pixel_changes['timestamp'])
-            user_id = np.array(file_pixel_changes['timestamp'])
 
-            composition_change_index = np.where(np.isin(x_change_coords, x_composition_coords) & np.isin(y_change_coords, y_composition_coords))[0]
+            x_coords_change = np.array(pixel_changes_all['x_coord'])
+            y_coords_change = np.array(pixel_changes_all['y_coord'])
+            color_index_changes = np.array(pixel_changes_all['color_index'])
+            seconds = np.array(pixel_changes_all['seconds'])
+            user_index = np.array(pixel_changes_all['user_index'])
+
+            pixel_change_index = np.where(np.isin(x_coords_change, self.x_coords) & np.isin(y_coords_change, self.y_coords))[0]
             
-            colors_composition_change_hex = color_changes_hex[composition_change_index]
-            y_composition_change_coords = y_change_coords[composition_change_index].astype(int) 
-            x_composition_change_coords = x_change_coords[composition_change_index].astype(int)
-            timestamp_composition_change = timestamp[composition_change_index]
-            timestamp_composition_change = pd.to_datetime(list(timestamp_composition_change), infer_datetime_format=True)
-            user_id_composition_change = user_id[composition_change_index]
+            color_index_changes_boundary = color_index_changes[pixel_change_index]
+            y_coord_change_boundary = y_coords_change[pixel_change_index].astype(int) 
+            x_coord_change_boundary = x_coords_change[pixel_change_index].astype(int)
+            time_change_boundary = seconds[pixel_change_index]
+            user_id_change_boundary = user_index[pixel_change_index]
 
+            # first look up the actual color in the dictionary to get hex
+            # then need to convert from hex to RGB
+            # need to make the conversion vectorized
+            color_dict_path = os.path.join(data_path,'ColorsFromIdx.json')
+            color_dict_file = open(color_dict_path)
+            color_dict = json.load(color_dict_file)
+            color_hex = np.array(list(color_dict.values()))
+            color_change_boundary_hex = color_hex[color_index_changes_boundary]
 
-            colors_composition_change_r = np.zeros(len(colors_composition_change_hex))
-            colors_composition_change_g = np.zeros(len(colors_composition_change_hex))
-            colors_composition_change_b = np.zeros(len(colors_composition_change_hex))
+            (colors_composition_change_r,
+            colors_composition_change_g,
+            colors_composition_change_b) = hex_to_rgb(color_change_boundary_hex)
 
-            for i in range(len(colors_composition_change_hex)):
-                (colors_composition_change_r[i],
-                colors_composition_change_g[i],
-                colors_composition_change_b[i]) = hex_to_rgb(colors_composition_change_hex[i])
-                
-            colors_composition_change = np.array([colors_composition_change_r, colors_composition_change_g, colors_composition_change_b])
-
-            # now make a new dataframe with the 
-            composition_pixel_changes = pd.DataFrame(data={'timestamp': timestamp_composition_change, 
-                                                    'x_coord': x_composition_change_coords, 
-                                                    'y_coord': y_composition_change_coords,
-                                                    'user_id': user_id_composition_change, 
+            # now make a new dataframe with the pixel change data
+            pixel_changes_boundary = pd.DataFrame(data={'seconds': time_change_boundary, 
+                                                    'x_coord': x_coord_change_boundary, 
+                                                    'y_coord': y_coord_change_boundary,
+                                                    'user_id': user_id_change_boundary, 
                                                     'color_R': colors_composition_change_r,
                                                     'color_G': colors_composition_change_g,
                                                     'color_B': colors_composition_change_b})
 
-            return composition_pixel_changes #colors_composition_change, x_composition_change_coords, y_composition_change_coords
-        
-        
-    def show_composition(self, x_composition_change_coords, y_composition_change_coords, 
-                    colors_composition_change_r,
-                    colors_composition_change_g,
-                    colors_composition_change_b,
-                    ax=None):  
-            '''
-            parameters
-            ----------
-            
-            returns
-            -------
-            '''
-            #colors_composition_change_r, colors_composition_change_g, colors_composition_change_b = colors_composition_change_list
-            img = np.zeros((1000,1000))
-            img_r = np.ones((1000,1000))
-            img_g = np.ones((1000,1000))
-            img_b = np.ones((1000,1000))
-            img_r[x_composition_change_coords.astype(int), y_composition_change_coords.astype(int)] = colors_composition_change_r/255
-            img_g[x_composition_change_coords.astype(int), y_composition_change_coords.astype(int)] = colors_composition_change_g/255
-            img_b[x_composition_change_coords.astype(int), y_composition_change_coords.astype(int)] = colors_composition_change_b/255
-            img = np.swapaxes(np.array([img_r, img_g, img_b]), 0, 2)
 
-
-            if ax==None:
-                plt.figure(origin='upper')
-                plt.imshow(img,origin='upper')
-            else:
-                ax.imshow(img, origin='upper')
-
-    def show_composition_over_time(self, id_name, file_numbers, time_interval, 
-                            total_time=82.5 # total time of rplace ~82.5 hrs need to check
-                            ):
-            '''
-            
-            parameters
-            ----------
-            time_interval: in hours
-            
-            returns
-            -------
-            '''
-            composition_pixel_changes_combined  = get_composition_pixel_changes_over_time(id_name, file_numbers)
-            timestamp = composition_pixel_changes_combined['timestamp']
-            timestamp = pd.to_datetime(list(timestamp), infer_datetime_format=True)
-            time_delta = timestamp-timestamp[0]
-            time_delta_hrs = time_delta.seconds/3600
-        
-            num_time_steps = int(np.ceil(total_time/time_interval))
-
-            ncols = np.min([num_time_steps, 10])
-            nrows = np.max([1, int(math.ceil(num_time_steps/10))])
-            #fig = plt.figure(figsize=(10,nrows)) # height corresponds in inches to number of rows. auto dpi is 100
-            #gs = fig.add_gridspec(nrows, ncols, hspace=0.05, wspace=0.05)
-            fig, ax = plt.subplots(nrows, ncols, sharex=True, sharey=True)
-            print(ax.shape)
-            #ax = gs.subplots(sharex=True, sharey=True)
-            rowcount = 0
-            colcount = 0
-            time_inds_list = []
-            for i in range(1, nrows*ncols + 1):
-                if len(ax.shape)==2:
-                    ax_single=ax[rowcount,colcount]
-                else:
-                    ax_single = ax[i-1]
-                ax_single.axis('off')
-                if i < (num_time_steps + 1):
-                    time_inds = np.where(time_delta_hrs<=i*time_interval)[0]
-                    time_inds_list.append(time_inds)
-                    composition_pixel_changes_time_integrated = composition_pixel_changes_combined.iloc[time_inds,:]
-                    x_composition_change_coords_integrated =  np.array(composition_pixel_changes_time_integrated['x_coord'])
-                    y_composition_change_coords_integrated =  np.array(composition_pixel_changes_time_integrated['y_coord'])
-                    color_composition_changes_integrated_r =  np.array(composition_pixel_changes_time_integrated['color_R'])
-                    color_composition_changes_integrated_g =  np.array(composition_pixel_changes_time_integrated['color_G'])
-                    color_composition_changes_integrated_b =  np.array(composition_pixel_changes_time_integrated['color_B'])
-
-                    show_composition(x_composition_change_coords_integrated,
-                                y_composition_change_coords_integrated, 
-                                color_composition_changes_integrated_r,
-                                color_composition_changes_integrated_g,
-                                color_composition_changes_integrated_b, ax = ax_single)
-                    
-                if colcount<9:
-                    colcount+=1
-                else:
-                    colcount=0
-                    rowcount+=1
-                path0, path = get_path(id_name)
-                path_coords = np.array(max(path0.values()))
-                x_min = np.min(path_coords[:,0])
-                x_max = np.max(path_coords[:,0])
-                y_min = np.min(path_coords[:,1])
-                y_max = np.max(path_coords[:,1])
-                plt.xlim([x_min, x_max])
-                plt.ylim([y_max, y_min])
-
-            return (composition_pixel_changes_combined,
-                    time_inds_list)
-    
-    def get_composition_change_coords_colors(self, id_name, data_file):
-            '''
-            parameters
-            ----------
-            
-            returns
-            -------
-            
-            '''
-            
-            path0 = self.border_path
-
-            # get the coordinates of all tiles within the composition
-            x_composition_coords, y_composition_coords = draw_path(path0)
-            # get the coordinates of tiles that were changed in the dataset:
-            file_pixel_changes = __get_all_pixel_change_coords(data_file)
-            #x_change_coords, y_change_coords, color_changes_hex = get_all_pixel_change_coords(data_file)
-
-            # get the colors the tiles were changed to: color_changes
-            # and the coordinates of the composition tiles that were changed in the dataset: x_composition_change_coords, y_composition_change_coords
-            composition_pixel_changes = get_composition_colors(x_composition_coords, y_composition_coords, file_pixel_changes)
-                                                                            
-            return composition_pixel_changes
-    
-    def get_composition_pixel_changes_over_time(self, id_name, file_numbers):
-        '''
-        
-        parameters
-        ----------
-        
-        returns
-        -------
-        
-        '''
-        composition_pixel_changes_combined = pd.DataFrame(data={'timestamp':[], 
-                                                        'x_coord':[],
-                                                        'y_coord': [],
-                                                        'user_id':[],
-                                                        'color_R':[],
-                                                        'color_G':[],
-                                                        'color_B':[]})
-
-        for i in range(0, file_numbers.size):
-            if file_numbers[i]<=9:
-                extra_str = '0'
-            else:
-                extra_str = ''
-            data_file = '2022_place_canvas_history-0000000000' + extra_str + str(file_numbers[i]) + '.csv'
-            composition_pixel_changes = get_composition_change_coords_colors(id_name, data_file)
-            composition_pixel_changes_combined = pd.concat([composition_pixel_changes_combined, composition_pixel_changes])
-
-        # sort by datetime 
-        composition_pixel_changes_combined['timestamp']=pd.to_datetime(composition_pixel_changes_combined['timestamp'], infer_datetime_format=True)
-        composition_pixel_changes_combined = composition_pixel_changes_combined.sort_values(by=['timestamp']) 
-            
-        return composition_pixel_changes_combined
-
-    def save_and_compress_composition(id_name, composition_pixel_changes_combined, time_inds_list, bmp=True, png=True):
-        path0, path = get_path(id_name)
-        path_coords = np.array(max(path0.values()))
-        x_min = np.min(path_coords[:,0])
-        x_max = np.max(path_coords[:,0])
-        y_min = np.min(path_coords[:,1])
-        y_max = np.max(path_coords[:,1])
-        
-        file_size_bmp = np.zeros(len(time_inds_list))
-        file_size_png = np.zeros(len(time_inds_list))
-        for i in range(0,len(time_inds_list)):
-            im = pil.Image.new("RGB",(x_max-x_min + 1, y_max-y_min + 1),"white")
-            composition_pixel_changes_time_integrated = composition_pixel_changes_combined.iloc[time_inds_list[i],:]
-            x_composition_change_coords_integrated =  np.array(composition_pixel_changes_time_integrated['x_coord'])
-            y_composition_change_coords_integrated =  np.array(composition_pixel_changes_time_integrated['y_coord'])
-            color_composition_changes_integrated_r =  np.array(composition_pixel_changes_time_integrated['color_R'])
-            color_composition_changes_integrated_g =  np.array(composition_pixel_changes_time_integrated['color_G'])
-            color_composition_changes_integrated_b =  np.array(composition_pixel_changes_time_integrated['color_B'])
-
-            pixels = im.load()
-            colors = np.vstack((color_composition_changes_integrated_r, 
-                                color_composition_changes_integrated_g, 
-                                color_composition_changes_integrated_b))
-            for j in range(0, len(x_composition_change_coords_integrated)):
-                pixels[int(x_composition_change_coords_integrated[j]-x_min), 
-                    int(y_composition_change_coords_integrated[j]-y_min)] = tuple(colors.transpose()[j].astype(int))
-            
-            if bmp:
-                im.save('frames' + str(i) + '.bmp')
-                with open('frames' + str(i) + '.bmp', "rb") as image_file:
-                    f = image_file.read()
-                    byte_array = bytearray(f)
-                file_size_bmp[i] = len(byte_array)
-                
-            if png:
-                im.save('compressed_frames' + str(i) + '.png', optimize = True)
-                with open('compressed_frames' + str(i) + '.png', "rb") as image_file:
-                    f = image_file.read()
-                    byte_array = bytearray(f)
-                file_size_png[i] = len(byte_array)
-                
-        return file_size_bmp, file_size_png
-
-    def plot_compression(self, file_size_bmp, file_size_png, time_interval, total_time):
-        time = np.arange(time_interval, total_time + time_interval, time_interval)
-
-        plt.figure()
-        plt.plot(time, file_size_bmp, label='bmp')
-        plt.plot(time, file_size_png, '--', label='png')
-        sns.despine()
-        plt.legend(frameon=False)
-        plt.ylabel('file size (bytes)')
-        plt.xlabel('time (hrs)')
-        
-        plt.figure()
-        plt.plot(time, file_size_png/file_size_bmp)
-        sns.despine()
-        plt.ylabel('file size ratio')
-        plt.xlabel('time (hrs)')
+            self.pixel_changes = pixel_changes_boundary 
 
 class CanvasComposition(CanvasPart):
     '''
@@ -410,8 +144,16 @@ class CanvasComposition(CanvasPart):
     calc_file_size_raw_compressed(): inherited from superclass
 
     '''
-    def __init__(self, border_path, pixel_changes):
-        super().__init__(border_path, pixel_changes)
+    def __init__(self, 
+                 id, 
+                 pixel_changes_all, 
+                 data_path = os.path.join(os.getcwd(),'data'), 
+                 show_coords = False):
+
+        paths, path0 = self.get_atlas_border(id, data_path=data_path)
+
+        super().__init__(path0, pixel_changes_all)
+        
 
     def get_atlas_border(self, id, data_path=os.path.join(os.getcwd(),'data')): 
         '''
@@ -437,7 +179,7 @@ class CanvasComposition(CanvasPart):
         path0 = np.array(list(paths.values()))[0] # first
 
         self.id_name = str(atlas[id_index]['name'])
-        self.border_path = path0
+        
         return paths, path0
 
 class CanvasArea(CanvasPart):
@@ -487,23 +229,202 @@ class ColorMovement:
 
 def hex_to_rgb(hex_str):
     '''
+    # TODO: vectorize this by splitting into chars and indexing for 2d array
+
     Turns hex color string to rgb 
+    assumes there is no # in front of the hex code
     
     parameters
     ----------
-    hex_str: string 
-        hex string indicating color
+    hex_str: 1d array of strings 
+        vector of hex strings indicating color
     
     returns
     -------
     rgb: tuple
         tuple with the 3 coordinates corresponding to R, G, B
     '''
-    hex_str = hex_str.lstrip('#')
-    len_hex = len(hex_str)
-    rgb = tuple(int(hex_str[i:i + len_hex // 3], 16) for i in range(0, len_hex, len_hex // 3))
-    return rgb
+    hex_str = np.char.lstrip(hex_str,'#')
+    rgb = np.zeros((3,len(hex_str)))
+    for j in range(0,len(hex_str)):
+        len_hex = len(hex_str[j])
+        rgb[:,j]= [int(hex_str[j][i:i + len_hex // 3], 16) for i in range(0, len_hex, len_hex // 3)]
+    return rgb[0,:], rgb[1,:], rgb[2,:]
 
+def show_canvas_part(pixel_changes, ax=None):  
+            '''
+            parameters
+            ----------
+            
+            returns
+            -------
+            '''
 
+            #colors_composition_change_r, colors_composition_change_g, colors_composition_change_b = colors_composition_change_list
+            img = np.zeros((1000,1000))
+            img_r = np.ones((1000,1000))
+            img_g = np.ones((1000,1000))
+            img_b = np.ones((1000,1000))
+            img_r[pixel_changes['x_coord'].astype(int), pixel_changes['y_coord'].astype(int)] = pixel_changes['color_R']/255
+            img_g[pixel_changes['x_coord'].astype(int), pixel_changes['y_coord'].astype(int)] = pixel_changes['color_G']/255
+            img_b[pixel_changes['x_coord'].astype(int), pixel_changes['y_coord'].astype(int)] = pixel_changes['color_B']/255
+            img = np.swapaxes(np.array([img_r, img_g, img_b]), 0, 2)
 
+            if ax==None:
+                plt.figure(origin='upper')
+                plt.imshow(img,origin='upper')
+            else:
+                ax.imshow(img, origin='upper')
+
+def show_part_over_time(canvas_part, 
+                        time_interval, # in seconds
+                        total_time= 297000 # in seconds
+                        ):
+        '''
+        
+        parameters
+        ----------
+        time_interval: in seconds
+        
+        returns
+        -------
+        '''
+        timestamp = canvas_part.pixel_changes['seconds']
     
+        num_time_steps = int(np.ceil(total_time/time_interval))
+
+        ncols = np.min([num_time_steps, 10])
+        nrows = np.max([1, int(math.ceil(num_time_steps/10))])
+
+        #fig = plt.figure(figsize=(10,nrows)) # height corresponds in inches to number of rows. auto dpi is 100
+        #gs = fig.add_gridspec(nrows, ncols, hspace=0.05, wspace=0.05)
+        fig, ax = plt.subplots(nrows, ncols, sharex=True, sharey=True)
+        
+        #ax = gs.subplots(sharex=True, sharey=True)
+        rowcount = 0
+        colcount = 0
+        time_inds_list = []
+        for i in range(1, nrows*ncols + 1):
+            if len(ax.shape)==2:
+                ax_single=ax[rowcount,colcount]
+            else:
+                ax_single = ax[i-1]
+            ax_single.axis('off')
+            if i < (num_time_steps + 1):
+                # find the indices up to where time is at the current step
+                time_inds = np.where(timestamp<=i*time_interval)[0]
+                time_inds_list.append(time_inds)
+                pixel_changes_time_integrated = canvas_part.pixel_changes.iloc[time_inds,:]
+
+                show_canvas_part(pixel_changes_time_integrated, ax = ax_single)
+                
+            if colcount<9:
+                colcount+=1
+            else:
+                colcount=0
+                rowcount+=1
+    
+            x_min = np.min(canvas_part.border_path[:,0])
+            x_max = np.max(canvas_part.border_path[:,0])
+            y_min = np.min(canvas_part.border_path[:,1])
+            y_max = np.max(canvas_part.border_path[:,1])
+            plt.xlim([x_min, x_max])
+            plt.ylim([y_max, y_min])
+
+        return time_inds_list
+
+def save_and_compress(canvas_part, time_inds_list, bmp=True, png=True):
+
+    path_coords = canvas_part.border_path
+    x_min = np.min(path_coords[:,0])
+    x_max = np.max(path_coords[:,0])
+    y_min = np.min(path_coords[:,1])
+    y_max = np.max(path_coords[:,1])
+    
+    file_size_bmp = np.zeros(len(time_inds_list))
+    file_size_png = np.zeros(len(time_inds_list))
+    for i in range(0,len(time_inds_list)):
+        im = pil.Image.new("RGB",(x_max-x_min + 1, y_max-y_min + 1),"white")
+        pixel_changes_time_integrated = canvas_part.pixel_changes.iloc[time_inds_list[i],:]
+        x_change_coords_integrated =  np.array(pixel_changes_time_integrated['x_coord'])
+        y_change_coords_integrated =  np.array(pixel_changes_time_integrated['y_coord'])
+        color_changes_integrated_r =  np.array(pixel_changes_time_integrated['color_R'])
+        color_changes_integrated_g =  np.array(pixel_changes_time_integrated['color_G'])
+        color_changes_integrated_b =  np.array(pixel_changes_time_integrated['color_B'])
+
+        pixels = im.load()
+        colors = np.vstack((color_changes_integrated_r, 
+                            color_changes_integrated_g, 
+                            color_changes_integrated_b))
+        for j in range(0, len(x_change_coords_integrated)):
+            pixels[int(x_change_coords_integrated[j]-x_min), 
+                int(y_change_coords_integrated[j]-y_min)] = tuple(colors.transpose()[j].astype(int))
+        
+        if bmp:
+            im.save('frames' + str(i) + '.bmp')
+            with open('frames' + str(i) + '.bmp', "rb") as image_file:
+                f = image_file.read()
+                byte_array = bytearray(f)
+            file_size_bmp[i] = len(byte_array)
+            
+        if png:
+            im.save('compressed_frames' + str(i) + '.png', optimize = True)
+            with open('compressed_frames' + str(i) + '.png', "rb") as image_file:
+                f = image_file.read()
+                byte_array = bytearray(f)
+            file_size_png[i] = len(byte_array)
+            
+    return file_size_bmp, file_size_png
+
+def plot_compression(file_size_bmp, file_size_png, time_interval, total_time):
+    time = np.arange(time_interval, total_time + time_interval, time_interval)
+
+    plt.figure()
+    plt.plot(time, file_size_bmp, label='bmp')
+    plt.plot(time, file_size_png, '--', label='png')
+    sns.despine()
+    plt.legend(frameon=False)
+    plt.ylabel('file size (bytes)')
+    plt.xlabel('time (s)')
+    
+    plt.figure()
+    plt.plot(time, file_size_png/file_size_bmp)
+    sns.despine()
+    plt.ylabel('file size ratio')
+    plt.xlabel('time (s)')
+
+def get_all_pixel_changes(data_file= 'PixelChangesCondensedData_sorted.npz', data_path=os.path.join(os.getcwd(),'data')):
+        '''
+        TODO: deal with this
+        need to rewrite and just have this function basically read in the data file
+        and make it a pandas array and return that array? and then have get_pixel_changes_boundary call this function?
+        Maybe this should actually be outside the class. Because we don't want to have to reload the data for each canvas section, right?
+        parameters
+        ----------
+        data_file: .npz file
+        data_path: location of data, assumed to be in cwd in 'data' folder
+        
+        returns
+        -------
+        pixel_changes: dataframe with 'timestamp', 'x_coord', 'y_coord', 'user_id', 'color'
+
+        '''
+        pixel_changes_all_npz = np.load(os.path.join(data_path, data_file))
+
+        # load all the arrays
+        seconds = pixel_changes_all_npz['seconds']
+        x_coord = pixel_changes_all_npz['pixelXpos']
+        y_coord = pixel_changes_all_npz['pixelYpos']
+        user_index = pixel_changes_all_npz['userIndex']
+        color_index = pixel_changes_all_npz['colorIndex']
+        moderator_event = pixel_changes_all_npz['moderatorEvent']
+
+        # return it as a pandas dataframe
+        pixel_changes_all = pd.DataFrame(data={'seconds': seconds, 
+                                               'x_coord': x_coord, 
+                                               'y_coord': y_coord,
+                                               'user_index': user_index, 
+                                               'color_index': color_index,
+                                               'moderator_event': moderator_event})
+
+        return pixel_changes_all
