@@ -29,29 +29,26 @@ def DrawHeatMap(h, Zmin, Zmax, title, logz):
     bottomm = 0.05
     topm = 0.1
     c1 = ROOT.TCanvas('c1','c1',(int)(2020/(1-leftm-rightm)), (int)(2020/(1-bottomm-topm))) ##### try to get the exact number of pixels
-    c1.SetCanvasSize(3000,2800);
-    #c1.SetWindowSize(500, 500);
+    c1.SetCanvasSize((int)(2020/(1-leftm-rightm)), (int)(2020/(1-bottomm-topm)));
     c1.SetMargin(leftm,rightm,bottomm,topm)
     if logz:
         c1.SetLogz()
     
     h.Draw('X+COLZ')
 
-    ROOT.gPad.Update()
-
-    newaxis = ROOT.TGaxis(ROOT.gPad.GetUxmin(),
-                          ROOT.gPad.GetUymax(),
-                          ROOT.gPad.GetUxmin(),
-                          ROOT.gPad.GetUymin(),
-                          h.GetYaxis().GetXmin(),
-                          h.GetYaxis().GetXmax(),
-                          10,"R-")
-    newaxis.SetLabelSize(0.033)
-    newaxis.SetLabelOffset(-0.01)
-    newaxis.SetLabelFont(42) 
-    newaxis.SetTickLength(0.)##### not working...
-    newaxis.Draw()
-
+    ###### Draw manually the labels of the reversed y-axis
+    yaxislabels = ROOT.TLatex();
+    yaxislabels.SetNDC();
+    yaxislabels.SetTextFont(42);
+    yaxislabels.SetTextAlign(32);##### horizontal: right aligned (3), vertical: centered (2)
+    yaxislabels.SetTextSize(0.033);
+    offset_of_zero = 0.005
+    yaxislabels.DrawLatex(leftm-0.008,1-topm-offset_of_zero,"0");
+    yaxislabels.DrawLatex(leftm-0.008,1-topm-offset_of_zero - 0.25*(1-topm-bottomm-2*offset_of_zero),"500");
+    yaxislabels.DrawLatex(leftm-0.008,1-topm-offset_of_zero - 0.5*(1-topm-bottomm-2*offset_of_zero),"1000");
+    yaxislabels.DrawLatex(leftm-0.008,1-topm-offset_of_zero - 0.75*(1-topm-bottomm-2*offset_of_zero),"1500");
+    yaxislabels.DrawLatex(leftm-0.008,bottomm+offset_of_zero,"2000");
+ 
     c1.SaveAs('figs/'+title)
 
 
@@ -75,7 +72,6 @@ ROOT.gStyle.SetOptStat(0) ##### no statistics box on canvas
 maxtime = 3.01e5
 
 ##### Histograms of time of pixel changes
-
 print('make time histogram')
 h_time = df.Histo1D(("h_time", "h_time", 1000, 0, maxtime), 'time')
 print('make time histogram (no moderator)')
@@ -102,29 +98,25 @@ print('Draw time histogram (moderator only)')
 h_time_modEvents.Draw()
 c_time.SaveAs('figs/TimeOfPixelChanges_moderatorEvents.pdf')
 
-
 ###### Heat map 2D histos
-
 print('make heat map 2D histogram')
 heatMap = df.Histo2D(('heatmap','heatmap',2020,-10,2010,2020,-10,2010),'pixelXpos','pixelYpos')
-
 print('draw heat map')
 ROOT.gStyle.SetPalette(60)##### 105: kThermometer, 60: kBlueRedYellow, 69: kBeach (white top)
-DrawHeatMap(heatMap,0.99,2001,'HeatMap.bmp',True)
-
-DrawHeatMap(heatMap,499,20000,'HeatMap_MoreThan500PixelChanges.png',True)
+DrawHeatMap(heatMap,0.99,2001,'HeatMap.png',True)
+DrawHeatMap(heatMap,499,50001,'HeatMap_MoreThan500PixelChanges.png',True)
 ROOT.gStyle.SetPalette(69)##### 105: kThermometer, 60: kBlueRedYellow, 69: kBeach (white top)
 DrawHeatMap(heatMap,-0.01,5.5,'HeatMap_LessThan5PixelChanges.png',False)
 ROOT.gStyle.SetPalette(60)##### 105: kThermometer, 60: kBlueRedYellow, 69: kBeach (white top)
 
 
 print('make heat map vs time 3D histogram')
-heatMap3D = df.Histo3D(('heatmap','heatmap',2020,-10,2010,2020,-10,2010,30,0,maxtime),'pixelXpos','pixelYpos','time')
+heatMap3D = df.Histo3D(('heatmap','heatmap',2020,-10,2010,2020,-10,2010,40,0,maxtime),'pixelXpos','pixelYpos','time')
 
 zbinsize = float(maxtime/heatMap3D.GetNbinsZ())
 for i in range(1,heatMap3D.GetNbinsZ()+1):
     heatMap3D.GetZaxis().SetRange(i,i)
-    DrawHeatMap(heatMap3D.Project3D('yx'),0.99, 1+(2000/heatMap3D.GetNbinsZ()), 'timeDep/HeatMap_time{:06d}to{:06d}.png'.format(int((i-1)*zbinsize), int(i*zbinsize)),False)
+    DrawHeatMap(heatMap3D.Project3D('yx'),0.99, 1+(2000/heatMap3D.GetNbinsZ()), 'timeDepHeatMap/HeatMap_time{:06d}to{:06d}.png'.format(int((i-1)*zbinsize), int(i*zbinsize)),False)
 #can use ImageJ to easily make a movie out of these time-dependent images
 
 print('make heat map for moderator events')
@@ -159,6 +151,8 @@ PixelsPerUser.GetYaxis().SetRangeUser(0.5,1.3*PixelsPerUser.GetMaximum())
 PixelsPerUser.SetLineWidth(1)
 PixelsPerUser.Draw()
 
+print('mean number of pixel changes per user =',PixelsPerUser..GetMean())
+
 c2.SetMargin(0.1,0.05,0.1,0.04) ##### left,right,bottom,top
 c2.SetLogy()
 c2.SetLogx()
@@ -173,24 +167,31 @@ pixelCounts = [0]*(2000*2000)
 for i in range(10,heatMap.GetNbinsX()-10):
     for j in range(10,heatMap.GetNbinsY()-10):
         #if not modEvent[i]: ###### remove moderator events
-        pixelCounts[(i-10)*2000+(j-10)] = heatMap.GetBinContent(i,j)
+        pixelCounts[(i-10)*2000+(j-10)] = heatMap.GetBinContent(i+1,j+1) ##### bin contents of this histo are non-empty from bins 11 to 2010
 
-###### Fill each array element (=each count of pixel changes per user) in histogram
+###### custom histogram binning
 binning = [0.5]
 for i in range(1,300):
     binning.append(i)
 for i in range(30,90):
     binning.append(i*10)
-for i in range(9,50):
+for i in range(9,40):
     binning.append(i*100)
-for i in range(5,75):
+for i in range(8,12):
+    binning.append(i*500)
+for i in range(6,16):
     binning.append(i*1000)
+for i in range(4,28):
+    binning.append(i*4000)
 
+##### Fill each array element (=each count of pixel changes per user) in histogram
 ChangesPerPix = ROOT.TH1D('changesperpix','changesperpix',len(binning)-1,array('d',binning))
 for i in range(0, len(pixelCounts)):
     ChangesPerPix.Fill(pixelCounts[i] if pixelCounts[i]>0.5 else 0.51 ) ###### adds the number of counts for this user as a histogram entry
     if pixelCounts[i]>10000:
-        print('pixel with more than 10000 changes: x,y =' ,i//2000,i%2000, ',',int(pixelCounts[i]),'pixel changes')
+        print('pixel with more than 10000 changes: x,y =' ,i//2000,1999-(i%2000), ',',int(pixelCounts[i]),'pixel changes')
+
+print('mean number of changes per pixel =',ChangesPerPix.GetMean())
 
 for i in range(1,ChangesPerPix.GetNbinsX()+1):
     if ChangesPerPix.GetBinWidth(i)>1:
@@ -198,7 +199,7 @@ for i in range(1,ChangesPerPix.GetNbinsX()+1):
         
 c2 = ROOT.TCanvas('c2','c2',2000,2000)
 ChangesPerPix.SetTitle(';# of changes;# of pixels / bin width')
-ChangesPerPix.GetYaxis().SetRangeUser(0.5/1000,1.3*ChangesPerPix.GetMaximum())
+ChangesPerPix.GetYaxis().SetRangeUser(0.5/4000,1.5*ChangesPerPix.GetMaximum())
 ChangesPerPix.GetYaxis().SetTitleOffset(1.2)
 ChangesPerPix.GetXaxis().SetTitleOffset(1.2)
 ChangesPerPix.SetLineWidth(1)
@@ -209,4 +210,3 @@ c2.SetLogy()
 c2.SetLogx()
 
 c2.SaveAs('figs/ChangesPerPixel.pdf')
-
