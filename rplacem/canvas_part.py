@@ -10,6 +10,7 @@ import seaborn as sns
 import numpy as np
 import os
 import json
+import glob
 
 class CanvasPart(object):
     '''
@@ -315,8 +316,13 @@ class ColorMovement:
     methods
     -------
     '''
-    
 
+def get_file_size(path):
+    f = open(path, "rb").read()
+    byte_array = bytearray(f)
+    return len(byte_array)
+
+    
 ###### This actually repeats the pil.ImageColor.getrgb("#add8e6") function
 def hex_to_rgb(hex_str):
     '''
@@ -496,7 +502,8 @@ def save_and_compress(canvas_part, time_inds_list, bmp=True, png=True):
 
 def save_part_over_time_simple(canvas_part,
                                time_interval, # in seconds
-                               total_time=301000 # in seconds
+                               total_time=301000, # in seconds
+                               part_name = '' # only for name of output
                                ):
     '''
     parameters
@@ -506,10 +513,15 @@ def save_part_over_time_simple(canvas_part,
         time interval at which to plot (in seconds)
     total_time : float
         total time to plot intervals until (in seconds)
+    part_name : id/name of part for naming output file
     
     returns
     -------
-    None, just saves one image of this canvas_part per time step
+    file_size_bmp : float
+        size of png image in bytes
+    file_size_png : float
+        size of png image in bytes
+    + saves images of the canvas part for each time step
     '''
 
     seconds = canvas_part.pixel_changes['seconds']
@@ -518,27 +530,42 @@ def save_part_over_time_simple(canvas_part,
     col = canvas_part.pixel_changes['color_id']
 
     num_time_steps = int(np.ceil(total_time/time_interval))
+    file_size_bmp = np.zeros(num_time_steps+1)
+    file_size_png = np.zeros(num_time_steps+1)
+    
     path_coords = canvas_part.border_path
     x_min = np.min(path_coords[:,0])
     x_max = np.max(path_coords[:,0])
     y_min = np.min(path_coords[:,1])
     y_max = np.max(path_coords[:,1])
 
-    pixels = np.full((x_max - x_min + 1, y_max - y_min + 1, 3), 255) ##### consider that [r,g,b] will be readable as (r,g,b) ##### fill as white first
-    
+    pixels = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8) ##### consider that [r,g,b] will be readable as (r,g,b) ##### fill as white first ##### not sure why, but the pixels should be [y,x,rgb]
+    out_path = os.path.join(os.getcwd(),'figs/history_'+part_name,'VsTime')
+    try:
+        os.mkdir(os.path.join(os.getcwd(),'figs/history_'+part_name))
+        os.mkdir(out_path)
+    except OSError as err: ###### empty directory if it already exists
+        for f in glob.glob(out_path+'/*'):
+            os.remove(f)
     
     tidx = 0
     for t in range(0,num_time_steps+1): ##### use the fact that arrays are time-sorted
-        while(seconds[tidx]<t*time_interval):
-            pixels[xcoor[tidx], ycoor[tidx], :] = canvas_part.get_rgb( col[tidx] )
-            
-
+        while(tidx<seconds.size and seconds[tidx]<t*time_interval):
+            pixels[ycoor[tidx] - y_min, xcoor[tidx] - x_min, :] = canvas_part.get_rgb( col[tidx] ) ##### the magic happens here
             tidx += 1
 
         #save image here
-    
-    
-def plot_compression(file_size_bmp, file_size_png, time_interval, total_time):
+        im = Image.fromarray(pixels)
+        im_path = os.path.join( out_path , 'canvaspart_time{:06d}'.format(int(t*time_interval)) )
+        im.save(im_path+'.png')
+        im.save(im_path+'.bmp')
+        file_size_png[t] = get_file_size(im_path+'.png')
+        file_size_bmp[t] = get_file_size(im_path+'.bmp')
+        
+    return file_size_bmp, file_size_png
+
+        
+def plot_compression(file_size_bmp, file_size_png, time_interval, total_time, part_name = '', delete_bmp = True):
     '''
     plot the file size ratio over time
 
@@ -552,17 +579,22 @@ def plot_compression(file_size_bmp, file_size_png, time_interval, total_time):
         time interval at which to plot (in seconds)
     total_time : float
         total time to plot intervals until (in seconds)
-        
+    part_name : string
+        for the naming of the output saved plot        
     '''
 
-    time = np.arange(time_interval, total_time + time_interval, time_interval)
+    time = np.arange(time_interval, total_time + 2*time_interval, time_interval)
     
     plt.figure()
     plt.plot(time, file_size_png/file_size_bmp)
     sns.despine()
     plt.ylabel('Computable Information Density (file size ratio)')
     plt.xlabel('Time (s)')
+    plt.savefig(os.path.join(os.getcwd(),'figs/history_'+part_name+'/file_size_compression_ratio.png'))
 
+    for f in glob.glob(os.path.join(os.getcwd(),'figs/history_'+part_name,'VsTime','/*.bmp'):
+        os.remove(f)
+    
 def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz', 
                           data_path=os.path.join(os.getcwd(),'data')):
     '''

@@ -13,16 +13,12 @@ print('Canvas composition border path: \n' + str(canvas_comp.border_path) + '\n 
 print('Canvas composition x coordinates: \n' + str(canvas_comp.x_coords) + '\n \n')
 print('Canvas composition y coordinates: \n' + str(canvas_comp.y_coords) + '\n \n')
 
-time_interval= 10000 #seconds
+time_interval= 100 #seconds
 total_time = 301000 #seconds
 
-time_inds_list_comp = cp.show_part_over_time(canvas_comp,
-                                             time_interval,
-                                             total_time = total_time)
+print('save_part_over_time_simple')
+file_size_bmp, file_size_png = cp.save_part_over_time_simple(canvas_comp, time_interval,total_time = total_time, part_name = atlas_id_index)
 
-print('save and compress')
-file_size_bmp, file_size_png = cp.save_and_compress(canvas_comp, time_inds_list_comp)
-
-cp.plot_compression(file_size_bmp, file_size_png, time_interval, total_time)
+cp.plot_compression(file_size_bmp, file_size_png, time_interval, total_time, part_name = atlas_id_index)
 
 
