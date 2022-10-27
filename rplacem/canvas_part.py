@@ -51,6 +51,7 @@ class CanvasPart(object):
                  border_path,
                  pixel_changes_all,
                  data_path=os.path.join(os.getcwd(),'data'),
+                 data_file='PixelChangesCondensedData_sorted.npz',
                  show_coords=False):
         '''
         Constructor for CanvasPart object
@@ -60,7 +61,7 @@ class CanvasPart(object):
         border_path : 2d numpy array with shape (number of points in path, 2)
             Array of x,y coordinates defining the boundary of the CanvasPart
         pixel_changes_all : 2d pandas dataframe 
-            Contains all of the pixel change data from the entire dataset
+            Contains all of the pixel change data from the entire dataset. If ==None, then the whole dataset is loaded when the class instance is initialized.
         data_path : str, optional
             Path to where the pixel data file is stored
         show_coords : bool, optional
@@ -68,10 +69,11 @@ class CanvasPart(object):
         '''
 
         self.data_path = data_path
+        self.data_file = data_file
         self.border_path = border_path
         self.x_coords = None
         self.y_coords = None
-        self.pixel_changes = None
+        self.pixel_changes = pixel_changes_all
         self.colidx_to_hex = {}
         self.colidx_to_rgb = {}
 
@@ -82,7 +84,7 @@ class CanvasPart(object):
         self.get_bounded_coords(show_coords=show_coords)
 
         # set the pixel changes within the boundary
-        self.find_pixel_changes_boundary(pixel_changes_all)
+        self.find_pixel_changes_boundary(self.pixel_changes)
         
     def set_color_dictionaries(self):
         color_dict_file = open( os.path.join(self.data_path,'ColorsFromIdx.json') )
@@ -126,8 +128,8 @@ class CanvasPart(object):
         self.x_coords = x_coords_boundary
     
     def find_pixel_changes_boundary(self, 
-                                    pixel_changes_all, 
-                                    data_path=os.path.join(os.getcwd(),'data')):     
+                                    pixel_changes_all
+                                    ):     
             '''
             Find all the pixel changes within the boundary of the CanvasPart object
             and set the pixel_changes attribute of the CanvasPart object accordingly
@@ -141,11 +143,21 @@ class CanvasPart(object):
 
             '''
 
-            x_coords_change = np.array(pixel_changes_all['x_coord'])
-            y_coords_change = np.array(pixel_changes_all['y_coord'])
-            color_index_changes = np.array(pixel_changes_all['color_index'])
-            seconds = np.array(pixel_changes_all['seconds'])
-            user_index = np.array(pixel_changes_all['user_index'])
+            if pixel_changes_all == None:
+                pixel_changes_all_npz = np.load(os.path.join(self.data_path, self.data_file))
+
+                ##### load all the arrays
+                seconds = pixel_changes_all_npz['seconds']
+                x_coords_change = pixel_changes_all_npz['pixelXpos']
+                y_coords_change = pixel_changes_all_npz['pixelYpos']
+                color_index_changes = pixel_changes_all_npz['colorIndex']
+
+            else:
+                x_coords_change = np.array(pixel_changes_all['x_coord'])
+                y_coords_change = np.array(pixel_changes_all['y_coord'])
+                color_index_changes = np.array(pixel_changes_all['color_index'])
+                seconds = np.array(pixel_changes_all['seconds'])
+                #user_index = np.array(pixel_changes_all['user_index'])
 
             pixel_change_index = np.where((np.isin(x_coords_change, self.x_coords) 
                                            & np.isin(y_coords_change, self.y_coords)))[0]
@@ -154,24 +166,14 @@ class CanvasPart(object):
             y_coord_change_boundary = y_coords_change[pixel_change_index].astype(int) 
             x_coord_change_boundary = x_coords_change[pixel_change_index].astype(int)
             time_change_boundary = seconds[pixel_change_index]
-            user_id_change_boundary = user_index[pixel_change_index]
+            #user_id_change_boundary = user_index[pixel_change_index]
 
-            '''
-            # convert the hex to rgb
-            (colors_composition_change_r,
-            colors_composition_change_g,
-            colors_composition_change_b) = hex_to_rgb(color_change_boundary_hex)
-            '''
-            
-            # now make a new dataframe with the pixel change data
+            ##### now make a new dataframe with the pixel change data
             self.pixel_changes = pd.DataFrame(data={'seconds': time_change_boundary, 
                                                     'x_coord': x_coord_change_boundary, 
                                                     'y_coord': y_coord_change_boundary,
-                                                    'user_id': user_id_change_boundary, 
+                                                    #'user_id': user_id_change_boundary, 
                                                     'color_id': color_index_changes_boundary,
-                                                    #'color_R': colors_composition_change_r,
-                                                    #'color_G': colors_composition_change_g,
-                                                    #'color_B': colors_composition_change_b
                                                     })
 
 
@@ -204,6 +206,7 @@ class CanvasComposition(CanvasPart):
                  id, 
                  pixel_changes_all, 
                  data_path = os.path.join(os.getcwd(),'data'), 
+                 data_file='PixelChangesCondensedData_sorted.npz',
                  show_coords = False):
 
         '''
@@ -226,7 +229,7 @@ class CanvasComposition(CanvasPart):
         # TODO: add handling for if path changes over time
         paths, path0 = self.get_atlas_border(id, data_path=data_path)
 
-        super().__init__(path0, pixel_changes_all,data_path=data_path)
+        super().__init__(path0, pixel_changes_all,data_path=data_path,data_file=data_file,show_coords=show_coords)
         
 
     def get_atlas_border(self, id, data_path=os.path.join(os.getcwd(),'data')): 
@@ -284,8 +287,8 @@ class CanvasArea(CanvasPart):
         Inherited from superclass
 
     '''
-    def __init__(self, border_path, pixel_changes):
-        super().__init__(border_path, pixel_changes)
+    def __init__(self, border_path, pixel_changes,data_path=os.path.join(os.getcwd(),'data'),data_file='PixelChangesCondensedData_sorted.npz'):
+        super().__init__(border_path, pixel_changes,data_path=os.path.join(os.getcwd(),'data'),data_file='PixelChangesCondensedData_sorted.npz')
 
 class ColorMovement:
     '''
@@ -500,10 +503,12 @@ def save_and_compress(canvas_part, time_inds_list, bmp=True, png=True):
             
     return file_size_bmp, file_size_png
 
+# covers most (all?) functionalities of show_canvas_part, show_part_over_time, save_and_compress
 def save_part_over_time_simple(canvas_part,
                                time_interval, # in seconds
                                total_time=301000, # in seconds
-                               part_name = '' # only for name of output
+                               part_name = '', # only for name of output
+                               delete_bmp = True
                                ):
     '''
     parameters
@@ -561,11 +566,13 @@ def save_part_over_time_simple(canvas_part,
         im.save(im_path+'.bmp')
         file_size_png[t] = get_file_size(im_path+'.png')
         file_size_bmp[t] = get_file_size(im_path+'.bmp')
+        if delete_bmp:
+            os.remove(im_path+'.bmp')
         
     return file_size_bmp, file_size_png
 
         
-def plot_compression(file_size_bmp, file_size_png, time_interval, total_time, part_name = '', delete_bmp = True):
+def plot_compression(file_size_bmp, file_size_png, time_interval, total_time, part_name = ''):
     '''
     plot the file size ratio over time
 
@@ -592,9 +599,8 @@ def plot_compression(file_size_bmp, file_size_png, time_interval, total_time, pa
     plt.xlabel('Time (s)')
     plt.savefig(os.path.join(os.getcwd(),'figs/history_'+part_name+'/file_size_compression_ratio.png'))
 
-    for f in glob.glob(os.path.join(os.getcwd(),'figs/history_'+part_name,'VsTime','/*.bmp'):
-        os.remove(f)
-    
+
+# maybe obsolete?
 def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz', 
                           data_path=os.path.join(os.getcwd(),'data')):
     '''
@@ -622,10 +628,11 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
 
     # return it as a pandas dataframe
     pixel_changes_all = pd.DataFrame(data={'seconds': seconds, 
-                                            'x_coord': x_coord, 
-                                            'y_coord': y_coord,
-                                            'user_index': user_index, 
-                                            'color_index': color_index,
-                                            'moderator_event': moderator_event})
+                                           'x_coord': x_coord, 
+                                           'y_coord': y_coord,
+                                           'user_index': user_index, 
+                                           'color_index': color_index,
+                                           'moderator_event': moderator_event
+                                           })
 
     return pixel_changes_all
