@@ -10,6 +10,9 @@ import seaborn as sns
 import numpy as np
 import os
 import json
+import pickle
+import sys
+import glob
 
 class CanvasPart(object):
     '''
@@ -335,10 +338,10 @@ def show_canvas_part(pixel_changes, ax=None):
     
     '''
 
-    img = np.zeros((1000,1000))
-    img_r = np.ones((1000,1000))
-    img_g = np.ones((1000,1000))
-    img_b = np.ones((1000,1000))
+    img = np.zeros((2000,2000))
+    img_r = np.ones((2000,2000))
+    img_g = np.ones((2000,2000))
+    img_b = np.ones((2000,2000))
     img_r[pixel_changes['x_coord'].astype(int), 
             pixel_changes['y_coord'].astype(int)] = pixel_changes['color_R']/255
     img_g[pixel_changes['x_coord'].astype(int), 
@@ -355,7 +358,7 @@ def show_canvas_part(pixel_changes, ax=None):
 
 def show_part_over_time(canvas_part, 
                         time_interval, # in seconds
-                        total_time=297000 # in seconds
+                        total_time=301000 # in seconds
                         ):
     '''
     
@@ -416,7 +419,8 @@ def show_part_over_time(canvas_part,
 
     return time_inds_list
 
-def save_and_compress(canvas_part, time_inds_list, bmp=True, png=True):
+def save_and_compress(canvas_part, time_inds_list, image_path,
+                      bmp=True, png=True):
     '''
     parameters
     ----------
@@ -460,17 +464,21 @@ def save_and_compress(canvas_part, time_inds_list, bmp=True, png=True):
         for j in range(0, len(x_change_coords_integrated)):
             pixels[int(x_change_coords_integrated[j] - x_min), 
                    int(y_change_coords_integrated[j] - y_min)] = tuple(colors.transpose()[j].astype(int))
-        
+
+        if not os.path.exists(image_path):
+            os.makedirs(image_path)
         if bmp:
-            im.save('frames' + str(i) + '.bmp')
-            with open('frames' + str(i) + '.bmp', "rb") as image_file:
+            bmp_file = os.path.join(image_path, 'frames' + str(i) + '.bmp')
+            im.save(bmp_file)
+            with open(bmp_file, "rb") as image_file:
                 f = image_file.read()
                 byte_array = bytearray(f)
             file_size_bmp[i] = len(byte_array)
             
         if png:
-            im.save('compressed_frames' + str(i) + '.png', optimize = True)
-            with open('compressed_frames' + str(i) + '.png', "rb") as image_file:
+            png_file = os.path.join(image_path, 'frames' + str(i) + '.png')
+            im.save(png_file, optimize = True)
+            with open(png_file, "rb") as image_file:
                 f = image_file.read()
                 byte_array = bytearray(f)
             file_size_png[i] = len(byte_array)
@@ -505,6 +513,7 @@ def plot_compression(file_size_bmp, file_size_png, time_interval, total_time):
 def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz', 
                           data_path=os.path.join(os.getcwd(),'data')):
     '''
+    load all the pixel change data and put it in a pandas array for easy access
     
     parameters
     ----------
@@ -514,7 +523,7 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
     returns
     -------
     pixel_changes_all : 2d pandas dataframe 
-            Contains all of the spixel change data from the entire dataset
+            Contains all of the pixel change data from the entire dataset
 
     '''
     pixel_changes_all_npz = np.load(os.path.join(data_path, data_file))
@@ -536,3 +545,73 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
                                             'moderator_event': moderator_event})
 
     return pixel_changes_all
+
+
+def save_canvas_part_time_steps(canvas_comp, 
+                                pixel_changes_all, 
+                                time_inds_list_comp,
+                                time_interval,
+                                file_size_bmp,
+                                file_size_png):
+    '''
+    save the variables associated with the CanvasPart object 
+
+    '''
+    with open('canvas_part_data.pickle', 'wb') as handle:
+        pickle.dump([canvas_comp, 
+                    pixel_changes_all, 
+                    time_inds_list_comp,
+                    time_interval,
+                    file_size_bmp,
+                    file_size_png], 
+                    handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+def load_canvas_part_time_steps():
+    '''
+    save the variables associated with the CanvasPart object 
+    '''
+    with open('canvas_part_data.pickle','rb') as f:  # Python 3: open(..., 'rb')
+        canvas_part_parameters = pickle.load(f)
+
+    return canvas_part_parameters
+
+def save_movie(image_path, 
+               movie_tool='moviepy', 
+               fps=1,
+               codec='libx264',
+               video_type='mp4'):
+    '''
+    Save movie of .png images in the path.
+    
+    parameters
+    ----------
+    image_path: string
+        Path where .png images can be found
+    movie_tool: string
+        Movie handling package you want to use
+        values can be 'moviepy', 'ffmpeg-python', or 'ffmpeg'
+        You must have the corresponding packages installed for this to work.
+        'moviepy' and 'ffmpeg-python' refer to python packages. 'ffmpeg' refers 
+        to software that must be installed on your system without requiring a 
+        specific python package. 
+    '''
+    image_files = glob.glob(os.path.join(image_path,'*.png'))
+    png_name0 = os.path.basename(image_files[0][0:-4])
+    movie_name = png_name0 + '_fps' + str(fps)
+    movie_file = os.path.join(image_path, movie_name) + '.' + video_type
+    
+     
+    if movie_tool=='moviepy':
+        if 'imsc' not in sys.modules:
+            import moviepy.video.io.ImageSequenceClip as imsc
+        clip = imsc.ImageSequenceClip(image_files, fps=fps)
+        clip.write_videofile(movie_file,  codec=codec)
+            
+    if movie_tool=='ffmpeg-python':
+        if movie_tool not in sys.modules:
+            import ffmpeg        
+        (ffmpeg.input(image_path + '/*.png', pattern_type='glob', framerate=fps)
+              .output(movie_file, vcodec=codec).overwrite_output().run())
+
+    if movie_tool=='ffmpeg':
+        os.system('ffmpeg -framerate ' + str(fps) + '-pattern_type glob -i *.png' + codec + ' -y ' + movie_file)
