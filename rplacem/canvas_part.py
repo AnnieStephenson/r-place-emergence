@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import pandas as pd
 import math
-import PIL as pil
+from PIL import Image,ImageColor
 import seaborn as sns
 import numpy as np
 import os
@@ -44,12 +44,16 @@ class CanvasPart(object):
                                 data_path=os.path.join(os.getcwd(),'data'))
         Find all the pixel changes within the boundary of the CanvasPart object
         and set the pixel_changes attribute of the CanvasPart object accordingly
-
+    set_color_dictionaries(self)
+        Set up the dictionaries translating the color index to the right rgb or hex color
+    get_rgb(self, col_idx)
+        Get (r,g,b) triplet from the color index
     '''
     def __init__(self,
                  border_path,
                  pixel_changes_all,
                  data_path=os.path.join(os.getcwd(),'data'),
+                 data_file='PixelChangesCondensedData_sorted.npz',
                  show_coords=False):
         '''
         Constructor for CanvasPart object
@@ -59,24 +63,43 @@ class CanvasPart(object):
         border_path : 2d numpy array with shape (number of points in path, 2)
             Array of x,y coordinates defining the boundary of the CanvasPart
         pixel_changes_all : 2d pandas dataframe 
-            Contains all of the pixel change data from the entire dataset
+            Contains all of the pixel change data from the entire dataset. If ==None, then the whole dataset is loaded when the class instance is initialized.
         data_path : str, optional
             Path to where the pixel data file is stored
         show_coords : bool, optional
             If True, plots the mask of the CanvasPart boundary
         '''
 
+        self.data_path = data_path
+        self.data_file = data_file
         self.border_path = border_path
         self.x_coords = None
         self.y_coords = None
-        self.pixel_changes = None
+        self.pixel_changes = pixel_changes_all
+        self.colidx_to_hex = {}
+        self.colidx_to_rgb = {}
 
+        # set the color (hex and rgb) dictionaries
+        self.set_color_dictionaries()
+    
         # set the x_coords and y_coords within the border
         self.get_bounded_coords(show_coords=show_coords)
 
         # set the pixel changes within the boundary
-        self.find_pixel_changes_boundary(pixel_changes_all)
+        self.find_pixel_changes_boundary(self.pixel_changes)
+        
+    def set_color_dictionaries(self):
+        color_dict_file = open( os.path.join(self.data_path,'ColorsFromIdx.json') )
+        color_dict = json.load(color_dict_file)
+        self.colidx_to_hex = {int(k) : v
+                              for (k,v) in color_dict.items()}
+        self.colidx_to_rgb = {k : ImageColor.getrgb(v)
+                              for (k,v) in self.colidx_to_hex.items()}
 
+    # Get (r,g,b) triplet from the color index
+    def get_rgb(self, col_idx):
+        return self.colidx_to_rgb[col_idx]        
+        
     def get_bounded_coords(self, show_coords=False):
         '''
         Finds the x and y coordinates within the boundary of the 
@@ -107,8 +130,8 @@ class CanvasPart(object):
         self.x_coords = x_coords_boundary
     
     def find_pixel_changes_boundary(self, 
-                                    pixel_changes_all, 
-                                    data_path=os.path.join(os.getcwd(),'data')):     
+                                    pixel_changes_all
+                                    ):     
             '''
             Find all the pixel changes within the boundary of the CanvasPart object
             and set the pixel_changes attribute of the CanvasPart object accordingly
@@ -122,11 +145,21 @@ class CanvasPart(object):
 
             '''
 
-            x_coords_change = np.array(pixel_changes_all['x_coord'])
-            y_coords_change = np.array(pixel_changes_all['y_coord'])
-            color_index_changes = np.array(pixel_changes_all['color_index'])
-            seconds = np.array(pixel_changes_all['seconds'])
-            user_index = np.array(pixel_changes_all['user_index'])
+            if pixel_changes_all == None:
+                pixel_changes_all_npz = np.load(os.path.join(self.data_path, self.data_file))
+
+                ##### load all the arrays
+                seconds = pixel_changes_all_npz['seconds']
+                x_coords_change = pixel_changes_all_npz['pixelXpos']
+                y_coords_change = pixel_changes_all_npz['pixelYpos']
+                color_index_changes = pixel_changes_all_npz['colorIndex']
+
+            else:
+                x_coords_change = np.array(pixel_changes_all['x_coord'])
+                y_coords_change = np.array(pixel_changes_all['y_coord'])
+                color_index_changes = np.array(pixel_changes_all['color_index'])
+                seconds = np.array(pixel_changes_all['seconds'])
+                #user_index = np.array(pixel_changes_all['user_index'])
 
             pixel_change_index = np.where((np.isin(x_coords_change, self.x_coords) 
                                            & np.isin(y_coords_change, self.y_coords)))[0]
@@ -135,31 +168,16 @@ class CanvasPart(object):
             y_coord_change_boundary = y_coords_change[pixel_change_index].astype(int) 
             x_coord_change_boundary = x_coords_change[pixel_change_index].astype(int)
             time_change_boundary = seconds[pixel_change_index]
-            user_id_change_boundary = user_index[pixel_change_index]
+            #user_id_change_boundary = user_index[pixel_change_index]
 
-            # look up the color hex in the dictionary
-            color_dict_path = os.path.join(data_path,'ColorsFromIdx.json')
-            color_dict_file = open(color_dict_path)
-            color_dict = json.load(color_dict_file)
-            color_hex = np.array(list(color_dict.values()))
-            color_change_boundary_hex = color_hex[color_index_changes_boundary]
-
-            # conver the hex to rgb
-            (colors_composition_change_r,
-            colors_composition_change_g,
-            colors_composition_change_b) = hex_to_rgb(color_change_boundary_hex)
-
-            # now make a new dataframe with the pixel change data
-            pixel_changes_boundary = pd.DataFrame(data={'seconds': time_change_boundary, 
+            ##### now make a new dataframe with the pixel change data
+            self.pixel_changes = pd.DataFrame(data={'seconds': time_change_boundary, 
                                                     'x_coord': x_coord_change_boundary, 
                                                     'y_coord': y_coord_change_boundary,
-                                                    'user_id': user_id_change_boundary, 
-                                                    'color_R': colors_composition_change_r,
-                                                    'color_G': colors_composition_change_g,
-                                                    'color_B': colors_composition_change_b})
+                                                    #'user_id': user_id_change_boundary, 
+                                                    'color_id': color_index_changes_boundary,
+                                                    })
 
-
-            self.pixel_changes = pixel_changes_boundary 
 
 class CanvasComposition(CanvasPart):
     '''
@@ -190,6 +208,7 @@ class CanvasComposition(CanvasPart):
                  id, 
                  pixel_changes_all, 
                  data_path = os.path.join(os.getcwd(),'data'), 
+                 data_file='PixelChangesCondensedData_sorted.npz',
                  show_coords = False):
 
         '''
@@ -212,7 +231,7 @@ class CanvasComposition(CanvasPart):
         # TODO: add handling for if path changes over time
         paths, path0 = self.get_atlas_border(id, data_path=data_path)
 
-        super().__init__(path0, pixel_changes_all)
+        super().__init__(path0, pixel_changes_all,data_path=data_path,data_file=data_file,show_coords=show_coords)
         
 
     def get_atlas_border(self, id, data_path=os.path.join(os.getcwd(),'data')): 
@@ -270,8 +289,8 @@ class CanvasArea(CanvasPart):
         Inherited from superclass
 
     '''
-    def __init__(self, border_path, pixel_changes):
-        super().__init__(border_path, pixel_changes)
+    def __init__(self, border_path, pixel_changes,data_path=os.path.join(os.getcwd(),'data'),data_file='PixelChangesCondensedData_sorted.npz'):
+        super().__init__(border_path, pixel_changes,data_path=os.path.join(os.getcwd(),'data'),data_file='PixelChangesCondensedData_sorted.npz')
 
 class ColorMovement:
     '''
@@ -302,8 +321,14 @@ class ColorMovement:
     methods
     -------
     '''
-    
 
+def get_file_size(path):
+    f = open(path, "rb").read()
+    byte_array = bytearray(f)
+    return len(byte_array)
+
+    
+###### This actually repeats the pil.ImageColor.getrgb("#add8e6") function
 def hex_to_rgb(hex_str):
     '''
     Turns hex color string to rgb 
@@ -325,29 +350,30 @@ def hex_to_rgb(hex_str):
         rgb[:,j] = [int(hex_str[j][i:i + len_hex // 3], 16) for i in range(0, len_hex, len_hex // 3)]
     return rgb[0,:], rgb[1,:], rgb[2,:]
 
-def show_canvas_part(pixel_changes, ax=None):  
+def show_canvas_part(cp, time_inds, ax=None):  
     '''
     Plots the pixels of a CanvasPart
 
     parameters
     ----------
-    pixel_changes : 2d pandas array
-        Pixel changes over time within the CanvasPart boundary. 
-        Columns are seconds, x_coord, y_coord, user_id, color_R, color_G, 
-        color_B
+    cp: CanvasPart class instance
+    time_inds: array of time indices of the pixel changes taken into account in the shown canvas
     
     '''
+    pixel_changes = cp.pixel_changes.iloc[time_inds,:]
 
     img = np.zeros((2000,2000))
     img_r = np.ones((2000,2000))
     img_g = np.ones((2000,2000))
     img_b = np.ones((2000,2000))
+    list_rgb = np.array(list(map( cp.get_rgb, pixel_changes['color_id'] )))
+
     img_r[pixel_changes['x_coord'].astype(int), 
-            pixel_changes['y_coord'].astype(int)] = pixel_changes['color_R']/255
+            pixel_changes['y_coord'].astype(int)] = list_rgb[:,0]/255
     img_g[pixel_changes['x_coord'].astype(int), 
-            pixel_changes['y_coord'].astype(int)] = pixel_changes['color_G']/255
+            pixel_changes['y_coord'].astype(int)] = list_rgb[:,1]/255
     img_b[pixel_changes['x_coord'].astype(int), 
-            pixel_changes['y_coord'].astype(int)] = pixel_changes['color_B']/255
+            pixel_changes['y_coord'].astype(int)] = list_rgb[:,2]/255 #pixel_changes['color_B']
     img = np.swapaxes(np.array([img_r, img_g, img_b]), 0, 2)
 
     if ax == None:
@@ -361,7 +387,6 @@ def show_part_over_time(canvas_part,
                         total_time=301000 # in seconds
                         ):
     '''
-    
     parameters
     ----------
     canvas_part : CanvasPart object
@@ -400,9 +425,7 @@ def show_part_over_time(canvas_part,
             # find the indices up to where time is at the current step
             time_inds = np.where(timestamp<=i*time_interval)[0]
             time_inds_list.append(time_inds)
-            pixel_changes_time_integrated = canvas_part.pixel_changes.iloc[time_inds,:]
-
-            show_canvas_part(pixel_changes_time_integrated, ax = ax_single)
+            show_canvas_part(canvas_part, time_inds, ax = ax_single)
             
         if colcount < 9:
             colcount += 1
@@ -449,13 +472,15 @@ def save_and_compress(canvas_part, time_inds_list, image_path,
     file_size_bmp = np.zeros(len(time_inds_list))
     file_size_png = np.zeros(len(time_inds_list))
     for i in range(0,len(time_inds_list)):
-        im = pil.Image.new("RGB",(x_max - x_min + 1, y_max - y_min + 1),"white")
+        im = Image.new("RGB",(x_max - x_min + 1, y_max - y_min + 1),"white")
         pixel_changes_time_integrated = canvas_part.pixel_changes.iloc[time_inds_list[i],:]
+        list_rgb = np.array(list(map( canvas_part.get_rgb, pixel_changes_time_integrated['color_id'] )))
+        
         x_change_coords_integrated =  np.array(pixel_changes_time_integrated['x_coord'])
         y_change_coords_integrated =  np.array(pixel_changes_time_integrated['y_coord'])
-        color_changes_integrated_r =  np.array(pixel_changes_time_integrated['color_R'])
-        color_changes_integrated_g =  np.array(pixel_changes_time_integrated['color_G'])
-        color_changes_integrated_b =  np.array(pixel_changes_time_integrated['color_B'])
+        color_changes_integrated_r =  np.array(list_rgb[:,0]) #pixel_changes_time_integrated['color_R'])
+        color_changes_integrated_g =  np.array(list_rgb[:,1])
+        color_changes_integrated_b =  np.array(list_rgb[:,2])
 
         pixels = im.load()
         colors = np.vstack((color_changes_integrated_r, 
@@ -485,7 +510,76 @@ def save_and_compress(canvas_part, time_inds_list, image_path,
             
     return file_size_bmp, file_size_png
 
-def plot_compression(file_size_bmp, file_size_png, time_interval, total_time):
+# covers most (all?) functionalities of show_canvas_part, show_part_over_time, save_and_compress
+def save_part_over_time_simple(canvas_part,
+                               time_interval, # in seconds
+                               total_time=301000, # in seconds
+                               part_name = '', # only for name of output
+                               delete_bmp = True
+                               ):
+    '''
+    parameters
+    ----------
+    canvas_part : CanvasPart object
+    time_interval : float
+        time interval at which to plot (in seconds)
+    total_time : float
+        total time to plot intervals until (in seconds)
+    part_name : id/name of part for naming output file
+    
+    returns
+    -------
+    file_size_bmp : float
+        size of png image in bytes
+    file_size_png : float
+        size of png image in bytes
+    + saves images of the canvas part for each time step
+    '''
+
+    seconds = canvas_part.pixel_changes['seconds']
+    xcoor = canvas_part.pixel_changes['x_coord']
+    ycoor = canvas_part.pixel_changes['y_coord']
+    col = canvas_part.pixel_changes['color_id']
+
+    num_time_steps = int(np.ceil(total_time/time_interval))
+    file_size_bmp = np.zeros(num_time_steps+1)
+    file_size_png = np.zeros(num_time_steps+1)
+    
+    path_coords = canvas_part.border_path
+    x_min = np.min(path_coords[:,0])
+    x_max = np.max(path_coords[:,0])
+    y_min = np.min(path_coords[:,1])
+    y_max = np.max(path_coords[:,1])
+
+    pixels = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8) ##### consider that [r,g,b] will be readable as (r,g,b) ##### fill as white first ##### not sure why, but the pixels should be [y,x,rgb]
+    out_path = os.path.join(os.getcwd(),'figs/history_'+part_name,'VsTime')
+    try:
+        os.mkdir(os.path.join(os.getcwd(),'figs/history_'+part_name))
+        os.mkdir(out_path)
+    except OSError as err: ###### empty directory if it already exists
+        for f in glob.glob(out_path+'/*'):
+            os.remove(f)
+    
+    tidx = 0
+    for t in range(0,num_time_steps+1): ##### use the fact that arrays are time-sorted
+        while(tidx<seconds.size and seconds[tidx]<t*time_interval):
+            pixels[ycoor[tidx] - y_min, xcoor[tidx] - x_min, :] = canvas_part.get_rgb( col[tidx] ) ##### the magic happens here
+            tidx += 1
+
+        #save image here
+        im = Image.fromarray(pixels)
+        im_path = os.path.join( out_path , 'canvaspart_time{:06d}'.format(int(t*time_interval)) )
+        im.save(im_path+'.png')
+        im.save(im_path+'.bmp')
+        file_size_png[t] = get_file_size(im_path+'.png')
+        file_size_bmp[t] = get_file_size(im_path+'.bmp')
+        if delete_bmp:
+            os.remove(im_path+'.bmp')
+        
+    return file_size_bmp, file_size_png
+
+        
+def plot_compression(file_size_bmp, file_size_png, time_interval, total_time, part_name = ''):
     '''
     plot the file size ratio over time
 
@@ -499,17 +593,21 @@ def plot_compression(file_size_bmp, file_size_png, time_interval, total_time):
         time interval at which to plot (in seconds)
     total_time : float
         total time to plot intervals until (in seconds)
-        
+    part_name : string
+        for the naming of the output saved plot        
     '''
 
-    time = np.arange(time_interval, total_time + time_interval, time_interval)
+    time = np.arange(time_interval, total_time + 2*time_interval, time_interval)
     
     plt.figure()
     plt.plot(time, file_size_png/file_size_bmp)
     sns.despine()
     plt.ylabel('Computable Information Density (file size ratio)')
     plt.xlabel('Time (s)')
+    plt.savefig(os.path.join(os.getcwd(),'figs/history_'+part_name+'/file_size_compression_ratio.png'))
 
+
+# maybe obsolete?
 def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz', 
                           data_path=os.path.join(os.getcwd(),'data')):
     '''
@@ -538,14 +636,14 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
 
     # return it as a pandas dataframe
     pixel_changes_all = pd.DataFrame(data={'seconds': seconds, 
-                                            'x_coord': x_coord, 
-                                            'y_coord': y_coord,
-                                            'user_index': user_index, 
-                                            'color_index': color_index,
-                                            'moderator_event': moderator_event})
+                                           'x_coord': x_coord, 
+                                           'y_coord': y_coord,
+                                           'user_index': user_index, 
+                                           'color_index': color_index,
+                                           'moderator_event': moderator_event
+                                           })
 
     return pixel_changes_all
-
 
 def save_canvas_part_time_steps(canvas_comp, 
                                 pixel_changes_all, 
