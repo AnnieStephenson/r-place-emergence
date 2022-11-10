@@ -283,7 +283,7 @@ class CanvasComposition(CanvasPart):
                 id_index = i
     
         paths = atlas[id_index]['path']
-        path0 = np.array(list(paths.values()))[0] # initial path
+        path0 = np.array(list(paths.values())[0]) # initial path
 
         self.id_name = str(atlas[id_index]['name'])
         composition_classification_file.close()
@@ -377,6 +377,7 @@ def save_part_over_time(canvas_part,
                         total_time=301000, # in seconds
                         part_name = 'cp', # only for name of output
                         delete_bmp = True,
+                        delete_png = False,
                         show_plot = True
                         ):
     '''
@@ -439,7 +440,7 @@ def save_part_over_time(canvas_part,
         #ax = gs.subplots(sharex=True, sharey=True)
         rowcount = 0
         colcount = 0
-        t_inds_list = []
+    t_inds_list = []
     for t_step_idx in range(0, num_time_steps): # use the fact that arrays are time-sorted  
         
         # get the indices of the times within the interval   
@@ -457,6 +458,8 @@ def save_part_over_time(canvas_part,
         file_size_bmp[t_step_idx] = get_file_size(im_path + '.bmp')
         if delete_bmp:
             os.remove(im_path + '.bmp')
+        if delete_png:
+            os.remove(im_path + '.png')
 
         if show_plot:
             if len(ax.shape)==2:
