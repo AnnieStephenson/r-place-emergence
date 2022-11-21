@@ -4,11 +4,11 @@ import ROOT
 import numpy as np
 from array import array
 
-def DrawHeatMap(h, Zmin, Zmax, title, logz):
+def DrawHeatMap(h, Zmin, Zmax, file_title, hist_title=';pixel X; pixel Y;# of pixel changes', logz=True):
     
     h.SetMaximum(Zmax)
     h.SetMinimum(Zmin)
-    h.SetTitle(';pixel X; pixel Y;# of pixel changes')
+    h.SetTitle(hist_title)
     
     h.GetZaxis().SetTitleOffset(1.3)
 
@@ -49,10 +49,10 @@ def DrawHeatMap(h, Zmin, Zmax, title, logz):
     yaxislabels.DrawLatex(leftm-0.008,1-topm-offset_of_zero - 0.75*(1-topm-bottomm-2*offset_of_zero),"1500");
     yaxislabels.DrawLatex(leftm-0.008,bottomm+offset_of_zero,"2000");
  
-    c1.SaveAs('figs/'+title)
+    c1.SaveAs('figs/'+file_title)
 
 
-
+'''
 arrays = np.load('data/PixelChangesCondensedData_sorted.npz')
 sec = arrays['seconds']
 eventNb = arrays['eventNumber']
@@ -151,7 +151,7 @@ PixelsPerUser.GetYaxis().SetRangeUser(0.5,1.3*PixelsPerUser.GetMaximum())
 PixelsPerUser.SetLineWidth(1)
 PixelsPerUser.Draw()
 
-print('mean number of pixel changes per user =',PixelsPerUser..GetMean())
+print('mean number of pixel changes per user =',PixelsPerUser.GetMean())
 
 c2.SetMargin(0.1,0.05,0.1,0.04) ##### left,right,bottom,top
 c2.SetLogy()
@@ -210,3 +210,4 @@ c2.SetLogy()
 c2.SetLogx()
 
 c2.SaveAs('figs/ChangesPerPixel.pdf')
+'''
