@@ -1,16 +1,22 @@
-import matplotlib.pyplot as plt
+import json
+import os
+import pickle
 import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
-import numpy as np
-import os
+from PIL import Image, ImageColor
+
+import canvas_part as cp
+from Variables import *  # names of variables are very explicit here, no no worries about namespace
 
 
 def calc_num_pixel_changes(canvas_part,
                            time_inds_list,
                            time_interval):
     '''
-    calculate several quantities related to the rate of pixel changes 
+    calculate several quantities related to the rate of pixel changes
 
     parameters
     ----------
@@ -35,7 +41,7 @@ def calc_num_pixel_changes(canvas_part,
     num_pixel_changes = np.zeros(len(time_inds_list))
     num_touched_pixels = np.zeros(len(time_inds_list))
     num_users = np.zeros(len(time_inds_list))
-    for i in range(0,len(time_inds_list)):
+    for i in range(0, len(time_inds_list)):
 
         # get number of pixel changes that have had at least one change
         # since the start
@@ -58,22 +64,139 @@ def calc_num_pixel_changes(canvas_part,
         # number of pixel changes within the current time interval
         num_pixel_changes[i] = len(time_inds_list[i])
 
-    return (num_pixel_changes, 
+    return (num_pixel_changes,
             num_touched_pixels,
             num_users)
 
 
-def plot_compression_vs_pixel_changes(num_pixel_changes, 
-                                      num_touched_pixels, 
+def stability(canvas_part,
+              t_lims=[0, TIME_TOTAL],
+              part_name='cp'  # only for name of output
+              ):
+    '''
+    makes map of stability in some time range.
+    Stability of a pixel is the fraction of time it spent in its 'favorite' color (meaning the color it was in for the most time)
+
+    parameters
+    ----------
+    canvas_part : CanvasPart object
+        The CanvasPart object for which we want to calculate the stability
+    t_lims : array of doublets of floats
+        time intervals in which the pixel states are studied. Must be ordered in a crescent way, and start at 0
+
+    returns
+    -------
+    stability array (and colors sorted by dominance) saved in pickle file, for each time step
+    '''
+
+    if t_lims[0] != 0:
+        print('WARNING: this function \'stability\' is not meant to work from a lower time limit > 0 !!!')
+
+    seconds = np.array(canvas_part.pixel_changes['seconds'])
+    xcoor = np.array(canvas_part.pixel_changes['x_coord'])
+    ycoor = np.array(canvas_part.pixel_changes['y_coord'])
+    color = np.array(canvas_part.pixel_changes['color_id'])
+
+    path_coords = canvas_part.border_path
+    x_min = np.min(path_coords[:, 0])
+    x_max = np.max(path_coords[:, 0])
+    y_min = np.min(path_coords[:, 1])
+    y_max = np.max(path_coords[:, 1])
+
+    color_dict = json.load(open(os.path.join(canvas_part.data_path, 'ColorDict.json')))
+    white = color_dict['#FFFFFF']
+    current_color = np.full((x_max - x_min + 1, y_max - y_min + 1), white, dtype='int8')
+
+    for t_step in range(0, len(t_lims)-1):
+        t_inds = np.where((seconds >= t_lims[t_step]) & (seconds < t_lims[t_step+1]) & (xcoor >= x_min) & (xcoor <= x_max) & (ycoor >= y_min) & (ycoor <= y_max))[0]
+
+        time_spent_in_color = np.zeros((x_max - x_min + 1, y_max - y_min + 1, len(color_dict)), dtype='float64')
+        last_time_changed = np.full((x_max - x_min + 1, y_max - y_min + 1), t_lims[t_step], dtype='float64')
+        # neglect the time before the opening of the supplementary canvas quarters
+        last_time_changed[max(1000-x_min, 0):, :max(1000-y_min, 0)] = max(t_lims[t_step], TIME_ENLARGE1)
+        last_time_changed[:, max(1000-y_min, 0):] = max(t_lims[t_step], TIME_ENLARGE2)
+
+        for tidx in t_inds:
+            x = xcoor[tidx] - x_min
+            y = ycoor[tidx] - y_min
+            s = seconds[tidx]
+            c = color[tidx]
+
+            # add the time that this pixel spent in the most recent color
+            time_spent_in_color[x, y, current_color[x, y]] += s - last_time_changed[x, y]
+
+            # update the time and color of the last pixel change for this pixel
+            last_time_changed[x, y] = s
+            current_color[x, y] = c
+
+        # add the time spent in the final color (from the last pixel change to the end-time)
+        for x in range(0, x_max-x_min+1):
+            for y in range(0, y_max-y_min+1):
+                time_spent_in_color[x, y, current_color[x, y]] += t_lims[t_step+1] - last_time_changed[x, y]
+
+        # get the color where pixels spent the most time
+        stable_colors = np.flip(np.argsort(time_spent_in_color, axis=2), axis=2)  # sort in descending order
+        stable_timefraction = np.take_along_axis(time_spent_in_color, stable_colors, axis=2)
+        stable_timefraction[:max(1000-x_min, 0), :max(1000-y_min, 0), :] /= t_lims[t_step+1] - t_lims[t_step]
+        stable_timefraction[max(1000-x_min, 0):, :max(1000-y_min, 0), :] /= t_lims[t_step+1] - max(t_lims[t_step], TIME_ENLARGE1)
+        stable_timefraction[:,                    max(1000-y_min, 0):, :] /= t_lims[t_step+1] - max(t_lims[t_step], TIME_ENLARGE2)
+
+        # check that sum along axis=2 is t+1 - t
+        '''
+        sum_timefraction = np.sum(stable_timefraction, axis=2)
+        for x in range(0, x_max-x_min+1):
+            for y in range(0, y_max-y_min+1):
+                if abs(sum_timefraction[x, y]-1) > 1e-6:
+                    print("problem with time counting in pixel x,y=", x, y, "!!!: ", sum_timefraction[x, y]-1)
+        '''
+
+        file_path = os.path.join(os.path.join(os.getcwd(), 'data'), 'stability_time{:06d}to{:06d}.pickle'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+        with open(file_path, 'wb') as handle:
+            pickle.dump([stable_timefraction,
+                        stable_colors],
+                        handle,
+                        protocol=pickle.HIGHEST_PROTOCOL)
+
+        # create images containing the (sub)dominant color only
+        pixels1 = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8)
+        pixels2 = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8)
+        pixels3 = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8)
+
+        pixels1 = canvas_part.get_rgb(np.swapaxes(stable_colors[:,:,0], 0, 1))  
+        pixels2 = canvas_part.get_rgb(np.swapaxes(stable_colors[:,:,1], 0, 1))
+        pixels3 = canvas_part.get_rgb(np.swapaxes(stable_colors[:,:,2], 0, 1))
+        # if second and/or third most used colors don't exist (time_spent == 0), then use the first or second most used color instead
+        inds_to_change1 = np.where(stable_timefraction[:,:,1] < 1e-9)
+        pixels2[inds_to_change1] = pixels1[inds_to_change1] 
+        inds_to_change2 = np.where(stable_timefraction[:,:,2] < 1e-9)
+        pixels3[inds_to_change2] = pixels2[inds_to_change2] # also changes to the first most used if there is no second most used color
+
+        # save images
+        try:
+            os.makedirs(os.path.join(os.getcwd(), 'figs', 'history_' + part_name))
+        except OSError: 
+            print('')
+        im1 = Image.fromarray(pixels1.astype(np.uint8))
+        im1_path = os.path.join(os.getcwd(), 'figs','history_' + part_name, 'MostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+        im1.save(im1_path)
+        im2 = Image.fromarray(pixels2.astype(np.uint8))
+        im2_path = os.path.join(os.getcwd(), 'figs','history_' + part_name, 'SecondMostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+        im2.save(im2_path)
+        im3 = Image.fromarray(pixels3.astype(np.uint8))
+        im3_path = os.path.join(os.getcwd(), 'figs','history_' + part_name, 'ThirdMostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+        im3.save(im3_path)
+
+
+def plot_compression_vs_pixel_changes(num_pixel_changes,
+                                      num_touched_pixels,
                                       num_users,
                                       time_interval,
-                                      file_size_png, 
+                                      file_size_png,
                                       file_size_bmp):
-
     '''
     plot the pixel change quanities and CID (computable information density)
     '''
-    time_sec = time_interval*np.linspace(1,len(num_pixel_changes),len(num_pixel_changes))
+    time_sec = time_interval*np.linspace(1, len(num_pixel_changes), len(num_pixel_changes))
     fig_cid_vs_time = plt.figure()
     plt.plot(time_sec, file_size_png/file_size_bmp)
     plt.ylabel('Computational Information Density  (file size ratio)')
@@ -116,9 +239,9 @@ def plot_compression_vs_pixel_changes(num_pixel_changes,
     plt.ylabel('Computational Information Density (file size ratio)')
     sns.despine()
 
-    return (fig_cid_vs_time, 
-            fig_num_touched_pix_vs_time, 
-            fig_num_pix_changes_vs_time, 
+    return (fig_cid_vs_time,
+            fig_num_touched_pix_vs_time,
+            fig_num_pix_changes_vs_time,
             fig_users_vs_time,
             fig_cid_vs_num_pix_changes,
             fig_cid_vs_num_touched_pix,

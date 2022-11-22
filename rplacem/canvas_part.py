@@ -8,13 +8,13 @@ import shutil
 import sys
 from operator import mod
 from re import T
-
 import cv2
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from PIL import Image, ImageColor
+from Variables import * # names of variables are very explicit here, no no worries about namespace
 
 
 class CanvasPart(object):
@@ -376,7 +376,7 @@ def show_canvas_part(pixels, ax=None):
 
 def save_part_over_time(canvas_part,
                         time_interval,  # in seconds
-                        total_time=301000,  # in seconds
+                        total_time=TIME_TOTAL,  # in seconds
                         part_name='cp',  # only for name of output
                         delete_bmp=True,
                         delete_png=False,
@@ -431,8 +431,8 @@ def save_part_over_time(canvas_part,
     try:
         os.makedirs(out_path)
     except OSError:  # empty directory if it already exists
-        shutil.rmtree(out_path)
-        os.makedirs(out_path)
+        shutil.rmtree(out_path_time)
+        #os.makedirs(out_path)
     os.makedirs(os.path.join(out_path_time))
 
     if show_plot:
@@ -455,7 +455,7 @@ def save_part_over_time(canvas_part,
             print('Ran', 100*t_step_idx/num_time_steps, '% of the steps')
 
         # get the indices of the times within the interval
-        t_inds = np.where((seconds > t_step_idx*time_interval) & (seconds < (t_step_idx + 1)*time_interval))[0]
+        t_inds = np.where((seconds >= t_step_idx*time_interval) & (seconds < (t_step_idx + 1)*time_interval))[0]
         t_inds_list.append(t_inds)
         if len(t_inds) != 0:
             pixels[ycoor[t_inds]-y_min, xcoor[t_inds]-x_min, :] = canvas_part.get_rgb(color[t_inds])
@@ -487,7 +487,7 @@ def save_part_over_time(canvas_part,
                     colcount = 0
                     rowcount += 1
 
-    print('produced',num_time_steps+1,'images vs time')
+    print('produced', num_time_steps+1, 'images vs time')
     return file_size_bmp, file_size_png, t_inds_list
 
 
@@ -506,7 +506,7 @@ def plot_compression(file_size_bmp, file_size_png, time_interval, total_time, pa
     total_time : float
         total time to plot intervals until (in seconds)
     part_name : string
-        for the naming of the output saved plot        
+        for the naming of the output saved plot
     '''
 
     time = np.arange(time_interval, total_time + 2*time_interval, time_interval)
