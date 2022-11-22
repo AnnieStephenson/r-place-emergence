@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from PIL import Image, ImageColor
-from Variables import * # names of variables are very explicit here, no no worries about namespace
+from . import Variables as var
 
 
 class CanvasPart(object):
@@ -376,7 +376,7 @@ def show_canvas_part(pixels, ax=None):
 
 def save_part_over_time(canvas_part,
                         time_interval,  # in seconds
-                        total_time=TIME_TOTAL,  # in seconds
+                        total_time=var.TIME_TOTAL,  # in seconds
                         part_name='cp',  # only for name of output
                         delete_bmp=True,
                         delete_png=False,

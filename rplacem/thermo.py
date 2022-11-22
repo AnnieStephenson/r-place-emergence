@@ -7,9 +7,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from PIL import Image, ImageColor
-
-import canvas_part as cp
-from Variables import *  # names of variables are very explicit here, no no worries about namespace
+from . import Variables as var
+from . import canvas_part as cp
 
 
 def calc_num_pixel_changes(canvas_part,
@@ -70,7 +69,7 @@ def calc_num_pixel_changes(canvas_part,
 
 
 def stability(canvas_part,
-              t_lims=[0, TIME_TOTAL],
+              t_lims=[0, var.TIME_TOTAL],
               part_name='cp'  # only for name of output
               ):
     '''
@@ -113,8 +112,8 @@ def stability(canvas_part,
         time_spent_in_color = np.zeros((x_max - x_min + 1, y_max - y_min + 1, len(color_dict)), dtype='float64')
         last_time_changed = np.full((x_max - x_min + 1, y_max - y_min + 1), t_lims[t_step], dtype='float64')
         # neglect the time before the opening of the supplementary canvas quarters
-        last_time_changed[max(1000-x_min, 0):, :max(1000-y_min, 0)] = max(t_lims[t_step], TIME_ENLARGE1)
-        last_time_changed[:, max(1000-y_min, 0):] = max(t_lims[t_step], TIME_ENLARGE2)
+        last_time_changed[max(1000-x_min, 0):, :max(1000-y_min, 0)] = max(t_lims[t_step], var.TIME_ENLARGE1)
+        last_time_changed[:, max(1000-y_min, 0):] = max(t_lims[t_step], var.TIME_ENLARGE2)
 
         for tidx in t_inds:
             x = xcoor[tidx] - x_min
@@ -138,8 +137,8 @@ def stability(canvas_part,
         stable_colors = np.flip(np.argsort(time_spent_in_color, axis=2), axis=2)  # sort in descending order
         stable_timefraction = np.take_along_axis(time_spent_in_color, stable_colors, axis=2)
         stable_timefraction[:max(1000-x_min, 0), :max(1000-y_min, 0), :] /= t_lims[t_step+1] - t_lims[t_step]
-        stable_timefraction[max(1000-x_min, 0):, :max(1000-y_min, 0), :] /= t_lims[t_step+1] - max(t_lims[t_step], TIME_ENLARGE1)
-        stable_timefraction[:,                    max(1000-y_min, 0):, :] /= t_lims[t_step+1] - max(t_lims[t_step], TIME_ENLARGE2)
+        stable_timefraction[max(1000-x_min, 0):, :max(1000-y_min, 0), :] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE1)
+        stable_timefraction[:,                    max(1000-y_min, 0):, :] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE2)
 
         # check that sum along axis=2 is t+1 - t
         '''
