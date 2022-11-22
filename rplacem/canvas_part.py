@@ -12,10 +12,9 @@ import cv2
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import seaborn as sns
 from PIL import Image, ImageColor
-from Variables import * # names of variables are very explicit here, no no worries about namespace
+from . import Variables as var
 
 
 class CanvasPart(object):
@@ -32,7 +31,7 @@ class CanvasPart(object):
         x-coordinates of all the pixels contained inside the CanvasPart
     y_coords : 1d numpy array
         y0coordinates of all the pixels contained inside the CanvasPart
-    pixel_changes : 2d pandas array
+    pixel_changes : 2d numpy array
         Pixel changes over time within the CanvasPart boundary. 
         Columns are seconds, x_coord, y_coord, user_id, color_R, color_G, 
         color_B
@@ -75,7 +74,7 @@ class CanvasPart(object):
         ----------
         border_path : 2d numpy array with shape (number of points in path, 2)
             Array of x,y coordinates defining the boundary of the CanvasPart
-        pixel_changes_all : 2d pandas dataframe or None, optional
+        pixel_changes_all : 2d numpy dataframe or None, optional
             Contains all of the pixel change data from the entire dataset. If ==None, then the whole dataset is loaded when the class instance is initialized.
         data_path : str, optional
             Path to where the pixel data file is stored
@@ -143,8 +142,8 @@ class CanvasPart(object):
 
         y_coords_boundary, x_coords_boundary = np.where(masked_img == 1)
 
-        self.y_coords = y_coords_boundary
-        self.x_coords = x_coords_boundary
+        self.y_coords = y_coords_boundary.astype(np.uint16)
+        self.x_coords = x_coords_boundary.astype(np.uint16)
 
     def find_pixel_changes_boundary(self,
                                     pixel_changes_all
@@ -155,45 +154,42 @@ class CanvasPart(object):
 
         parameters
         ----------
-        pixel_changes_all : 2d pandas dataframe 
+        pixel_changes_all : 2d numpy array or None
             Contains all of the pixel change data from the entire dataset
         data_path : str, optional
             Path to where the pixel data file is stored
 
+        Notes
+        -----
+        Columns of pixel change array
+        0: seconds
+        1: x_coord
+        2: y_coord
+        3: user_index
+        4: color_index
+        5: moderator_event
         '''
-
         if pixel_changes_all is None:
-            pixel_changes_all_npz = np.load(os.path.join(self.data_path, self.data_file))
+            pixel_changes_all = get_all_pixel_changes()
 
-            # load all the arrays
-            seconds = pixel_changes_all_npz['seconds']
-            x_coords_change = pixel_changes_all_npz['pixelXpos']
-            y_coords_change = pixel_changes_all_npz['pixelYpos']
-            user_index = pixel_changes_all_npz['userIndex']
-            color_index_changes = pixel_changes_all_npz['colorIndex']
+        x_max = np.max(self.x_coords)
+        x_min = np.min(self.x_coords)
+        y_max = np.max(self.y_coords)
+        y_min = np.min(self.y_coords)
 
-        else:
-            x_coords_change = np.array(pixel_changes_all['x_coord'])
-            y_coords_change = np.array(pixel_changes_all['y_coord'])
-            color_index_changes = np.array(pixel_changes_all['color_index'])
-            seconds = np.array(pixel_changes_all['seconds'])
-            user_index = np.array(pixel_changes_all['user_index'])
-        pixel_change_index = np.where((np.isin(x_coords_change, self.x_coords)
-                                       & np.isin(y_coords_change, self.y_coords)))[0]
+        # limit the pixel changes array to the min and max boundary coordinates
+        ind_x = np.where((pixel_changes_all[1].astype(np.uint16)<=x_max) 
+                          & (pixel_changes_all[1].astype(np.uint16)>=x_min))[0]
+        pixel_changes_xlim = pixel_changes_all[:,ind_x]
+        ind_y = np.where((pixel_changes_xlim[2].astype(np.uint16)<=y_max) 
+                         & (pixel_changes_xlim[2].astype(np.uint16)>=y_min))[0]
+        pixel_changes_lim = pixel_changes_xlim[:,ind_y]
 
-        color_index_changes_boundary = color_index_changes[pixel_change_index]
-        y_coord_change_boundary = y_coords_change[pixel_change_index].astype(int)
-        x_coord_change_boundary = x_coords_change[pixel_change_index].astype(int)
-        time_change_boundary = seconds[pixel_change_index]
-        user_id_change_boundary = user_index[pixel_change_index]
-
-        # now make a new dataframe with the pixel change data
-        self.pixel_changes = pd.DataFrame(data={'seconds': time_change_boundary,
-                                                'x_coord': x_coord_change_boundary,
-                                                'y_coord': y_coord_change_boundary,
-                                                'user_id': user_id_change_boundary,
-                                                'color_id': color_index_changes_boundary,
-                                                })
+        # find the pixel changes that correspond to pixels inside the boundary
+        pixel_change_index = np.where(np.isin((pixel_changes_lim[1] + 10000.*pixel_changes_lim[2]), 
+                                       (self.x_coords + 10000.*self.y_coords)))[0]
+        
+        self.pixel_changes = pixel_changes_lim[:,pixel_change_index] 
 
 
 class CanvasComposition(CanvasPart):
@@ -235,7 +231,7 @@ class CanvasComposition(CanvasPart):
         ----------
         id: string
             The string from the atlas file that identifies a particular composition
-        pixel_changes_all : 2d pandas dataframe or None, optional
+        pixel_changes_all : 2d numpy array or None, optional
             Contains all of the pixel change data from the entire dataset
         data_path : str, optional
             Path to where the pixel data file is stored
@@ -247,7 +243,8 @@ class CanvasComposition(CanvasPart):
         # path0 is the initial path.
         # TODO: add handling for if path changes over time
         paths, path0 = self.get_atlas_border(id, data_path=data_path)
-
+        self.id = id 
+ 
         super().__init__(path0,
                          pixel_changes_all=pixel_changes_all,
                          data_path=data_path,
@@ -338,7 +335,7 @@ class ColorMovement:
         ColorMovement. The other pixels in the ColorMovement are nearest 
         neighbors of the seed_point, and then nearest neighbors of those 
         neighbors, and so on. 
-    pixel_changes : 2d pandas array
+    pixel_changes : 2d numpy array
         characterizes the growth and diffusion of the pixels in the 
         ColorMovement object rather than tracking the pixel changes within a 
         set border. Each pixel_change has a start and stop time to identify 
@@ -379,7 +376,7 @@ def show_canvas_part(pixels, ax=None):
 
 def save_part_over_time(canvas_part,
                         time_interval,  # in seconds
-                        total_time=TIME_TOTAL,  # in seconds
+                        total_time=var.TIME_TOTAL,  # in seconds
                         part_name='cp',  # only for name of output
                         delete_bmp=True,
                         delete_png=False,
@@ -413,10 +410,10 @@ def save_part_over_time(canvas_part,
         each time interval
     '''
 
-    seconds = np.array(canvas_part.pixel_changes['seconds'])
-    xcoor = np.array(canvas_part.pixel_changes['x_coord'])
-    ycoor = np.array(canvas_part.pixel_changes['y_coord'])
-    color = np.array(canvas_part.pixel_changes['color_id'])
+    seconds = np.array(canvas_part.pixel_changes[0,])
+    xcoor = np.array(canvas_part.pixel_changes[1])
+    ycoor = np.array(canvas_part.pixel_changes[2])
+    color = np.array(canvas_part.pixel_changes[4])
 
     num_time_steps = int(np.ceil(total_time/time_interval))
     file_size_bmp = np.zeros(num_time_steps+1)
@@ -449,12 +446,12 @@ def save_part_over_time(canvas_part,
         colcount = 0
     t_inds_list = []
 
-    i_fractionPrint = 0  # only for output of a message when a fraction of the steps are ran
+    i_fraction_print = 0  # only for output of a message when a fraction of the steps are ran
 
     for t_step_idx in range(-1, num_time_steps):  # fixed this: want a blank image at t=0
 
-        if t_step_idx/num_time_steps > i_fractionPrint/10:
-            i_fractionPrint += 1
+        if t_step_idx/num_time_steps > i_fraction_print/10:
+            i_fraction_print += 1
             print('Ran', 100*t_step_idx/num_time_steps, '% of the steps')
 
         # get the indices of the times within the interval
@@ -476,18 +473,19 @@ def save_part_over_time(canvas_part,
             os.remove(im_path + '.png')
 
         if show_plot:
-            if len(ax.shape) == 2:
-                ax_single = ax[rowcount, colcount]
-            else:
-                ax_single = ax[t_step_idx]
-            ax_single.axis('off')
-            show_canvas_part(pixels, ax=ax_single)
+            if t_step_idx>-1:
+                if len(ax.shape) == 2:
+                    ax_single = ax[rowcount, colcount]
+                else:
+                    ax_single = ax[t_step_idx]
+                ax_single.axis('off')
+                show_canvas_part(pixels, ax=ax_single)
 
-            if colcount < 9:
-                colcount += 1
-            else:
-                colcount = 0
-                rowcount += 1
+                if colcount < 9:
+                    colcount += 1
+                else:
+                    colcount = 0
+                    rowcount += 1
 
     print('produced', num_time_steps+1, 'images vs time')
     return file_size_bmp, file_size_png, t_inds_list
@@ -524,7 +522,7 @@ def plot_compression(file_size_bmp, file_size_png, time_interval, total_time, pa
 def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
                           data_path=os.path.join(os.getcwd(), 'data')):
     '''
-    load all the pixel change data and put it in a pandas array for easy access
+    load all the pixel change data and put it in a numpy array for easy access
 
     parameters
     ----------
@@ -533,28 +531,33 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
 
     returns
     -------
-    pixel_changes_all : 2d pandas dataframe 
+    pixel_changes_all : 2d numpy array
             Contains all of the pixel change data from the entire dataset
-
+            Columns of pixel change array are
+            0: seconds
+            1: x_coord
+            2: y_coord
+            3: user_index
+            4: color_index
+            5: moderator_event
     '''
     pixel_changes_all_npz = np.load(os.path.join(data_path, data_file))
 
     # load all the arrays
-    seconds = pixel_changes_all_npz['seconds']
-    x_coord = pixel_changes_all_npz['pixelXpos']
-    y_coord = pixel_changes_all_npz['pixelYpos']
-    user_index = pixel_changes_all_npz['userIndex']
-    color_index = pixel_changes_all_npz['colorIndex']
-    moderator_event = pixel_changes_all_npz['moderatorEvent']
+    seconds = np.array(pixel_changes_all_npz['seconds'], dtype=np.uint32)
+    x_coord = np.array(pixel_changes_all_npz['pixelXpos'], dtype=np.uint16)
+    y_coord = np.array(pixel_changes_all_npz['pixelYpos'], dtype=np.uint16)
+    user_index = np.array(pixel_changes_all_npz['userIndex'], dtype=np.uint32)
+    color_index = np.array(pixel_changes_all_npz['colorIndex'], dtype=np.uint8)
+    moderator_event = np.array(pixel_changes_all_npz['moderatorEvent'], dtype=np.uint8)
 
-    # return it as a pandas dataframe
-    pixel_changes_all = pd.DataFrame(data={'seconds': seconds,
-                                           'x_coord': x_coord,
-                                           'y_coord': y_coord,
-                                           'user_index': user_index,
-                                           'color_index': color_index,
-                                           'moderator_event': moderator_event
-                                           })
+    # return it as an array
+    pixel_changes_all = np.array([seconds, 
+                                  x_coord,
+                                  y_coord,
+                                  user_index,
+                                  color_index,
+                                  moderator_event])
 
     return pixel_changes_all
 
@@ -636,11 +639,11 @@ def save_movie(image_path,
         os.system('ffmpeg -framerate ' + str(fps) + '-pattern_type glob -i *.png' + codec + ' -y ' + movie_file)
 
 
-def check_time(statement):
+def check_time(statement, sort = 'cumtime'):
     '''
     parameters:
     -----------
     statement: string
 
     '''
-    cProfile.run(statement)
+    cProfile.run(statement, sort=sort)
