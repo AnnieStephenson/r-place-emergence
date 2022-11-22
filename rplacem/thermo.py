@@ -41,10 +41,10 @@ def calc_num_pixel_changes(canvas_part,
         # since the start
 
         # get the pixel change coordinates for the interval
-        pixel_changes_time_int = canvas_part.pixel_changes.iloc[time_inds_list[i],:]
-        x_coord = np.array(pixel_changes_time_int['x_coord'])
-        y_coord = np.array(pixel_changes_time_int['y_coord'])
-        user_id = np.array(pixel_changes_time_int['user_id'])
+        pixel_changes_time_int = canvas_part.pixel_changes[:,time_inds_list[i]]
+        x_coord = np.array(pixel_changes_time_int[1])
+        y_coord = np.array(pixel_changes_time_int[2])
+        user_id = np.array(pixel_changes_time_int[3])
         coords = np.vstack((x_coord, y_coord))
 
         # get rid of the duplicate pixel changes
