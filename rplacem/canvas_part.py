@@ -178,11 +178,11 @@ class CanvasPart(object):
         y_min = np.min(self.y_coords)
 
         # limit the pixel changes array to the min and max boundary coordinates
-        ind_x = np.where((pixel_changes_all[1].astype(np.uint16)<=x_max) 
-                          & (pixel_changes_all[1].astype(np.uint16)>=x_min))[0]
+        ind_x = np.where((pixel_changes_all[1]<=x_max) 
+                          & (pixel_changes_all[1]>=x_min))[0]
         pixel_changes_xlim = pixel_changes_all[:,ind_x]
-        ind_y = np.where((pixel_changes_xlim[2].astype(np.uint16)<=y_max) 
-                         & (pixel_changes_xlim[2].astype(np.uint16)>=y_min))[0]
+        ind_y = np.where((pixel_changes_xlim[2]<=y_max) 
+                         & (pixel_changes_xlim[2]>=y_min))[0]
         pixel_changes_lim = pixel_changes_xlim[:,ind_y]
 
         # find the pixel changes that correspond to pixels inside the boundary
@@ -221,6 +221,7 @@ class CanvasComposition(CanvasPart):
     def __init__(self,
                  id,
                  pixel_changes_all=None,
+                 atlas=None,
                  data_path=os.path.join(os.getcwd(), 'data'),
                  data_file='PixelChangesCondensedData_sorted.npz',
                  show_coords=False):
@@ -242,7 +243,7 @@ class CanvasComposition(CanvasPart):
         # get the border_path from the atlas.json file
         # path0 is the initial path.
         # TODO: add handling for if path changes over time
-        paths, path0 = self.get_atlas_border(id, data_path=data_path)
+        paths, path0 = self.get_atlas_border(id, atlas=atlas, data_path=data_path)
         self.id = id 
  
         super().__init__(path0,
@@ -251,7 +252,7 @@ class CanvasComposition(CanvasPart):
                          data_file=data_file,
                          show_coords=show_coords)
 
-    def get_atlas_border(self, id, data_path=os.path.join(os.getcwd(), 'data')):
+    def get_atlas_border(self, id, atlas=None, data_path=os.path.join(os.getcwd(), 'data')):
         '''
         Get the border of the CanvasComposition object from the atlas.json file
 
@@ -270,19 +271,23 @@ class CanvasComposition(CanvasPart):
             x, y coordinates describes the boundary of the selected composition at the initial time
 
         '''
-        atlas_path = os.path.join(data_path, 'atlas.json')
-        composition_classification_file = open(atlas_path)
-        atlas = json.load(composition_classification_file)
+        if atlas == None:
+            atlas_path = os.path.join(data_path, 'atlas.json')
+            composition_classification_file = open(atlas_path)
+            atlas = json.load(composition_classification_file)
 
         for i in range(len(atlas)):
             if atlas[i]['id'] == id:
                 id_index = i
+                break
 
         paths = atlas[id_index]['path']
         path0 = np.array(list(paths.values())[0])  # initial path
 
         self.id_name = str(atlas[id_index]['name'])
-        composition_classification_file.close()
+        if atlas == None:
+            composition_classification_file.close()
+
         return paths, path0
 
 
@@ -410,7 +415,7 @@ def save_part_over_time(canvas_part,
         each time interval
     '''
 
-    seconds = np.array(canvas_part.pixel_changes[0,])
+    seconds = np.array(canvas_part.pixel_changes[0])
     xcoor = np.array(canvas_part.pixel_changes[1])
     ycoor = np.array(canvas_part.pixel_changes[2])
     color = np.array(canvas_part.pixel_changes[4])
@@ -549,7 +554,7 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
     y_coord = np.array(pixel_changes_all_npz['pixelYpos'], dtype=np.uint16)
     user_index = np.array(pixel_changes_all_npz['userIndex'], dtype=np.uint32)
     color_index = np.array(pixel_changes_all_npz['colorIndex'], dtype=np.uint8)
-    moderator_event = np.array(pixel_changes_all_npz['moderatorEvent'], dtype=np.uint8)
+    moderator_event = np.array(pixel_changes_all_npz['moderatorEvent'], dtype=np.bool_)
 
     # return it as an array
     pixel_changes_all = np.array([seconds, 
