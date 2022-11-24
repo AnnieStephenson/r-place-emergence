@@ -5,7 +5,7 @@ import os
 import numpy as np
 import sys
 sys.path.insert(1, os.path.join(os.getcwd(),'rplacem'))
-from Variables import *
+from . import Variables as var
 
 t_lims = [0, TIME_WHITEONLY]
 file_path = os.path.join(os.getcwd(), 'data', 'stability_time{:06d}to{:06d}.pickle'.format(int(t_lims[0]), int(t_lims[1])))

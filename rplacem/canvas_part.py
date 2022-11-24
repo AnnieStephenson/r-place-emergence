@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from PIL import Image, ImageColor
-from . import Variables as var
+import Variables.Variables as var
 
 
 class CanvasPart(object):
@@ -31,10 +31,9 @@ class CanvasPart(object):
         x-coordinates of all the pixels contained inside the CanvasPart
     y_coords : 1d numpy array
         y0coordinates of all the pixels contained inside the CanvasPart
-    pixel_changes : 2d numpy array
+    pixel_changes : numpy recarray
         Pixel changes over time within the CanvasPart boundary. 
-        Columns are seconds, x_coord, y_coord, user_id, color_R, color_G, 
-        color_B
+        Columns are called 'seconds', 'xcoor', 'ycoor', 'user', 'color'
     colidx_to_hex : dictionary
         dictionary with keys of color index and values of color hex code
     colidx_to_rgb : dictionary
@@ -50,7 +49,7 @@ class CanvasPart(object):
         Finds the x and y coordinates within the boundary of the 
         CanvasPart object. Sets the x_coord and y_coord attributes
         of the CanvasPart object
-    find_pixel_changes_boundary(self, 
+    find_pixel_changes_in_boundary(self, 
                                 pixel_changes_all, 
                                 data_path=os.path.join(os.getcwd(),'data'))
         Find all the pixel changes within the boundary of the CanvasPart object
@@ -74,7 +73,7 @@ class CanvasPart(object):
         ----------
         border_path : 2d numpy array with shape (number of points in path, 2)
             Array of x,y coordinates defining the boundary of the CanvasPart
-        pixel_changes_all : 2d numpy dataframe or None, optional
+        pixel_changes_all : numpy recarray or None, optional
             Contains all of the pixel change data from the entire dataset. If ==None, then the whole dataset is loaded when the class instance is initialized.
         data_path : str, optional
             Path to where the pixel data file is stored
@@ -99,7 +98,7 @@ class CanvasPart(object):
         self.get_bounded_coords(show_coords=show_coords)
 
         # set the pixel changes within the boundary
-        self.find_pixel_changes_boundary(self.pixel_changes)
+        self.find_pixel_changes_in_boundary(self.pixel_changes)
 
     def set_color_dictionaries(self):
         ''' set the color dictionaries from the data file '''
@@ -145,7 +144,7 @@ class CanvasPart(object):
         self.y_coords = y_coords_boundary.astype(np.uint16)
         self.x_coords = x_coords_boundary.astype(np.uint16)
 
-    def find_pixel_changes_boundary(self,
+    def find_pixel_changes_in_boundary(self,
                                     pixel_changes_all
                                     ):
         '''
@@ -154,20 +153,10 @@ class CanvasPart(object):
 
         parameters
         ----------
-        pixel_changes_all : 2d numpy array or None
+        pixel_changes_all : numpy recarray or None
             Contains all of the pixel change data from the entire dataset
         data_path : str, optional
             Path to where the pixel data file is stored
-
-        Notes
-        -----
-        Columns of pixel change array
-        0: seconds
-        1: x_coord
-        2: y_coord
-        3: user_index
-        4: color_index
-        5: moderator_event
         '''
         if pixel_changes_all is None:
             pixel_changes_all = get_all_pixel_changes()
@@ -178,18 +167,18 @@ class CanvasPart(object):
         y_min = np.min(self.y_coords)
 
         # limit the pixel changes array to the min and max boundary coordinates
-        ind_x = np.where((pixel_changes_all[1]<=x_max) 
-                          & (pixel_changes_all[1]>=x_min))[0]
-        pixel_changes_xlim = pixel_changes_all[:,ind_x]
-        ind_y = np.where((pixel_changes_xlim[2]<=y_max) 
-                         & (pixel_changes_xlim[2]>=y_min))[0]
-        pixel_changes_lim = pixel_changes_xlim[:,ind_y]
+        ind_x = np.where((pixel_changes_all['xcoor']<=x_max) 
+                          & (pixel_changes_all['xcoor']>=x_min))[0]
+        pixel_changes_xlim = pixel_changes_all[ind_x]
+        ind_y = np.where((pixel_changes_xlim['ycoor']<=y_max) 
+                         & (pixel_changes_xlim['ycoor']>=y_min))[0]
+        pixel_changes_lim = pixel_changes_xlim[ind_y]
 
         # find the pixel changes that correspond to pixels inside the boundary
-        pixel_change_index = np.where(np.isin((pixel_changes_lim[1] + 10000.*pixel_changes_lim[2]), 
+        pixel_change_index = np.where(np.isin((pixel_changes_lim['xcoor'] + 10000.*pixel_changes_lim['ycoor']), 
                                        (self.x_coords + 10000.*self.y_coords)))[0]
         
-        self.pixel_changes = pixel_changes_lim[:,pixel_change_index] 
+        self.pixel_changes = pixel_changes_lim[pixel_change_index] 
 
 
 class CanvasComposition(CanvasPart):
@@ -211,7 +200,7 @@ class CanvasComposition(CanvasPart):
         Look up the border path for the id index in the atlas.json file
     get_bounded_coords(self, show_coords=False)
         Inherited from superclass
-    find_pixel_changes_boundary(self, 
+    find_pixel_changes_in_boundary(self, 
                                 pixel_changes_all, 
                                 data_path=os.path.join(os.getcwd(),'data'))
         Inherited from superclass
@@ -232,7 +221,7 @@ class CanvasComposition(CanvasPart):
         ----------
         id: string
             The string from the atlas file that identifies a particular composition
-        pixel_changes_all : 2d numpy array or None, optional
+        pixel_changes_all : numpy recarray or None, optional
             Contains all of the pixel change data from the entire dataset
         data_path : str, optional
             Path to where the pixel data file is stored
@@ -306,7 +295,7 @@ class CanvasArea(CanvasPart):
     -------
     get_bounded_coords(self, show_coords =False)
         Inherited from superclass
-    find_pixel_changes_boundary(self, 
+    find_pixel_changes_in_boundary(self, 
                                 pixel_changes_all, 
                                 data_path=os.path.join(os.getcwd(),'data'))
         Inherited from superclass
@@ -340,7 +329,7 @@ class ColorMovement:
         ColorMovement. The other pixels in the ColorMovement are nearest 
         neighbors of the seed_point, and then nearest neighbors of those 
         neighbors, and so on. 
-    pixel_changes : 2d numpy array
+    pixel_changes : numpy recarray
         characterizes the growth and diffusion of the pixels in the 
         ColorMovement object rather than tracking the pixel changes within a 
         set border. Each pixel_change has a start and stop time to identify 
@@ -415,10 +404,10 @@ def save_part_over_time(canvas_part,
         each time interval
     '''
 
-    seconds = np.array(canvas_part.pixel_changes[0])
-    xcoor = np.array(canvas_part.pixel_changes[1])
-    ycoor = np.array(canvas_part.pixel_changes[2])
-    color = np.array(canvas_part.pixel_changes[4])
+    seconds = np.array(canvas_part.pixel_changes['seconds'])
+    xcoor = np.array(canvas_part.pixel_changes['xcoor'])
+    ycoor = np.array(canvas_part.pixel_changes['ycoor'])
+    color = np.array(canvas_part.pixel_changes['color'])
 
     num_time_steps = int(np.ceil(total_time/time_interval))
     file_size_bmp = np.zeros(num_time_steps+1)
@@ -536,33 +525,25 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
 
     returns
     -------
-    pixel_changes_all : 2d numpy array
+    pixel_changes_all : numpy recarray
             Contains all of the pixel change data from the entire dataset
-            Columns of pixel change array are
-            0: seconds
-            1: x_coord
-            2: y_coord
-            3: user_index
-            4: color_index
-            5: moderator_event
     '''
     pixel_changes_all_npz = np.load(os.path.join(data_path, data_file))
 
-    # load all the arrays
-    seconds = np.array(pixel_changes_all_npz['seconds'], dtype=np.uint32)
-    x_coord = np.array(pixel_changes_all_npz['pixelXpos'], dtype=np.uint16)
-    y_coord = np.array(pixel_changes_all_npz['pixelYpos'], dtype=np.uint16)
-    user_index = np.array(pixel_changes_all_npz['userIndex'], dtype=np.uint32)
-    color_index = np.array(pixel_changes_all_npz['colorIndex'], dtype=np.uint8)
-    moderator_event = np.array(pixel_changes_all_npz['moderatorEvent'], dtype=np.bool_)
-
-    # return it as an array
-    pixel_changes_all = np.array([seconds, 
-                                  x_coord,
-                                  y_coord,
-                                  user_index,
-                                  color_index,
-                                  moderator_event])
+    # return all the arrays as a recarray
+    pixel_changes_all = np.core.records.fromarrays( [np.array(pixel_changes_all_npz['seconds'], dtype=np.float64),
+                                                     np.array(pixel_changes_all_npz['pixelXpos'], dtype=np.uint16),
+                                                     np.array(pixel_changes_all_npz['pixelYpos'], dtype=np.uint16),
+                                                     np.array(pixel_changes_all_npz['userIndex'], dtype=np.uint32),
+                                                     np.array(pixel_changes_all_npz['colorIndex'], dtype=np.uint8),
+                                                     np.array(pixel_changes_all_npz['moderatorEvent'], dtype=np.bool_)],
+                                    dtype=np.dtype([('seconds', np.float64), 
+                                                    ('xcoor', np.uint16), 
+                                                    ('ycoor', np.uint16), 
+                                                    ('user', np.uint32), 
+                                                    ('color', np.uint8), 
+                                                    ('moderator', np.bool_)])
+                                                  )
 
     return pixel_changes_all
 

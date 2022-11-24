@@ -7,9 +7,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from PIL import Image, ImageColor
-from . import Variables as var
-from . import canvas_part as cp
-
+import Variables.Variables as var
+import canvas_part as cp
 
 def calc_num_pixel_changes(canvas_part,
                            time_inds_list,
@@ -46,10 +45,10 @@ def calc_num_pixel_changes(canvas_part,
         # since the start
 
         # get the pixel change coordinates for the interval
-        pixel_changes_time_int = canvas_part.pixel_changes[:,time_inds_list[i]]
-        x_coord = np.array(pixel_changes_time_int[1])
-        y_coord = np.array(pixel_changes_time_int[2])
-        user_id = np.array(pixel_changes_time_int[3])
+        pixel_changes_time_int = canvas_part.pixel_changes[time_inds_list[i]]
+        x_coord = np.array(pixel_changes_time_int['xcoor'])
+        y_coord = np.array(pixel_changes_time_int['ycoor'])
+        user_id = np.array(pixel_changes_time_int['user'])
         coords = np.vstack((x_coord, y_coord))
 
         # get rid of the duplicate pixel changes
@@ -70,6 +69,8 @@ def calc_num_pixel_changes(canvas_part,
 
 def stability(canvas_part,
               t_lims=[0, var.TIME_TOTAL],
+              save_images=False,
+              save_pickle=False,
               part_name='cp'  # only for name of output
               ):
     '''
@@ -85,16 +86,17 @@ def stability(canvas_part,
 
     returns
     -------
-    stability array (and colors sorted by dominance) saved in pickle file, for each time step
+    stability array (and colors sorted by dominance) saved in pickle file, for each time step.
+    Returns the stability averaged over all the pixels, in a list for each time range
     '''
 
     if t_lims[0] != 0:
         print('WARNING: this function \'stability\' is not meant to work from a lower time limit > 0 !!!')
 
     seconds = np.array(canvas_part.pixel_changes['seconds'])
-    xcoor = np.array(canvas_part.pixel_changes['x_coord'])
-    ycoor = np.array(canvas_part.pixel_changes['y_coord'])
-    color = np.array(canvas_part.pixel_changes['color_id'])
+    xcoor = np.array(canvas_part.pixel_changes['xcoor'])
+    ycoor = np.array(canvas_part.pixel_changes['ycoor'])
+    color = np.array(canvas_part.pixel_changes['color'])
 
     path_coords = canvas_part.border_path
     x_min = np.min(path_coords[:, 0])
@@ -106,8 +108,10 @@ def stability(canvas_part,
     white = color_dict['#FFFFFF']
     current_color = np.full((x_max - x_min + 1, y_max - y_min + 1), white, dtype='int8')
 
+    stability_vs_time = []
+
     for t_step in range(0, len(t_lims)-1):
-        t_inds = np.where((seconds >= t_lims[t_step]) & (seconds < t_lims[t_step+1]) & (xcoor >= x_min) & (xcoor <= x_max) & (ycoor >= y_min) & (ycoor <= y_max))[0]
+        t_inds = np.where((seconds >= t_lims[t_step]) & (seconds < t_lims[t_step+1]))[0] #  & (xcoor >= x_min) & (xcoor <= x_max) & (ycoor >= y_min) & (ycoor <= y_max)
 
         time_spent_in_color = np.zeros((x_max - x_min + 1, y_max - y_min + 1, len(color_dict)), dtype='float64')
         last_time_changed = np.full((x_max - x_min + 1, y_max - y_min + 1), t_lims[t_step], dtype='float64')
@@ -136,6 +140,7 @@ def stability(canvas_part,
         # get the color where pixels spent the most time
         stable_colors = np.flip(np.argsort(time_spent_in_color, axis=2), axis=2)  # sort in descending order
         stable_timefraction = np.take_along_axis(time_spent_in_color, stable_colors, axis=2)
+        # normalize by the total time the canvas quarter was on
         stable_timefraction[:max(1000-x_min, 0), :max(1000-y_min, 0), :] /= t_lims[t_step+1] - t_lims[t_step]
         stable_timefraction[max(1000-x_min, 0):, :max(1000-y_min, 0), :] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE1)
         stable_timefraction[:,                    max(1000-y_min, 0):, :] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE2)
@@ -149,41 +154,53 @@ def stability(canvas_part,
                     print("problem with time counting in pixel x,y=", x, y, "!!!: ", sum_timefraction[x, y]-1)
         '''
 
-        file_path = os.path.join(os.path.join(os.getcwd(), 'data'), 'stability_time{:06d}to{:06d}.pickle'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
-        with open(file_path, 'wb') as handle:
-            pickle.dump([stable_timefraction,
-                        stable_colors],
-                        handle,
-                        protocol=pickle.HIGHEST_PROTOCOL)
+        # average of the stability over all pixels of the canvas_part, for this time range
+        stability_pixelAverage = 0
+        for x,y in zip(canvas_part.x_coords, canvas_part.y_coords):
+            stability_pixelAverage += stable_timefraction[x-x_min, y-y_min, 0]
+        stability_pixelAverage /= len(canvas_part.x_coords)
+        stability_vs_time.append(stability_pixelAverage)
+
+        # save full result to pickle file
+        if save_pickle:
+            file_path = os.path.join(os.path.join(os.getcwd(), 'data'), 'stability_' + part_name + '_time{:06d}to{:06d}.pickle'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+            with open(file_path, 'wb') as handle:
+                pickle.dump([stable_timefraction,
+                            stable_colors],
+                            handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
 
         # create images containing the (sub)dominant color only
-        pixels1 = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8)
-        pixels2 = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8)
-        pixels3 = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8)
+        if save_images:
+            pixels1 = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8)
+            pixels2 = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8)
+            pixels3 = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8)
 
-        pixels1 = canvas_part.get_rgb(np.swapaxes(stable_colors[:,:,0], 0, 1))  
-        pixels2 = canvas_part.get_rgb(np.swapaxes(stable_colors[:,:,1], 0, 1))
-        pixels3 = canvas_part.get_rgb(np.swapaxes(stable_colors[:,:,2], 0, 1))
-        # if second and/or third most used colors don't exist (time_spent == 0), then use the first or second most used color instead
-        inds_to_change1 = np.where(stable_timefraction[:,:,1] < 1e-9)
-        pixels2[inds_to_change1] = pixels1[inds_to_change1] 
-        inds_to_change2 = np.where(stable_timefraction[:,:,2] < 1e-9)
-        pixels3[inds_to_change2] = pixels2[inds_to_change2] # also changes to the first most used if there is no second most used color
+            pixels1 = canvas_part.get_rgb(np.swapaxes(stable_colors[:,:,0], 0, 1))  
+            pixels2 = canvas_part.get_rgb(np.swapaxes(stable_colors[:,:,1], 0, 1))
+            pixels3 = canvas_part.get_rgb(np.swapaxes(stable_colors[:,:,2], 0, 1))
+            # if second and/or third most used colors don't exist (time_spent == 0), then use the first or second most used color instead
+            inds_to_change1 = np.where(stable_timefraction[:,:,1] < 1e-9)
+            pixels2[inds_to_change1] = pixels1[inds_to_change1] 
+            inds_to_change2 = np.where(stable_timefraction[:,:,2] < 1e-9)
+            pixels3[inds_to_change2] = pixels2[inds_to_change2] # also changes to the first most used if there is no second most used color
 
-        # save images
-        try:
-            os.makedirs(os.path.join(os.getcwd(), 'figs', 'history_' + part_name))
-        except OSError: 
-            print('')
-        im1 = Image.fromarray(pixels1.astype(np.uint8))
-        im1_path = os.path.join(os.getcwd(), 'figs','history_' + part_name, 'MostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
-        im1.save(im1_path)
-        im2 = Image.fromarray(pixels2.astype(np.uint8))
-        im2_path = os.path.join(os.getcwd(), 'figs','history_' + part_name, 'SecondMostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
-        im2.save(im2_path)
-        im3 = Image.fromarray(pixels3.astype(np.uint8))
-        im3_path = os.path.join(os.getcwd(), 'figs','history_' + part_name, 'ThirdMostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
-        im3.save(im3_path)
+            # save images
+            try:
+                os.makedirs(os.path.join(os.getcwd(), 'figs', 'history_' + part_name))
+            except OSError: 
+                print('')
+            im1 = Image.fromarray(pixels1.astype(np.uint8))
+            im1_path = os.path.join(os.getcwd(), 'figs','history_' + part_name, 'MostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+            im1.save(im1_path)
+            im2 = Image.fromarray(pixels2.astype(np.uint8))
+            im2_path = os.path.join(os.getcwd(), 'figs','history_' + part_name, 'SecondMostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+            im2.save(im2_path)
+            im3 = Image.fromarray(pixels3.astype(np.uint8))
+            im3_path = os.path.join(os.getcwd(), 'figs','history_' + part_name, 'ThirdMostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+            im3.save(im3_path)
+    
+    return np.asarray(stability_vs_time)
 
 
 def plot_compression_vs_pixel_changes(num_pixel_changes,
