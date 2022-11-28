@@ -374,7 +374,8 @@ def save_part_over_time(canvas_part,
                         part_name='cp',  # only for name of output
                         delete_bmp=True,
                         delete_png=False,
-                        show_plot=True
+                        show_plot=True,
+                        print_progress=True
                         ):
     '''
     Saves images of the canvas part for each time step
@@ -444,9 +445,10 @@ def save_part_over_time(canvas_part,
 
     for t_step_idx in range(-1, num_time_steps):  # fixed this: want a blank image at t=0
 
-        if t_step_idx/num_time_steps > i_fraction_print/10:
-            i_fraction_print += 1
-            print('Ran', 100*t_step_idx/num_time_steps, '% of the steps')
+        if print_progress:
+            if t_step_idx/num_time_steps > i_fraction_print/10:
+                i_fraction_print += 1
+                print('Ran', 100*t_step_idx/num_time_steps, '% of the steps')
 
         # get the indices of the times within the interval
         t_inds = np.where((seconds >= t_step_idx*time_interval) & (seconds < (t_step_idx + 1)*time_interval))[0]
@@ -480,8 +482,8 @@ def save_part_over_time(canvas_part,
                 else:
                     colcount = 0
                     rowcount += 1
-
-    print('produced', num_time_steps+1, 'images vs time')
+    if print_progress:
+        print('produced', num_time_steps+1, 'images vs time')
     return file_size_bmp, file_size_png, t_inds_list
 
 
