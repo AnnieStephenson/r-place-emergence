@@ -85,7 +85,7 @@ class CanvasPart(object):
         self.border_path = border_path
         self.x_coords = None
         self.y_coords = None
-        self.pixel_changes = pixel_changes_all
+        self.pixel_changes = None
         self.colidx_to_hex = {}
         self.colidx_to_rgb = {}
         self.data_path = data_path
@@ -98,7 +98,7 @@ class CanvasPart(object):
         self.get_bounded_coords(show_coords=show_coords)
 
         # set the pixel changes within the boundary
-        self.find_pixel_changes_in_boundary(self.pixel_changes)
+        self.find_pixel_changes_in_boundary(pixel_changes_all)
 
     def set_color_dictionaries(self):
         ''' set the color dictionaries from the data file '''
