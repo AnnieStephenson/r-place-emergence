@@ -530,13 +530,8 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
     '''
     pixel_changes_all_npz = np.load(os.path.join(data_path, data_file))
 
-    # return all the arrays as a recarray
-    pixel_changes_all = np.core.records.fromarrays( [np.array(pixel_changes_all_npz['seconds'], dtype=np.float64),
-                                                     np.array(pixel_changes_all_npz['pixelXpos'], dtype=np.uint16),
-                                                     np.array(pixel_changes_all_npz['pixelYpos'], dtype=np.uint16),
-                                                     np.array(pixel_changes_all_npz['userIndex'], dtype=np.uint32),
-                                                     np.array(pixel_changes_all_npz['colorIndex'], dtype=np.uint8),
-                                                     np.array(pixel_changes_all_npz['moderatorEvent'], dtype=np.bool_)],
+    # save pixel changes as a structured array
+    pixel_changes_all = np.zeros(len(pixel_changes_all_npz['seconds']),
                                     dtype=np.dtype([('seconds', np.float64), 
                                                     ('xcoor', np.uint16), 
                                                     ('ycoor', np.uint16), 
@@ -544,6 +539,12 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
                                                     ('color', np.uint8), 
                                                     ('moderator', np.bool_)])
                                                   )
+    pixel_changes_all['seconds'] = np.array(pixel_changes_all_npz['seconds'])
+    pixel_changes_all['xcoor'] = np.array(pixel_changes_all_npz['pixelXpos'])
+    pixel_changes_all['ycoor'] = np.array(pixel_changes_all_npz['pixelYpos'])
+    pixel_changes_all['user'] = np.array(pixel_changes_all_npz['userIndex'])
+    pixel_changes_all['color'] = np.array(pixel_changes_all_npz['colorIndex'])
+    pixel_changes_all['moderator'] = np.array(pixel_changes_all_npz['moderatorEvent'])
 
     return pixel_changes_all
 
