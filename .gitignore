@@ -93,3 +93,6 @@ ENV/
 #saved frames from data
 *.png
 *.bmp
+
+data/
+figs/
