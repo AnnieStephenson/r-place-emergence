@@ -85,7 +85,7 @@ class CanvasPart(object):
         self.border_path = border_path
         self.x_coords = None
         self.y_coords = None
-        self.pixel_changes = pixel_changes_all
+        self.pixel_changes = None
         self.colidx_to_hex = {}
         self.colidx_to_rgb = {}
         self.data_path = data_path
@@ -98,7 +98,7 @@ class CanvasPart(object):
         self.get_bounded_coords(show_coords=show_coords)
 
         # set the pixel changes within the boundary
-        self.find_pixel_changes_in_boundary(self.pixel_changes)
+        self.find_pixel_changes_in_boundary(pixel_changes_all)
 
     def set_color_dictionaries(self):
         ''' set the color dictionaries from the data file '''
@@ -374,7 +374,8 @@ def save_part_over_time(canvas_part,
                         part_name='cp',  # only for name of output
                         delete_bmp=True,
                         delete_png=False,
-                        show_plot=True
+                        show_plot=True,
+                        print_progress=True
                         ):
     '''
     Saves images of the canvas part for each time step
@@ -444,9 +445,10 @@ def save_part_over_time(canvas_part,
 
     for t_step_idx in range(-1, num_time_steps):  # fixed this: want a blank image at t=0
 
-        if t_step_idx/num_time_steps > i_fraction_print/10:
-            i_fraction_print += 1
-            print('Ran', 100*t_step_idx/num_time_steps, '% of the steps')
+        if print_progress:
+            if t_step_idx/num_time_steps > i_fraction_print/10:
+                i_fraction_print += 1
+                print('Ran', 100*t_step_idx/num_time_steps, '% of the steps')
 
         # get the indices of the times within the interval
         t_inds = np.where((seconds >= t_step_idx*time_interval) & (seconds < (t_step_idx + 1)*time_interval))[0]
@@ -480,8 +482,8 @@ def save_part_over_time(canvas_part,
                 else:
                     colcount = 0
                     rowcount += 1
-
-    print('produced', num_time_steps+1, 'images vs time')
+    if print_progress:
+        print('produced', num_time_steps+1, 'images vs time')
     return file_size_bmp, file_size_png, t_inds_list
 
 
@@ -530,13 +532,8 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
     '''
     pixel_changes_all_npz = np.load(os.path.join(data_path, data_file))
 
-    # return all the arrays as a recarray
-    pixel_changes_all = np.core.records.fromarrays( [np.array(pixel_changes_all_npz['seconds'], dtype=np.float64),
-                                                     np.array(pixel_changes_all_npz['pixelXpos'], dtype=np.uint16),
-                                                     np.array(pixel_changes_all_npz['pixelYpos'], dtype=np.uint16),
-                                                     np.array(pixel_changes_all_npz['userIndex'], dtype=np.uint32),
-                                                     np.array(pixel_changes_all_npz['colorIndex'], dtype=np.uint8),
-                                                     np.array(pixel_changes_all_npz['moderatorEvent'], dtype=np.bool_)],
+    # save pixel changes as a structured array
+    pixel_changes_all = np.zeros(len(pixel_changes_all_npz['seconds']),
                                     dtype=np.dtype([('seconds', np.float64), 
                                                     ('xcoor', np.uint16), 
                                                     ('ycoor', np.uint16), 
@@ -544,6 +541,12 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
                                                     ('color', np.uint8), 
                                                     ('moderator', np.bool_)])
                                                   )
+    pixel_changes_all['seconds'] = np.array(pixel_changes_all_npz['seconds'])
+    pixel_changes_all['xcoor'] = np.array(pixel_changes_all_npz['pixelXpos'])
+    pixel_changes_all['ycoor'] = np.array(pixel_changes_all_npz['pixelYpos'])
+    pixel_changes_all['user'] = np.array(pixel_changes_all_npz['userIndex'])
+    pixel_changes_all['color'] = np.array(pixel_changes_all_npz['colorIndex'])
+    pixel_changes_all['moderator'] = np.array(pixel_changes_all_npz['moderatorEvent'])
 
     return pixel_changes_all
 

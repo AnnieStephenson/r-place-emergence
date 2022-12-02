@@ -8,7 +8,7 @@ import pandas as pd
 import seaborn as sns
 from PIL import Image, ImageColor
 import Variables.Variables as var
-import canvas_part as cp
+from . import canvas_part as cp
 
 def calc_num_pixel_changes(canvas_part,
                            time_inds_list,
