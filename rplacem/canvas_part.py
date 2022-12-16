@@ -201,17 +201,22 @@ x in [{self.xmin}, {self.xmax}], y in [{self.ymin}, {self.ymax}]\
         # extract the paths and associated time ranges
         paths = atlas[id_index]['path']
         times = []
-        for k in list(paths.keys()):
-            t0t1 = k.split('-')
-            t0 = t0t1[0]
-            if(len(t0t1)>1):
-                t1 = t0t1[1].split(',')[0]
-            else:
-                t1 = t0
-            times.append([1800*(int(t0)-1), 1800*int(t1)])
+        vals = []
+        for k,v in paths.items():
+            if (k == 'T:0-1') and (len(paths.keys()) == 1): # if there is only one path and it has weird time tag, set it to widest timerange
+                times.append([0., var.TIME_TOTAL])
+                break
+            t0t1_list = k.split(',')
+            for t0t1 in t0t1_list:
+                if t0t1 == 'T:0-1' or t0t1 == ' T:0-1' or t0t1 == ' T' or t0t1 == 'T':
+                    continue # remove the weird tag
+                t0t1 = t0t1.split('-')
+                t0 = t0t1[0]
+                t1 = t0t1[1] if len(t0t1) > 1 else t0
+                times.append([1800*(int(t0)-1), 1800*int(t1)])
+                vals.append(v)
 
         # fill out each border_path up to the length of the longest border_path, with redundant values (so that it can be a np.array)
-        vals = list(paths.values())
         maxlen = max(len(v) for v in vals)
         for i in range(0,len(vals)):
             vals[i] += [vals[i][0]] * max(maxlen - len(vals[i]), 0)
