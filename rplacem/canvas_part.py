@@ -369,8 +369,7 @@ def show_canvas_part(pixels, ax=None):
 
 
 def save_part_over_time(canvas_part,
-                        time_interval,  # in seconds
-                        total_time=var.TIME_TOTAL,  # in seconds
+                        times, # in seconds
                         part_name='cp',  # only for name of output
                         delete_bmp=True,
                         delete_png=False,
@@ -410,7 +409,7 @@ def save_part_over_time(canvas_part,
     ycoor = np.array(canvas_part.pixel_changes['ycoor'])
     color = np.array(canvas_part.pixel_changes['color'])
 
-    num_time_steps = int(np.ceil(total_time/time_interval))
+    num_time_steps = len(times)
     file_size_bmp = np.zeros(num_time_steps+1)
     file_size_png = np.zeros(num_time_steps+1)
 
@@ -443,22 +442,21 @@ def save_part_over_time(canvas_part,
 
     i_fraction_print = 0  # only for output of a message when a fraction of the steps are ran
 
-    for t_step_idx in range(-1, num_time_steps):  # fixed this: want a blank image at t=0
-
+    for t_step_idx in range(1, num_time_steps):  # fixed this: want a blank image at t=0
         if print_progress:
             if t_step_idx/num_time_steps > i_fraction_print/10:
                 i_fraction_print += 1
                 print('Ran', 100*t_step_idx/num_time_steps, '% of the steps')
 
         # get the indices of the times within the interval
-        t_inds = np.where((seconds >= t_step_idx*time_interval) & (seconds < (t_step_idx + 1)*time_interval))[0]
+        t_inds = np.where((seconds >= times[t_step_idx - 1]) & (seconds < times[t_step_idx]))[0]
         t_inds_list.append(t_inds)
         if len(t_inds) != 0:
             pixels[ycoor[t_inds]-y_min, xcoor[t_inds]-x_min, :] = canvas_part.get_rgb(color[t_inds])
 
         # save image
         im = Image.fromarray(pixels)
-        im_path = os.path.join(out_path_time, 'canvaspart_time{:06d}'.format(int((t_step_idx+1)*time_interval)))
+        im_path = os.path.join(out_path_time, 'canvaspart_time{:06d}'.format(int(times[t_step_idx])))
         im.save(im_path + '.png')
         im.save(im_path + '.bmp')
         file_size_png[t_step_idx] = get_file_size(im_path + '.png')
@@ -483,7 +481,7 @@ def save_part_over_time(canvas_part,
                     colcount = 0
                     rowcount += 1
     if print_progress:
-        print('produced', num_time_steps+1, 'images vs time')
+        print('produced', num_time_steps, 'images vs time')
     return file_size_bmp, file_size_png, t_inds_list
 
 

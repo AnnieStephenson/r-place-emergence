@@ -81,7 +81,7 @@ def stability(canvas_part,
     ----------
     canvas_part : CanvasPart object
         The CanvasPart object for which we want to calculate the stability
-    t_lims : array of doublets of floats
+    t_lims : 1d array-like of floats
         time intervals in which the pixel states are studied. Must be ordered in a crescent way, and start at 0
 
     returns
