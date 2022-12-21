@@ -8,7 +8,7 @@ import pandas as pd
 import seaborn as sns
 from PIL import Image, ImageColor
 import Variables.Variables as var
-from . import canvas_part as cp
+import canvas_part as cp
 
 def calc_num_pixel_changes(canvas_part,
                            time_inds_list,
@@ -71,7 +71,6 @@ def stability(canvas_part,
               t_lims=[0, var.TIME_TOTAL],
               save_images=False,
               save_pickle=False,
-              part_name='cp'  # only for name of output
               ):
     '''
     makes map of stability in some time range.
@@ -98,30 +97,24 @@ def stability(canvas_part,
     ycoor = np.array(canvas_part.pixel_changes['ycoor'])
     color = np.array(canvas_part.pixel_changes['color'])
 
-    path_coords = canvas_part.border_path
-    x_min = np.min(path_coords[:, 0])
-    x_max = np.max(path_coords[:, 0])
-    y_min = np.min(path_coords[:, 1])
-    y_max = np.max(path_coords[:, 1])
-
     color_dict = json.load(open(os.path.join(canvas_part.data_path, 'ColorDict.json')))
     white = color_dict['#FFFFFF']
-    current_color = np.full((x_max - x_min + 1, y_max - y_min + 1), white, dtype='int8')
+    current_color = np.full((canvas_part.xmax - canvas_part.xmin + 1, canvas_part.ymax - canvas_part.ymin + 1), white, dtype='int8')
 
     stability_vs_time = []
 
     for t_step in range(0, len(t_lims)-1):
-        t_inds = np.where((seconds >= t_lims[t_step]) & (seconds < t_lims[t_step+1]))[0] #  & (xcoor >= x_min) & (xcoor <= x_max) & (ycoor >= y_min) & (ycoor <= y_max)
+        t_inds = np.where((seconds >= t_lims[t_step]) & (seconds < t_lims[t_step+1]))[0] #  & (xcoor >= xmin) & (xcoor <= xmax) & (ycoor >= ymin) & (ycoor <= ymax)
 
-        time_spent_in_color = np.zeros((x_max - x_min + 1, y_max - y_min + 1, len(color_dict)), dtype='float64')
-        last_time_changed = np.full((x_max - x_min + 1, y_max - y_min + 1), t_lims[t_step], dtype='float64')
+        time_spent_in_color = np.zeros((canvas_part.xmax - canvas_part.xmin + 1, canvas_part.ymax - canvas_part.ymin + 1, len(color_dict)), dtype='float64')
+        last_time_changed = np.full((canvas_part.xmax - canvas_part.xmin + 1, canvas_part.ymax - canvas_part.ymin + 1), t_lims[t_step], dtype='float64')
         # neglect the time before the opening of the supplementary canvas quarters
-        last_time_changed[max(1000-x_min, 0):, :max(1000-y_min, 0)] = max(t_lims[t_step], var.TIME_ENLARGE1)
-        last_time_changed[:, max(1000-y_min, 0):] = max(t_lims[t_step], var.TIME_ENLARGE2)
+        last_time_changed[max(1000-canvas_part.xmin, 0):, :max(1000-canvas_part.ymin, 0)] = max(t_lims[t_step], var.TIME_ENLARGE1)
+        last_time_changed[:, max(1000-canvas_part.ymin, 0):] = max(t_lims[t_step], var.TIME_ENLARGE2)
 
         for tidx in t_inds:
-            x = xcoor[tidx] - x_min
-            y = ycoor[tidx] - y_min
+            x = xcoor[tidx] - canvas_part.xmin
+            y = ycoor[tidx] - canvas_part.ymin
             s = seconds[tidx]
             c = color[tidx]
 
@@ -133,37 +126,44 @@ def stability(canvas_part,
             current_color[x, y] = c
 
         # add the time spent in the final color (from the last pixel change to the end-time)
-        for x in range(0, x_max-x_min+1):
-            for y in range(0, y_max-y_min+1):
-                time_spent_in_color[x, y, current_color[x, y]] += t_lims[t_step+1] - last_time_changed[x, y]
+        for x in range(0, canvas_part.xmax-canvas_part.xmin+1):
+            for y in range(0, canvas_part.ymax-canvas_part.ymin+1):
+                time_spent_in_color[x, y, current_color[x, y]] += max(t_lims[t_step+1] - last_time_changed[x, y], 0)
 
         # get the color where pixels spent the most time
         stable_colors = np.flip(np.argsort(time_spent_in_color, axis=2), axis=2)  # sort in descending order
         stable_timefraction = np.take_along_axis(time_spent_in_color, stable_colors, axis=2)
         # normalize by the total time the canvas quarter was on
-        stable_timefraction[:max(1000-x_min, 0), :max(1000-y_min, 0), :] /= t_lims[t_step+1] - t_lims[t_step]
-        stable_timefraction[max(1000-x_min, 0):, :max(1000-y_min, 0), :] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE1)
-        stable_timefraction[:,                    max(1000-y_min, 0):, :] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE2)
+        stable_timefraction[:max(1000-canvas_part.xmin, 0), :max(1000-canvas_part.ymin, 0), :] /= t_lims[t_step+1] - t_lims[t_step]
+        stable_timefraction[max(1000-canvas_part.xmin, 0):, :max(1000-canvas_part.ymin, 0), :] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE1)
+        stable_timefraction[:,                    max(1000-canvas_part.ymin, 0):, :] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE2)
 
         # check that sum along axis=2 is t+1 - t
         '''
         sum_timefraction = np.sum(stable_timefraction, axis=2)
-        for x in range(0, x_max-x_min+1):
-            for y in range(0, y_max-y_min+1):
+        for x in range(0, canvas_part.xmax-canvas_part.xmin+1):
+            for y in range(0, canvas_part.ymax-canvas_part.ymin+1):
                 if abs(sum_timefraction[x, y]-1) > 1e-6:
                     print("problem with time counting in pixel x,y=", x, y, "!!!: ", sum_timefraction[x, y]-1)
         '''
 
         # average of the stability over all pixels of the canvas_part, for this time range
         stability_pixelAverage = 0
-        for x,y in zip(canvas_part.x_coords, canvas_part.y_coords):
-            stability_pixelAverage += stable_timefraction[x-x_min, y-y_min, 0]
-        stability_pixelAverage /= len(canvas_part.x_coords)
+        counter = 0
+        for x,y in zip(canvas_part.coords[0], canvas_part.coords[1]):
+            stab = stable_timefraction[x-canvas_part.xmin, y-canvas_part.ymin, 0]
+            if stab > 1e-10: #remove pixels where stab==0 (meaning they were not 'on' in this time range)
+                stability_pixelAverage += stab
+                counter += 1
+        if counter > 0:
+            stability_pixelAverage /= counter
+        else: # case where no pixel was active
+            stability_pixelAverage = 1
         stability_vs_time.append(stability_pixelAverage)
 
         # save full result to pickle file
         if save_pickle:
-            file_path = os.path.join(os.path.join(os.getcwd(), 'data'), 'stability_' + part_name + '_time{:06d}to{:06d}.pickle'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+            file_path = os.path.join(os.path.join(os.getcwd(), 'data'), 'stability_' + canvas_part.id + '_time{:06d}to{:06d}.pickle'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
             with open(file_path, 'wb') as handle:
                 pickle.dump([stable_timefraction,
                             stable_colors],
@@ -172,9 +172,9 @@ def stability(canvas_part,
 
         # create images containing the (sub)dominant color only
         if save_images:
-            pixels1 = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8)
-            pixels2 = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8)
-            pixels3 = np.full((y_max - y_min + 1, x_max - x_min + 1, 3), 255, dtype=np.uint8)
+            pixels1 = np.full((canvas_part.ymax - canvas_part.ymin + 1, canvas_part.xmax - canvas_part.xmin + 1, 3), 255, dtype=np.uint8)
+            pixels2 = np.full((canvas_part.ymax - canvas_part.ymin + 1, canvas_part.xmax - canvas_part.xmin + 1, 3), 255, dtype=np.uint8)
+            pixels3 = np.full((canvas_part.ymax - canvas_part.ymin + 1, canvas_part.xmax - canvas_part.xmin + 1, 3), 255, dtype=np.uint8)
 
             pixels1 = canvas_part.get_rgb(np.swapaxes(stable_colors[:,:,0], 0, 1))  
             pixels2 = canvas_part.get_rgb(np.swapaxes(stable_colors[:,:,1], 0, 1))
@@ -187,17 +187,17 @@ def stability(canvas_part,
 
             # save images
             try:
-                os.makedirs(os.path.join(os.getcwd(), 'figs', 'history_' + part_name))
+                os.makedirs(os.path.join(os.getcwd(), 'figs', 'history_' + canvas_part.id))
             except OSError: 
                 print('')
             im1 = Image.fromarray(pixels1.astype(np.uint8))
-            im1_path = os.path.join(os.getcwd(), 'figs','history_' + part_name, 'MostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+            im1_path = os.path.join(os.getcwd(), 'figs','history_' + canvas_part.id, 'MostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
             im1.save(im1_path)
             im2 = Image.fromarray(pixels2.astype(np.uint8))
-            im2_path = os.path.join(os.getcwd(), 'figs','history_' + part_name, 'SecondMostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+            im2_path = os.path.join(os.getcwd(), 'figs','history_' + canvas_part.id, 'SecondMostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
             im2.save(im2_path)
             im3 = Image.fromarray(pixels3.astype(np.uint8))
-            im3_path = os.path.join(os.getcwd(), 'figs','history_' + part_name, 'ThirdMostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+            im3_path = os.path.join(os.getcwd(), 'figs','history_' + canvas_part.id, 'ThirdMostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
             im3.save(im3_path)
     
     return np.asarray(stability_vs_time)
