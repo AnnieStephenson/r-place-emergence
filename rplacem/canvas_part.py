@@ -103,8 +103,8 @@ class CanvasPart(object):
         self.id = id
 
         # raise exceptions when CanvasPart is (or not) a composition but misses essential info
-        if self.is_composition and self.id == '' and border_path == [[[]]]:
-            raise ValueError('ERROR: cannot initialise a CanvasPart which has is_composition=True and an empty id and an empty border_path!')
+        if self.is_composition and self.id == '' and border_path != [[[]]]:
+            raise ValueError('ERROR: cannot initialise a CanvasPart which has is_composition=True and an empty id but a specified border_path!')
         if (not self.is_composition) and border_path == [[[]]]:
             raise ValueError('ERROR: cannot initialise a CanvasPart which has is_composition=False and an empty border_path!')
         
