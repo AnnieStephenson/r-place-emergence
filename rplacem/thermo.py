@@ -8,7 +8,7 @@ import pandas as pd
 import seaborn as sns
 from PIL import Image, ImageColor
 import Variables.Variables as var
-import canvas_part as cp
+from . import canvas_part as cp
 
 def calc_num_pixel_changes(canvas_part,
                            time_inds_list,
@@ -206,51 +206,53 @@ def stability(canvas_part,
 def plot_compression_vs_pixel_changes(num_pixel_changes,
                                       num_touched_pixels,
                                       num_users,
-                                      time_interval,
+                                      times,
                                       file_size_png,
                                       file_size_bmp):
     '''
     plot the pixel change quanities and CID (computable information density)
     '''
-    time_sec = time_interval*np.linspace(1, len(num_pixel_changes), len(num_pixel_changes))
+
     fig_cid_vs_time = plt.figure()
-    plt.plot(time_sec, file_size_png/file_size_bmp)
+    print(file_size_png.shape)
+    print(times.shape)
+    plt.plot(times, file_size_png/file_size_bmp)
     plt.ylabel('Computational Information Density  (file size ratio)')
     plt.xlabel('Time (s)')
     sns.despine()
 
     fig_num_touched_pix_vs_time = plt.figure()
-    plt.plot(time_sec, num_touched_pixels)
+    plt.plot(times, num_touched_pixels)
     plt.ylabel('Number of touched pixels')
     plt.xlabel('Time (s)')
     sns.despine()
 
     fig_num_pix_changes_vs_time = plt.figure()
-    plt.plot(time_sec, num_pixel_changes)
+    plt.plot(times, num_pixel_changes)
     plt.ylabel('Number of Pixel Changes')
     plt.xlabel('Time (s)')
     sns.despine()
 
     fig_users_vs_time = plt.figure()
-    plt.plot(time_sec, num_users)
+    plt.plot(times, num_users)
     plt.ylabel('Number of Users')
     plt.xlabel('Time (s)')
     sns.despine()
 
     fig_cid_vs_num_pix_changes = plt.figure()
-    plt.scatter(num_pixel_changes, file_size_png/file_size_bmp, s=5, alpha=0.7, c=time_sec)
+    plt.scatter(num_pixel_changes, file_size_png/file_size_bmp, s=5, alpha=0.7, c=times)
     plt.xlabel('Number of Pixel Changes')
     plt.ylabel('Computational Information Density (file size ratio)')
     sns.despine()
 
     fig_cid_vs_num_touched_pix = plt.figure()
-    plt.scatter(num_touched_pixels, file_size_png/file_size_bmp, s=5, alpha=0.7, c=time_sec)
+    plt.scatter(num_touched_pixels, file_size_png/file_size_bmp, s=5, alpha=0.7, c=times)
     plt.xlabel('Number of touched Pixels')
     plt.ylabel('Computational Information Density (file size ratio)')
     sns.despine()
 
     fig_cid_vs_num_users = plt.figure()
-    plt.scatter(num_users, file_size_png/file_size_bmp, s=5, alpha=0.7, c=time_sec)
+    plt.scatter(num_users, file_size_png/file_size_bmp, s=5, alpha=0.7, c=times)
     plt.xlabel('Number of Users')
     plt.ylabel('Computational Information Density (file size ratio)')
     sns.despine()

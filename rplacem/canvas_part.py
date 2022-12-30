@@ -254,7 +254,7 @@ x in [{self.xmin}, {self.xmax}], y in [{self.ymin}, {self.ymax}]\
             mask = np.zeros((self.ymax - self.ymin + 1, self.xmax - self.xmin + 1))
 
             # create mask from border_path
-            cv2.fillPoly(mask, pts=np.int32( [np.add( self.border_path[i], np.array([ -int(self.xmin), -int(self.ymin)]) )] ), color=[1, 1, 1])
+            cv2.fillPoly(mask, pts=np.int32( [np.add(self.border_path[i], np.array([ -int(self.xmin), -int(self.ymin)]) )] ), color=[1, 1, 1])
             masked_img = cv2.bitwise_and(img, mask)
             
             if show_coords:
@@ -413,7 +413,7 @@ def show_canvas_part(pixels, ax=None):
 
 def save_part_over_time(canvas_part,
                         times, # in seconds
-                        part_name='cp',  # only for name of output
+                        part_name=None,  # only for name of output
                         delete_bmp=True,
                         delete_png=False,
                         show_plot=True,
@@ -452,12 +452,17 @@ def save_part_over_time(canvas_part,
     ycoor = np.array(canvas_part.pixel_changes['ycoor'])
     color = np.array(canvas_part.pixel_changes['color'])
 
-    num_time_steps = len(times)
+    num_time_steps = len(times)-1
     file_size_bmp = np.zeros(num_time_steps+1)
     file_size_png = np.zeros(num_time_steps+1)
 
     pixels = np.full((canvas_part.ymax - canvas_part.ymin + 1, canvas_part.xmax - canvas_part.xmin + 1, 3), 255, dtype=np.uint8) #[r,g,b] will be readable as (r,g,b) ##### fill as white first ##### the pixels must be [y,x,rgb]
-    out_path = os.path.join(os.getcwd(), 'figs', 'history_' + canvas_part.id)
+    if part_name==None and canvas_part.id!='':
+        part_name = canvas_part.id
+    elif part_name==None:
+        part_name = 'area'
+        
+    out_path = os.path.join(os.getcwd(), 'figs', 'history_' + part_name)
     out_path_time = os.path.join(out_path, 'VsTime')
     try:
         os.makedirs(out_path)
@@ -479,7 +484,7 @@ def save_part_over_time(canvas_part,
 
     i_fraction_print = 0  # only for output of a message when a fraction of the steps are ran
 
-    for t_step_idx in range(1, num_time_steps):  # fixed this: want a blank image at t=0
+    for t_step_idx in range(0, num_time_steps+1):  # fixed this: want a blank image at t=0
         if print_progress:
             if t_step_idx/num_time_steps > i_fraction_print/10:
                 i_fraction_print += 1
@@ -588,7 +593,7 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
 
 def save_canvas_part_time_steps(canvas_comp,
                                 time_inds_list_comp,
-                                time_interval,
+                                times,
                                 file_size_bmp,
                                 file_size_png,
                                 data_path=os.path.join(os.getcwd(), 'data'),
@@ -601,7 +606,7 @@ def save_canvas_part_time_steps(canvas_comp,
     with open(file_path, 'wb') as handle:
         pickle.dump([canvas_comp,
                     time_inds_list_comp,
-                    time_interval,
+                    times,
                     file_size_bmp,
                     file_size_png],
                     handle,
