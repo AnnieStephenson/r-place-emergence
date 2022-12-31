@@ -27,9 +27,7 @@ class CanvasPart(object):
     ----------
     id : str
         name used to store output. 
-        When is_composition=True, 'id' is the string from the atlas file that identifies a particular composition.
-    is_composition : bool
-        True if the canvas part is defined from the atlas of compositions
+        When specified, 'id' is the string from the atlas file that identifies a particular composition.
     is_rectangle : bool
         True if the boundaries of the canvas part are exactly rectangular (and that there is only one boundary for the whole time). 
     pixel_changes : numpy structured array
@@ -72,7 +70,6 @@ class CanvasPart(object):
     '''
 
     def __init__(self,
-                 is_composition,
                  id='',
                  border_path=[[[]]],
                  border_path_times=[[0, var.TIME_TOTAL]],
@@ -87,7 +84,7 @@ class CanvasPart(object):
 
         Parameters
         ----------
-        is_composition, border_path, border_path_times, data_path, data_file, id : 
+        border_path, border_path_times, data_path, data_file, id : 
             directly set the attributes of the CanvasPart class, documented in the class
         pixel_changes_all : numpy recarray or None, optional
             Contains all of the pixel change data from the entire dataset. If ==None, then the whole dataset is loaded when the class instance is initialized.
@@ -97,23 +94,22 @@ class CanvasPart(object):
             Composition atlas from the atlas.json file, only needed for compositions. 
             If =None, it is extracted from the file in the get_atlas_border method.
         '''
-        self.is_composition = is_composition
         self.data_path = data_path
         self.data_file = data_file
         self.id = id
 
         # raise exceptions when CanvasPart is (or not) a composition but misses essential info
-        if self.is_composition and self.id == '' and border_path != [[[]]]:
-            raise ValueError('ERROR: cannot initialise a CanvasPart which has is_composition=True and an empty id but a specified border_path!')
-        if (not self.is_composition) and border_path == [[[]]]:
-            raise ValueError('ERROR: cannot initialise a CanvasPart which has is_composition=False and an empty border_path!')
+        if self.id == '' and border_path == [[[]]]:
+            raise ValueError('ERROR: cannot initialise a CanvasPart which has an empty atlas id but has no user-specified border_path!')
+        if self.id != '' and border_path != [[[]]]:
+            raise ValueError('ERROR: cannot initialise a CanvasPart which has an atlas id but a user-specified border_path!')
         
         # get the border path from the atlas of compositions, when it is not provided
         if border_path != [[[]]]:
             self.border_path = border_path
             self.border_path_times = border_path_times
             self.description = ''
-        elif self.is_composition:
+        else:
             self.get_atlas_border(atlas)
 
         self.xmin = self.border_path[:,:,0].min()
@@ -144,12 +140,11 @@ class CanvasPart(object):
         self.set_color_dictionaries()
 
     def __str__(self):
-        return f"          CanvasPart {self.id}\n{'atlas composition' if self.is_composition else 'user-defined area'}, \
-{'' if self.is_rectangle else 'not '}rectangle, {len(self.border_path)} time-dependent border_path(s)\n{len(self.coords[0])} pixels in total, \
-x in [{self.xmin}, {self.xmax}], y in [{self.ymin}, {self.ymax}]\
-\n{len(self.pixel_changes['seconds'])} pixel changes (including {np.count_nonzero(self.pixel_changes['in_timerange'])} in composition time ranges)\
-\n    Description: \n{self.description} \n    Pixel changes: \n{self.pixel_changes}\
-\n{f'    Time ranges for boundary paths: {chr(10)}{self.border_path_times}' if len(self.border_path)>1 else ''}" # chr(10) is equivalent to \n
+        return f"CanvasPart \n{'Atlas Composition, id: '+self.id if self.id!='' else 'user-defined area'}, \
+        \n{'' if self.is_rectangle else 'not '}Rectangle, {len(self.border_path)} time-dependent border_path(s)\n{len(self.coords[0])} pixels in total, x in [{self.xmin}, {self.xmax}], y in [{self.ymin}, {self.ymax}]\
+        \n{len(self.pixel_changes['seconds'])} pixel changes (including {np.count_nonzero(self.pixel_changes['in_timerange'])} in composition time ranges)\
+        \n\nDescription: \n{self.description} \n\nPixel changes: \n{self.pixel_changes}\
+        \n{f'    Time ranges for boundary paths: {chr(10)}{self.border_path_times}' if len(self.border_path)>1 else ''}" # chr(10) is equivalent to \n
 
     def set_is_rectangle(self):
         ''' Determines the is_rectangle attribute. Needs self.border_path to be defined.'''
