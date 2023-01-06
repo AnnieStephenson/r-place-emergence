@@ -327,6 +327,7 @@ class CanvasPart(object):
 
         # find the pixel changes that correspond to pixels inside the boundary
         if not self.is_rectangle:
+            # indices of pixel_changes_lim that contain the coordinates of self.coords 
             pixel_change_index = np.where(np.isin((pixel_changes_lim['xcoor'] + 10000.*pixel_changes_lim['ycoor']), 
                                                   (self.coords[0] + 10000.*self.coords[1])))[0]
         self.pixel_changes = pixel_changes_lim if self.is_rectangle else pixel_changes_lim[pixel_change_index] 
@@ -337,10 +338,14 @@ class CanvasPart(object):
             # There should be no pixel changes outside the var.TIME_ENLARGEn limits defined in reject_off_times()
             is_in_comp = np.full(len(self.pixel_changes), True, dtype=np.bool_)
         else: 
-            # indices of self.coords where to find the x,y of a given pixel_change # this is almost done by np.isin, except isin does not give the indices found in the coords array
-            inds_in_coords = np.array([ np.where( (self.coords[0] == x) & (self.coords[1] == y) )[0][0]
-                                        for x,y in zip(self.pixel_changes['xcoor'], self.pixel_changes['ycoor']) ])
-
+            # indices of self.coords where to find the x,y of a given pixel_change 
+            coords_comb = self.coords[0] + 10000.*self.coords[1]
+            coord_sort_inds = np.argsort(coords_comb)
+            inds_in_sorted_coords = np.searchsorted(coords_comb[coord_sort_inds], self.pixel_changes['xcoor'] + 10000.*self.pixel_changes['ycoor'])
+            inds_in_coords = coord_sort_inds[inds_in_sorted_coords]
+            #inds_in_coords = np.array([ np.where( (self.coords[0] == x) & (self.coords[1] == y) )[0][0]
+            #                            for x,y in zip(self.pixel_changes['xcoor'], self.pixel_changes['ycoor']) ])
+            
             is_in_comp = np.full(self.pixel_changes.shape[0], False, dtype=np.bool_)
             for i in range(0, len(self.pixel_changes)):
                 t = self.pixel_changes['seconds'][i]
