@@ -27,9 +27,7 @@ class CanvasPart(object):
     ----------
     id : str
         name used to store output. 
-        When is_composition=True, 'id' is the string from the atlas file that identifies a particular composition.
-    is_composition : bool
-        True if the canvas part is defined from the atlas of compositions
+        When specified, 'id' is the string from the atlas file that identifies a particular composition.
     is_rectangle : bool
         True if the boundaries of the canvas part are exactly rectangular (and that there is only one boundary for the whole time). 
     pixel_changes : numpy structured array
@@ -72,7 +70,6 @@ class CanvasPart(object):
     '''
 
     def __init__(self,
-                 is_composition,
                  id='',
                  border_path=[[[]]],
                  border_path_times=[[0, var.TIME_TOTAL]],
@@ -87,7 +84,7 @@ class CanvasPart(object):
 
         Parameters
         ----------
-        is_composition, border_path, border_path_times, data_path, data_file, id : 
+        border_path, border_path_times, data_path, data_file, id : 
             directly set the attributes of the CanvasPart class, documented in the class
         pixel_changes_all : numpy recarray or None, optional
             Contains all of the pixel change data from the entire dataset. If ==None, then the whole dataset is loaded when the class instance is initialized.
@@ -97,23 +94,22 @@ class CanvasPart(object):
             Composition atlas from the atlas.json file, only needed for compositions. 
             If =None, it is extracted from the file in the get_atlas_border method.
         '''
-        self.is_composition = is_composition
         self.data_path = data_path
         self.data_file = data_file
         self.id = id
 
         # raise exceptions when CanvasPart is (or not) a composition but misses essential info
-        if self.is_composition and self.id == '' and border_path == [[[]]]:
-            raise ValueError('ERROR: cannot initialise a CanvasPart which has is_composition=True and an empty id and an empty border_path!')
-        if (not self.is_composition) and border_path == [[[]]]:
-            raise ValueError('ERROR: cannot initialise a CanvasPart which has is_composition=False and an empty border_path!')
+        if self.id == '' and border_path == [[[]]]:
+            raise ValueError('ERROR: cannot initialise a CanvasPart which has an empty atlas id but has no user-specified border_path!')
+        if self.id != '' and border_path != [[[]]]:
+            raise ValueError('ERROR: cannot initialise a CanvasPart which has an atlas id but a user-specified border_path!')
         
         # get the border path from the atlas of compositions, when it is not provided
         if border_path != [[[]]]:
             self.border_path = border_path
             self.border_path_times = border_path_times
             self.description = ''
-        elif self.is_composition:
+        else:
             self.get_atlas_border(atlas)
 
         self.xmin = self.border_path[:,:,0].min()
@@ -144,12 +140,11 @@ class CanvasPart(object):
         self.set_color_dictionaries()
 
     def __str__(self):
-        return f"          CanvasPart {self.id}\n{'atlas composition' if self.is_composition else 'user-defined area'}, \
-{'' if self.is_rectangle else 'not '}rectangle, {len(self.border_path)} time-dependent border_path(s)\n{len(self.coords[0])} pixels in total, \
-x in [{self.xmin}, {self.xmax}], y in [{self.ymin}, {self.ymax}]\
-\n{len(self.pixel_changes['seconds'])} pixel changes (including {np.count_nonzero(self.pixel_changes['in_timerange'])} in composition time ranges)\
-\n    Description: \n{self.description} \n    Pixel changes: \n{self.pixel_changes}\
-\n{f'    Time ranges for boundary paths: {chr(10)}{self.border_path_times}' if len(self.border_path)>1 else ''}" # chr(10) is equivalent to \n
+        return f"CanvasPart \n{'Atlas Composition, id: '+self.id if self.id!='' else 'user-defined area'}, \
+        \n{'' if self.is_rectangle else 'not '}Rectangle, {len(self.border_path)} time-dependent border_path(s)\n{len(self.coords[0])} pixels in total, x in [{self.xmin}, {self.xmax}], y in [{self.ymin}, {self.ymax}]\
+        \n{len(self.pixel_changes['seconds'])} pixel changes (including {np.count_nonzero(self.pixel_changes['in_timerange'])} in composition time ranges)\
+        \n\nDescription: \n{self.description} \n\nPixel changes: \n{self.pixel_changes}\
+        \n{f'    Time ranges for boundary paths: {chr(10)}{self.border_path_times}' if len(self.border_path)>1 else ''}" # chr(10) is equivalent to \n
 
     def set_is_rectangle(self):
         ''' Determines the is_rectangle attribute. Needs self.border_path to be defined.'''
@@ -254,7 +249,7 @@ x in [{self.xmin}, {self.xmax}], y in [{self.ymin}, {self.ymax}]\
             mask = np.zeros((self.ymax - self.ymin + 1, self.xmax - self.xmin + 1))
 
             # create mask from border_path
-            cv2.fillPoly(mask, pts=np.int32( [np.add( self.border_path[i], np.array([ -int(self.xmin), -int(self.ymin)]) )] ), color=[1, 1, 1])
+            cv2.fillPoly(mask, pts=np.int32( [np.add(self.border_path[i], np.array([ -int(self.xmin), -int(self.ymin)]) )] ), color=[1, 1, 1])
             masked_img = cv2.bitwise_and(img, mask)
             
             if show_coords:
@@ -332,6 +327,7 @@ x in [{self.xmin}, {self.xmax}], y in [{self.ymin}, {self.ymax}]\
 
         # find the pixel changes that correspond to pixels inside the boundary
         if not self.is_rectangle:
+            # indices of pixel_changes_lim that contain the coordinates of self.coords 
             pixel_change_index = np.where(np.isin((pixel_changes_lim['xcoor'] + 10000.*pixel_changes_lim['ycoor']), 
                                                   (self.coords[0] + 10000.*self.coords[1])))[0]
         self.pixel_changes = pixel_changes_lim if self.is_rectangle else pixel_changes_lim[pixel_change_index] 
@@ -342,10 +338,14 @@ x in [{self.xmin}, {self.xmax}], y in [{self.ymin}, {self.ymax}]\
             # There should be no pixel changes outside the var.TIME_ENLARGEn limits defined in reject_off_times()
             is_in_comp = np.full(len(self.pixel_changes), True, dtype=np.bool_)
         else: 
-            # indices of self.coords where to find the x,y of a given pixel_change # this is almost done by np.isin, except isin does not give the indices found in the coords array
-            inds_in_coords = np.array([ np.where( (self.coords[0] == x) & (self.coords[1] == y) )[0][0]
-                                        for x,y in zip(self.pixel_changes['xcoor'], self.pixel_changes['ycoor']) ])
-
+            # indices of self.coords where to find the x,y of a given pixel_change 
+            coords_comb = self.coords[0] + 10000.*self.coords[1]
+            coord_sort_inds = np.argsort(coords_comb)
+            inds_in_sorted_coords = np.searchsorted(coords_comb[coord_sort_inds], self.pixel_changes['xcoor'] + 10000.*self.pixel_changes['ycoor'])
+            inds_in_coords = coord_sort_inds[inds_in_sorted_coords]
+            #inds_in_coords = np.array([ np.where( (self.coords[0] == x) & (self.coords[1] == y) )[0][0]
+            #                            for x,y in zip(self.pixel_changes['xcoor'], self.pixel_changes['ycoor']) ])
+            
             is_in_comp = np.full(self.pixel_changes.shape[0], False, dtype=np.bool_)
             for i in range(0, len(self.pixel_changes)):
                 t = self.pixel_changes['seconds'][i]
@@ -412,8 +412,8 @@ def show_canvas_part(pixels, ax=None):
 
 
 def save_part_over_time(canvas_part,
-                        time_interval,  # in seconds
-                        total_time=var.TIME_TOTAL,  # in seconds
+                        times, # in seconds
+                        part_name=None,  # only for name of output
                         delete_bmp=True,
                         delete_png=False,
                         show_plot=True,
@@ -451,12 +451,18 @@ def save_part_over_time(canvas_part,
     xcoor = np.array(canvas_part.pixel_changes['xcoor'])
     ycoor = np.array(canvas_part.pixel_changes['ycoor'])
     color = np.array(canvas_part.pixel_changes['color'])
-    num_time_steps = int(np.ceil(total_time/time_interval))
+
+    num_time_steps = len(times)-1
     file_size_bmp = np.zeros(num_time_steps+1)
     file_size_png = np.zeros(num_time_steps+1)
 
     pixels = np.full((canvas_part.ymax - canvas_part.ymin + 1, canvas_part.xmax - canvas_part.xmin + 1, 3), 255, dtype=np.uint8) #[r,g,b] will be readable as (r,g,b) ##### fill as white first ##### the pixels must be [y,x,rgb]
-    out_path = os.path.join(os.getcwd(), 'figs', 'history_' + canvas_part.id)
+    if part_name==None and canvas_part.id!='':
+        part_name = canvas_part.id
+    elif part_name==None:
+        part_name = 'area'
+        
+    out_path = os.path.join(os.getcwd(), 'figs', 'history_' + part_name)
     out_path_time = os.path.join(out_path, 'VsTime')
     try:
         os.makedirs(out_path)
@@ -478,22 +484,21 @@ def save_part_over_time(canvas_part,
 
     i_fraction_print = 0  # only for output of a message when a fraction of the steps are ran
 
-    for t_step_idx in range(-1, num_time_steps):
-
+    for t_step_idx in range(0, num_time_steps+1):  # fixed this: want a blank image at t=0
         if print_progress:
             if t_step_idx/num_time_steps > i_fraction_print/10:
                 i_fraction_print += 1
                 print('Ran', 100*t_step_idx/num_time_steps, '%% of the steps')
 
         # get the indices of the times within the interval
-        t_inds = np.where((seconds >= t_step_idx*time_interval) & (seconds < (t_step_idx + 1)*time_interval))[0]
+        t_inds = np.where((seconds >= times[t_step_idx - 1]) & (seconds < times[t_step_idx]))[0]
         t_inds_list.append(t_inds)
         if len(t_inds) != 0:
             pixels[ycoor[t_inds]-canvas_part.ymin, xcoor[t_inds]-canvas_part.xmin, :] = canvas_part.get_rgb(color[t_inds])
 
         # save image
         im = Image.fromarray(pixels)
-        im_path = os.path.join(out_path_time, 'canvaspart_time{:06d}'.format(int((t_step_idx+1)*time_interval)))
+        im_path = os.path.join(out_path_time, 'canvaspart_time{:06d}'.format(int(times[t_step_idx])))
         im.save(im_path + '.png')
         im.save(im_path + '.bmp')
         file_size_png[t_step_idx] = get_file_size(im_path + '.png')
@@ -518,7 +523,7 @@ def save_part_over_time(canvas_part,
                     colcount = 0
                     rowcount += 1
     if print_progress:
-        print('produced', num_time_steps+1, 'images vs time')
+        print('produced', num_time_steps, 'images vs time')
     return file_size_bmp, file_size_png, t_inds_list
 
 
@@ -588,7 +593,7 @@ def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
 
 def save_canvas_part_time_steps(canvas_comp,
                                 time_inds_list_comp,
-                                time_interval,
+                                times,
                                 file_size_bmp,
                                 file_size_png,
                                 data_path=os.path.join(os.getcwd(), 'data'),
@@ -601,7 +606,7 @@ def save_canvas_part_time_steps(canvas_comp,
     with open(file_path, 'wb') as handle:
         pickle.dump([canvas_comp,
                     time_inds_list_comp,
-                    time_interval,
+                    times,
                     file_size_bmp,
                     file_size_png],
                     handle,
