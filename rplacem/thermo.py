@@ -66,6 +66,54 @@ def calc_num_pixel_changes(canvas_part,
             num_touched_pixels,
             num_users)
 
+def find_transitions(canvas_part,
+                     t_lims,
+                     stability_vs_time,
+                     cutoff=0.95):
+    '''
+    identifies transitions in a canvas_part.
+    
+    parameters
+    ----------
+    canvas_part : CanvasPart object
+        The CanvasPart object for which we want to calculate the stability
+    t_lims : 1d array-like of floats
+        time intervals in which the pixel states are studied. Must be ordered in a crescent way, and start at 0
+    stability_vs_time : 1d array-like of floats
+        stability array averaged over all the pixels, for each time step
+    cutoff : float
+        the cutoff stability to define when a transition is happening
+
+    returns
+    -------
+    (trans_ind, trans_start_inds, trans_end_inds,
+    trans_times, trans_start_times, trans_end_times, 
+    num_trans, trans_durations):
+       tuple of many properties of the transition time ranges, their indices, the numner of transitions, and 
+       how long they last
+    '''
+    
+    trans_ind = np.where(stability_vs_time < 0.95)[0]
+    trans_times = t_lims[trans_ind + 1]
+
+    # get the start indices and times
+    start_inds = 1 + np.where(np.diff(trans_ind)>1)[0]
+    trans_start_inds = trans_ind[start_inds]
+    trans_start_times = trans_times[start_inds]
+    
+    # get the end indices and times
+    end_inds = np.hstack([np.where(np.diff(trans_ind) > 1)[0][1:], -1]) # get rid of first value. Add on end value
+    trans_end_inds = trans_ind[end_inds]
+    trans_end_times = trans_times[end_inds]
+    
+    # get total number of transitions and their durations
+    num_trans = len(trans_start_times)
+    trans_durations = trans_end_times-trans_start_times
+
+    return (trans_ind[1:], trans_start_inds, trans_end_inds,
+           trans_times[1:], trans_start_times, trans_end_times, 
+           num_trans, trans_durations)
+
 def stability_new(canvas_part,
               t_lims=[0, var.TIME_TOTAL],
               save_images=False,
@@ -84,8 +132,8 @@ def stability_new(canvas_part,
 
     returns
     -------
-    stability array (and colors sorted by dominance) saved in pickle file, for each time step.
-    Returns the stability averaged over all the pixels, in a list for each time range
+    stability_vs_time: 1d array-like of floats
+        stability array averaged over all the pixels, for each time step
     '''
 
     if t_lims[0] != 0:
@@ -401,3 +449,4 @@ def plot_compression_vs_pixel_changes(num_pixel_changes,
             fig_cid_vs_num_pix_changes,
             fig_cid_vs_num_touched_pix,
             fig_cid_vs_num_users)
+
