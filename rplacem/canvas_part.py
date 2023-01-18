@@ -560,7 +560,7 @@ def save_part_over_time(canvas_part,
     return file_size_bmp, file_size_png, t_inds_list
 
 
-def plot_compression(file_size_bmp, file_size_png, time_interval, total_time, out_name=''):
+def plot_compression(file_size_bmp, file_size_png, times, out_name=''):
     '''
     plot the file size ratio over time
 
@@ -570,18 +570,14 @@ def plot_compression(file_size_bmp, file_size_png, time_interval, total_time, ou
         size of png image in bytes
     file_size_png : float
         size of png image in bytes
-    time_interval : float
-        time interval at which to plot (in seconds)
-    total_time : float
-        total time to plot intervals until (in seconds)
+    times : 1d array of floats
+        time intervals at which to plot (in seconds)
     out_name : string
         for the naming of the output saved plot
     '''
 
-    time = np.arange(time_interval, total_time + 2*time_interval, time_interval)
-
     plt.figure()
-    plt.plot(time, file_size_png/file_size_bmp)
+    plt.plot(times, file_size_png/file_size_bmp)
     sns.despine()
     plt.ylabel('Computable Information Density (file size ratio)')
     plt.xlabel('Time (s)')

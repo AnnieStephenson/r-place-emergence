@@ -66,10 +66,12 @@ def calc_num_pixel_changes(canvas_part,
             num_touched_pixels,
             num_users)
 
-def find_transitions(canvas_part,
-                     t_lims,
+def find_transitions(t_lims,
                      stability_vs_time,
-                     cutoff=0.95):
+                     cutoff=0.95,
+                     cutoff_stable=0.98,
+                     num_stable_intervals=3
+                     ):
     '''
     identifies transitions in a canvas_part.
     
@@ -82,7 +84,11 @@ def find_transitions(canvas_part,
     stability_vs_time : 1d array-like of floats
         stability array averaged over all the pixels, for each time step
     cutoff : float
-        the cutoff stability to define when a transition is happening
+        the higher cutoff on stability to define when a transition is happening
+    cutoff_stable : float
+        the lower cutoff on stability, needs to be exceeded before and after the potential transition, for a validated transition
+    num_stable_intervals : int
+        the number of consecutive intervals before and after the potential transition, for which cutoff_stable must be exceeded
 
     returns
     -------
@@ -93,19 +99,28 @@ def find_transitions(canvas_part,
        how long they last
     '''
     
-    trans_ind = np.where(stability_vs_time < cutoff)[0]
-    trans_times = t_lims[trans_ind + 1]
+    trans_ind = np.where(np.array(stability_vs_time) < cutoff)[0]
+    stable_ind = np.where(np.array(stability_vs_time) > cutoff_stable)[0]
+    trans_times = t_lims[trans_ind]
 
-    # get the start indices and times
-    start_inds = 1 + np.where(np.diff(trans_ind)>1)[0]
+    # get the sequences of more than num_stable_intervals consecutive indices in stable_ind
+    stable_ind_to_sum = np.zeros( shape=(num_stable_intervals, len(stable_ind) - num_stable_intervals) , dtype=np.int16)
+    for i in range(0, num_stable_intervals):
+        offset_ind = range(i, len(stable_ind) - num_stable_intervals + i) # sets of indices with various offsets
+        stable_ind_to_sum[i] = np.diff( stable_ind[offset_ind] ) # difference between elements n and n-1 for these offsetted arrays
+
+    start_stable_inds = 1 + np.where( np.sum( stable_ind_to_sum, axis=0 ) == 3)[0]
+
+    # get the start indices and times for transitions
+    start_inds = 1 + np.where(np.diff(trans_ind) > 1)[0]
     trans_start_inds = trans_ind[start_inds]
     trans_start_times = trans_times[start_inds]
     
     # get the end indices and times
-    end_inds = np.hstack([np.where(np.diff(trans_ind) > 1)[0][1:], -1]) # get rid of first value. Add on end value
+    end_inds = np.hstack([np.where(np.diff(trans_ind) > 1)[0][1:], -1]) # get rid of first value. Add an end value
     trans_end_inds = trans_ind[end_inds]
-    trans_end_times = trans_times[end_inds]
-    
+    trans_end_times = t_lims[trans_end_inds+1] # end time taken as the end of the last in-transition time interval
+
     # get total number of transitions and their durations
     num_trans = len(trans_start_times)
     trans_durations = trans_end_times-trans_start_times
@@ -263,7 +278,7 @@ def stability(canvas_part,
             try:
                 os.makedirs(os.path.join(os.getcwd(), 'figs', 'history_' + canvas_part.out_name()))
             except OSError: 
-                print('')
+                pass
             im1 = Image.fromarray(pixels1.astype(np.uint8))
             im1_path = os.path.join(os.getcwd(), 'figs','history_' + canvas_part.out_name(), 'MostStableColor_time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
             im1.save(im1_path)
