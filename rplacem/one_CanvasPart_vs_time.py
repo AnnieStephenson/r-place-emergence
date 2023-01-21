@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 data_path = os.path.join(os.getcwd(),'data')
-icp = 5 # index of the studied composition. If negative, the CanvasPart is redefined
+icp = 27 # index of the studied composition. If negative, the CanvasPart is redefined
 
 if icp < 0: # not using the stored compositions
     x1 = 0
@@ -26,6 +26,7 @@ else: # getting the composition from the stored ones
     with open(file_path, 'rb') as f:
         canvas_parts = pickle.load(f)
     canvas_part = canvas_parts[icp]
+    print(canvas_part)
 
 
 # create directories if they don't exist yet
@@ -64,3 +65,7 @@ plt.ylim([0, 1])
 plt.xlim([0, var.TIME_TOTAL])
 
 plt.savefig(os.path.join(os.getcwd(), 'figs', 'history_'+canvas_part.out_name(), 'stability.png'))
+
+transitions = th.find_transitions(time_ranges, stability_vs_time)
+print(transitions)
+print(canvas_part.border_path_times)

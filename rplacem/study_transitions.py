@@ -17,9 +17,11 @@ time_bins = 80
 time_interval = var.TIME_WHITEONLY / time_bins  # seconds
 time_ranges = np.arange(0, var.TIME_WHITEONLY+time_interval-1e-4, time_interval)
 
-for i in range(0,100):
+for i in range(0,30):
     print(i)
     transitions = th.find_transitions(time_ranges, stability_vs_time[i][0])
     #print(transitions[4])
     #print(transitions[5])
-    print('number of transitions = ', transitions[6])
+    #print('number of transitions = ', len(transitions[0]))
+    print(transitions[0])
+    print(transitions[1])

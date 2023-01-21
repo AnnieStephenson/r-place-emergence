@@ -68,9 +68,10 @@ def calc_num_pixel_changes(canvas_part,
 
 def find_transitions(t_lims,
                      stability_vs_time,
-                     cutoff=0.95,
+                     cutoff=0.88,
                      cutoff_stable=0.98,
-                     num_stable_intervals=3
+                     num_stable_intervals=4,
+                     dist_stableregion_transition=3
                      ):
     '''
     identifies transitions in a canvas_part.
@@ -88,46 +89,101 @@ def find_transitions(t_lims,
     cutoff_stable : float
         the lower cutoff on stability, needs to be exceeded before and after the potential transition, for a validated transition
     num_stable_intervals : int
-        the number of consecutive intervals before and after the potential transition, for which cutoff_stable must be exceeded
+        the number of consecutive intervals before and after the potential transition, for which cutoff_stable must be exceeded. 
+        No stable intervals is looked for if num_stable_intervals <= 1 and cutoff_stable == cutoff.
+    dist_stableregion_transition: int
+        maximal distance (in number of indices) between the borders of the stable regions and those of the transition region
 
     returns
     -------
-    (trans_ind, trans_start_inds, trans_end_inds,
-    trans_times, trans_start_times, trans_end_times, 
-    num_trans, trans_durations):
-       tuple of many properties of the transition time ranges, their indices, the numner of transitions, and 
-       how long they last
+    (full_transition, full_transition_times) :
+        full_transition is a 2d array. 
+        full_transition[i] contains, for the found transition #i, the following size-6 array (of indices of the input stability array) :
+            [beginning of preceding stable region, end of stable, 
+            beginning of transition region, end of transition, 
+            beginning of subsequent stable region, end of stable]
+        (NB: a region of indices [n, m] includes all time intervals from n to m included)
+        full_transition_times is the same array but with the times corresponding to those indices 
     '''
+    # preliminary
+    if cutoff > cutoff_stable:
+        raise ValueError("ERROR in find_transitions(): stability cutoff for transitions must be lower than that for stable periods")
+    dist_stableregion_transition = max(dist_stableregion_transition, 1)
     
+    #print([(i,stability_vs_time[i]) for i in range(0,len(stability_vs_time))])
+    # removing sequence of "1." at the beginning of stability_vs_time
+    ones_ind = np.where(stability_vs_time == 1.)[0]
+    end_first_ones_sequence = -1
+    if len(ones_ind) > 0:
+        interruptions_ones_sequence = np.where( np.diff( ones_ind ) > 1)[0]
+        end_first_ones_sequence = interruptions_ones_sequence[0] if len(interruptions_ones_sequence) > 0 else ones_ind[-1]
+        stability_vs_time = stability_vs_time[(end_first_ones_sequence+1):] # remove elements until first sequence of ones is over
+
+    # indices of stability_vs_time that are stable or in transition
     trans_ind = np.where(np.array(stability_vs_time) < cutoff)[0]
     stable_ind = np.where(np.array(stability_vs_time) > cutoff_stable)[0]
-    trans_times = t_lims[trans_ind]
 
-    # get the sequences of more than num_stable_intervals consecutive indices in stable_ind
-    stable_ind_to_sum = np.zeros( shape=(num_stable_intervals, len(stable_ind) - num_stable_intervals) , dtype=np.int16)
-    for i in range(0, num_stable_intervals):
-        offset_ind = range(i, len(stable_ind) - num_stable_intervals + i) # sets of indices with various offsets
-        stable_ind_to_sum[i] = np.diff( stable_ind[offset_ind] ) # difference between elements n and n-1 for these offsetted arrays
+    # get the sequences of at least num_stable_intervals consecutive indices in stable_ind
+    if num_stable_intervals < 2:
+        start_stable_inds = stable_ind
+    elif (len(stable_ind) < num_stable_intervals - 1):
+        start_stable_inds = np.array([])
+    else:     
+        stable_ind_to_sum = np.zeros( shape=(num_stable_intervals - 1, len(stable_ind) - num_stable_intervals + 1) , dtype=np.int16)
+        for i in range(0, num_stable_intervals - 1):
+            offset_ind = range(i, len(stable_ind) - num_stable_intervals + 2 + i) # sets of indices with crescent offsets
+            stable_ind_to_sum[i] = np.diff( stable_ind[offset_ind] ) # difference between elements n and n-1 for these offsetted arrays
 
-    start_stable_inds = 1 + np.where( np.sum( stable_ind_to_sum, axis=0 ) == 3)[0]
+        start_stable_inds = stable_ind[ np.where( np.sum( stable_ind_to_sum, axis=0 ) == num_stable_intervals - 1 )[0] ]
 
-    # get the start indices and times for transitions
+    # only starting elements of uninterrupted sequences
+    start_stable_inds_clean = 1 + np.where(np.diff(start_stable_inds) > 1)[0]
+    if len(start_stable_inds) > 0:
+        start_stable_inds_clean = np.concatenate(([0], start_stable_inds_clean)) # keep the first sequence
+    start_sequence_stable_ind = start_stable_inds[start_stable_inds_clean]
+
+    # end indices of stable periods
+    end_stab_inds = np.hstack([(start_stable_inds_clean - 1)[1:], -1]) if len(start_stable_inds) > 0 else np.array([], dtype=np.int16)
+    end_sequence_stable_ind = start_stable_inds[end_stab_inds] + num_stable_intervals - 1
+
+    # get the start and end indices for transitions
     start_inds = 1 + np.where(np.diff(trans_ind) > 1)[0]
-    trans_start_inds = trans_ind[start_inds]
-    trans_start_times = trans_times[start_inds]
+    end_inds = np.hstack([(start_inds - 1)[1:], -1]) # get rid of first value. Add an end value
+
+    # keep only transitions that are surrounded by stable periods, 
+    # and that the borders of the stable regions and those of the transition region are close enough
+    start_inds_filtered = []
+    end_inds_filtered = []
+    stable_regions_borders = []
+    for (s_ind, e_ind) in zip(start_inds, end_inds):
+        trans_closeto_stable = np.where(  (end_sequence_stable_ind[:-1] < trans_ind[s_ind]) # exists a stable region before transition starts
+                                        & (end_sequence_stable_ind[:-1] >= trans_ind[s_ind] - dist_stableregion_transition) # at a close enough distance
+                                        & (start_sequence_stable_ind[1:] > trans_ind[e_ind]) # stable region after the transition ends
+                                        & (start_sequence_stable_ind[1:] >= trans_ind[e_ind] - dist_stableregion_transition) # close enough
+                                        )[0]
+        if len(trans_closeto_stable) > 0:
+            start_inds_filtered.append(s_ind)
+            end_inds_filtered.append(e_ind)
+            stable_regions_borders.append( [start_sequence_stable_ind[trans_closeto_stable][0], 
+                                            end_sequence_stable_ind[trans_closeto_stable][0],
+                                            start_sequence_stable_ind[np.array(trans_closeto_stable+1)][0], 
+                                            end_sequence_stable_ind[np.array(trans_closeto_stable+1)][0]] )
+            if len(trans_closeto_stable) > 1:
+                print('\n !!!!!!!!!!!!!!!!!!!!!!!!!!', end_sequence_stable_ind[trans_closeto_stable], start_sequence_stable_ind[np.array(trans_closeto_stable+1)])
     
-    # get the end indices and times
-    end_inds = np.hstack([np.where(np.diff(trans_ind) > 1)[0][1:], -1]) # get rid of first value. Add an end value
-    trans_end_inds = trans_ind[end_inds]
-    trans_end_times = t_lims[trans_end_inds+1] # end time taken as the end of the last in-transition time interval
+    # get the true start/end indices and times    
+    trans_start_inds = trans_ind[np.array(start_inds_filtered, dtype=np.int16)]
+    trans_end_inds = trans_ind[np.array(end_inds_filtered, dtype=np.int16)]
 
-    # get total number of transitions and their durations
-    num_trans = len(trans_start_times)
-    trans_durations = trans_end_times-trans_start_times
+    #final output
+    full_transition = [ [s[0], s[1], t1, t2, s[2], s[3]] for (s, t1, t2) in zip(stable_regions_borders, trans_start_inds, trans_end_inds) ]
+    full_transition = np.array(full_transition + np.array(end_first_ones_sequence+1), dtype=np.int16) # add back the indices for the starting [1., 1., ...] sequence
+    if len(full_transition) == 0:
+        full_transition_times = np.array([])
+    else: 
+        full_transition_times = t_lims[full_transition + np.array([0, 1, 0, 1, 0, 1])]  # end time taken as the end of the last in-transition time interval
 
-    return (trans_ind[1:], trans_start_inds, trans_end_inds,
-           trans_times[1:], trans_start_times, trans_end_times, 
-           num_trans, trans_durations)
+    return (full_transition, full_transition_times)
 
 def stability(canvas_part,
               t_lims=[0, var.TIME_TOTAL],
