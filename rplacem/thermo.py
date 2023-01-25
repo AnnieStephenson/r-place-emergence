@@ -90,7 +90,7 @@ def find_transitions(t_lims,
         the lower cutoff on stability, needs to be exceeded before and after the potential transition, for a validated transition
     num_stable_intervals : int
         the number of consecutive intervals before and after the potential transition, for which cutoff_stable must be exceeded. 
-        No stable intervals is looked for if num_stable_intervals <= 1 and cutoff_stable == cutoff.
+        No stable intervals is looked for if num_stable_intervals <= 1 or cutoff_stable == cutoff.
     dist_stableregion_transition: int
         maximal distance (in number of indices) between the borders of the stable regions and those of the transition region
 
@@ -175,8 +175,25 @@ def find_transitions(t_lims,
     trans_start_inds = trans_ind[np.array(start_inds_filtered, dtype=np.int16)]
     trans_end_inds = trans_ind[np.array(end_inds_filtered, dtype=np.int16)]
 
-    #final output
-    full_transition = [ [s[0], s[1], t1, t2, s[2], s[3]] for (s, t1, t2) in zip(stable_regions_borders, trans_start_inds, trans_end_inds) ]
+    # output
+    full_transition_tmp = [ [s[0], s[1], t1, t2, s[2], s[3]] for (s, t1, t2) in zip(stable_regions_borders, trans_start_inds, trans_end_inds) ]
+    full_transition = []
+    # merge transitions that have the same preceding and subsequent stable regions
+    deleted_idx = []
+    for i in range(0, len(full_transition_tmp)):
+        if i in deleted_idx: # this transition was previously deleted in the second-level loop
+            break
+        trans = full_transition_tmp[i]
+        for j in range(i, len(full_transition_tmp)):
+            trans2 = full_transition_tmp[j]
+            if (trans[0] == trans2[0] and trans[1] == trans2[1] 
+                and trans[4] == trans2[4] and trans[5] == trans2[5]):
+                trans[2] = min(trans[2], trans2[2]) # new transition time interval is the smallest that contains both transition intervals
+                trans[3] = max(trans[3], trans2[3])
+                deleted_idx.append(j)
+        full_transition.append(trans)
+
+    # final output
     full_transition = np.array(full_transition + np.array(end_first_ones_sequence+1), dtype=np.int16) # add back the indices for the starting [1., 1., ...] sequence
     if len(full_transition) == 0:
         full_transition_times = np.array([])
