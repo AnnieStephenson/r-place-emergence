@@ -22,7 +22,7 @@ n, bins, patches = plt.hist(size_in_pixels, bins=np.logspace(np.log10(xmin), np.
 sns.despine()
 plt.xlabel('composition size [#pixels]')
 plt.ylabel('number of compositions')
-plt.xscale("log")
+plt.xscale('log')
 plt.xlim([xmin,xmax])
 
 plt.savefig(os.path.join(os.getcwd(), 'figs','size_of_all_compositions.png'))
