@@ -1,7 +1,7 @@
 import numpy as np
 import os
 import cProfile, pstats, io
-from Variables import * 
+import Variables.Variables as var
 import numpy as np
 import rplacem.canvas_part as cp
 import rplacem.thermo as th
@@ -14,9 +14,7 @@ import seaborn as sns
 import pickle
 
 # Grab full dataset
-data_path = os.path.join(os.getcwd(),'data')
-figs_path = os.path.join(os.getcwd(),'figs')
-pixel_changes_all_npz = np.load(os.path.join(data_path, 'PixelChangesCondensedData_sorted.npz'))                                            
+pixel_changes_all_npz = np.load(os.path.join(var.DATA_PATH, 'PixelChangesCondensedData_sorted.npz'))                                            
 pixel_changes_all = np.core.records.fromarrays( [np.array(pixel_changes_all_npz['seconds'], dtype=np.float64),
                                                 np.array(pixel_changes_all_npz['pixelXpos'], dtype=np.uint16),
                                                 np.array(pixel_changes_all_npz['pixelYpos'], dtype=np.uint16),
@@ -66,7 +64,7 @@ fig = plt.figure()
 plt.scatter(timedif, shuffler, s=0.03)
 plt.xlabel('time difference between two pixel changes of same user')
 plt.ylabel('user index')
-plt.savefig(os.path.join(figs_path, 'Time_difference_between_two_changes_same_user_2D.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH, 'Time_difference_between_two_changes_same_user_2D.png'), bbox_inches='tight')
 
 # histogram of time differences between pixel changes
 print('histogram of time differences')
@@ -80,7 +78,7 @@ plt.xlim([150, 3e5])
 plt.ylim([1, 2e8])
 plt.xscale('log')
 plt.yscale('log')
-plt.savefig(os.path.join(figs_path,'Time_difference_between_two_changes_same_user.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH,'Time_difference_between_two_changes_same_user.png'), bbox_inches='tight')
 
 # same but zoomed on small times
 fig3 = plt.figure()
@@ -91,7 +89,7 @@ plt.ylabel('number of pixel changes')
 plt.xlim([0,600])
 plt.ylim([1e2, 3e7])
 plt.yscale('log')
-plt.savefig(os.path.join(figs_path,'Time_difference_between_two_changes_same_user_zoomed.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH,'Time_difference_between_two_changes_same_user_zoomed.png'), bbox_inches='tight')
 
 print('number of pixel changes done in <0.4 seconds = ',len(timedif[np.where(timedif<0.4)]))
 
@@ -111,7 +109,7 @@ plt.xlim([150,300000])
 plt.ylim([1., 2.5e6])
 plt.xscale('log')
 plt.yscale('log')
-plt.savefig(os.path.join(figs_path,'Mean_time_difference_between_two_changes_per_user.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH,'Mean_time_difference_between_two_changes_per_user.png'), bbox_inches='tight')
 '''
 
 # plot min time interval between changes of each user
@@ -137,7 +135,7 @@ plt.ylabel('number of users')
 plt.xlim([0,60])
 plt.ylim([0.8,3000])
 plt.yscale('log')
-plt.savefig(os.path.join(figs_path,'Number_of_cheated_pixels_per_user.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH,'Number_of_cheated_pixels_per_user.png'), bbox_inches='tight')
 
 fig4 = plt.figure()
 n, bins, patches = plt.hist(min_timedif_of_users, 2000, range=[0,300000], facecolor='blue', alpha=0.5, align='mid')
@@ -148,7 +146,7 @@ plt.xlim([150,300000])
 plt.ylim([1., 6e6])
 plt.xscale('log')
 plt.yscale('log')
-plt.savefig(os.path.join(figs_path,'Min_time_difference_between_two_changes_per_user.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH,'Min_time_difference_between_two_changes_per_user.png'), bbox_inches='tight')
 
 # same but zoomed on zero
 fig7 = plt.figure()
@@ -159,7 +157,7 @@ plt.ylabel('number of users')
 plt.xlim([0, 2000])
 plt.ylim([1., 6e6])
 plt.yscale('log')
-plt.savefig(os.path.join(figs_path,'Min_time_difference_between_two_changes_per_user_zoomed.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH,'Min_time_difference_between_two_changes_per_user_zoomed.png'), bbox_inches='tight')
 
 '''
 # plot median time interval between changes of each user
@@ -177,7 +175,7 @@ plt.xlim([150,300000])
 plt.ylim([0.9, 8e5])
 plt.xscale('log')
 plt.yscale('log')
-plt.savefig(os.path.join(figs_path,'Median_time_difference_between_two_changes_per_user.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH,'Median_time_difference_between_two_changes_per_user.png'), bbox_inches='tight')
 
 # plot std deviation of time intervals between changes of each user
 print('histogram of std deviation of time interval per user')
@@ -193,7 +191,7 @@ plt.ylabel('number of users')
 plt.xlim([0,150000])
 plt.ylim([0.7, 8e6])
 plt.yscale('log')
-plt.savefig(os.path.join(figs_path,'StandardDev_time_difference_between_two_changes_per_user.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH,'StandardDev_time_difference_between_two_changes_per_user.png'), bbox_inches='tight')
 
 # 2D histogram of pixel time vs time difference 
 print('Doing 2D histogram of pixel time vs time difference')
@@ -205,7 +203,7 @@ plt.pcolormesh(xedge, yedge, matrix, cmap=plt.cm.jet, norm=pltcolors.LogNorm(vmi
 plt.xlabel('pixel change time')
 plt.ylabel('time interval between two pixel changes of same user')
 plt.colorbar(label='number of pixel changes')
-plt.savefig(os.path.join(figs_path, 'Time_vs_timedifference_pixelchanges.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH, 'Time_vs_timedifference_pixelchanges.png'), bbox_inches='tight')
 
 # same but normalize by sum of column contents
 for i in range(0, matrix2.shape[0]):
@@ -218,7 +216,7 @@ plt.pcolormesh(xedge, yedge, matrix2, cmap=plt.cm.jet, norm=pltcolors.LogNorm(vm
 plt.xlabel('pixel change time')
 plt.ylabel('time interval between two pixel changes of same user')
 plt.colorbar(label='number of pixel changes (norm. by time interval)')
-plt.savefig(os.path.join(figs_path, 'Time_vs_timedifference_pixelchanges_normalized.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH, 'Time_vs_timedifference_pixelchanges_normalized.png'), bbox_inches='tight')
 '''
 
 ############# COMPUTE SPACE CORRELATIONS OF PIXEL CHANGES FROM SAME USER
@@ -251,7 +249,7 @@ plt.ylabel('number of users')
 plt.xlim([0,1450])
 plt.ylim([5, 1e6])
 plt.yscale('log')
-plt.savefig(os.path.join(figs_path,'Space_correlation_radius_of_pixel_changes.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH,'Space_correlation_radius_of_pixel_changes.png'), bbox_inches='tight')
 
 # plot space correlations vs number of pixel changes per user
 fig12 = plt.figure()
@@ -262,7 +260,7 @@ plt.colorbar(label='number of users')
 plt.xlim([0,1450])
 plt.ylim([0.9, 800])
 plt.yscale('log')
-plt.savefig(os.path.join(figs_path,'Space_correlation_radius_vs_numberof_pixel_changes.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH,'Space_correlation_radius_vs_numberof_pixel_changes.png'), bbox_inches='tight')
 
 
 # compute space correlation with the combinatorial method
@@ -291,7 +289,7 @@ plt.ylabel('number of users')
 plt.xlim([0,1450])
 plt.ylim([5, 1e6])
 plt.yscale('log')
-plt.savefig(os.path.join(figs_path,'Space_correlation_radius_of_pixel_changes_combinatorialMeth.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH,'Space_correlation_radius_of_pixel_changes_combinatorialMeth.png'), bbox_inches='tight')
 
 # plot space correlations vs number of pixel changes per user
 fig14 = plt.figure()
@@ -302,4 +300,4 @@ plt.colorbar(label='number of users')
 plt.xlim([0,1450])
 plt.ylim([0.9, 800])
 plt.yscale('log')
-plt.savefig(os.path.join(figs_path,'Space_correlation_radius_vs_numberof_pixel_changes_combinatorialMeth.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH,'Space_correlation_radius_vs_numberof_pixel_changes_combinatorialMeth.png'), bbox_inches='tight')
