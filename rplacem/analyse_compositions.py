@@ -6,9 +6,9 @@ import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.mlab as mlab
+import Variables.Variables as var
 
-data_path = os.path.join(os.getcwd(),'data')
-file_path = os.path.join(data_path, 'canvas_compositions_all.pickle') 
+file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
 
 with open(file_path, 'rb') as f:
     canvas_parts = pickle.load(f)
@@ -22,7 +22,7 @@ n, bins, patches = plt.hist(size_in_pixels, bins=np.logspace(np.log10(xmin), np.
 sns.despine()
 plt.xlabel('composition size [#pixels]')
 plt.ylabel('number of compositions')
-plt.xscale("log")
+plt.xscale('log')
 plt.xlim([xmin,xmax])
 
-plt.savefig(os.path.join(os.getcwd(), 'figs','size_of_all_compositions.png'))
+plt.savefig(os.path.join(var.FIGS_PATH,'size_of_all_compositions.png'))

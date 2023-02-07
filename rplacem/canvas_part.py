@@ -56,10 +56,6 @@ class CanvasPart(object):
         dictionary with keys of color index and values of color hex code
     colidx_to_rgb : dictionary
         dictionary with keys of color index and values of color rgb
-    data_path : string
-        full path where the pixel data is stored
-    data_file : string
-        name of the pixel data file
     description : string
         description of the composition from the atlas.json. Empty in general for non-compositions.
 
@@ -68,12 +64,12 @@ class CanvasPart(object):
     __init__
     __str__
     get_bounded_coords(self, show_coords =False)
-    find_pixel_changes_in_boundary(self, pixel_changes_all, data_path=os.path.join(os.getcwd(),'data'))
+    find_pixel_changes_in_boundary(self, pixel_changes_all)
     set_color_dictionaries(self)
     out_name(self)
     get_rgb(self, col_idx)
     set_is_rectangle(self)
-    get_atlas_border(self, id, atlas=None, data_path=os.path.join(os.getcwd(), 'data'))
+    get_atlas_border(self, id, atlas=None)
     reject_off_times(self)
     pixel_changes_coords(self)
     '''
@@ -84,8 +80,6 @@ class CanvasPart(object):
                  border_path_times=[[0, var.TIME_TOTAL]],
                  atlas=None,
                  pixel_changes_all=None,
-                 data_path=os.path.join(os.getcwd(), 'data'),
-                 data_file='PixelChangesCondensedData_sorted.npz',
                  show_coords=False
                  ):
         '''
@@ -93,7 +87,7 @@ class CanvasPart(object):
 
         Parameters
         ----------
-        border_path, border_path_times, data_path, data_file, id : 
+        border_path, border_path_times, data_file, id : 
             directly set the attributes of the CanvasPart class, documented in the class
         pixel_changes_all : numpy recarray or None, optional
             Contains all of the pixel change data from the entire dataset. If ==None, then the whole dataset is loaded when the class instance is initialized.
@@ -103,8 +97,6 @@ class CanvasPart(object):
             Composition atlas from the atlas.json file, only needed for compositions. 
             If =None, it is extracted from the file in the get_atlas_border method.
         '''
-        self.data_path = data_path
-        self.data_file = data_file
         self.id = id
 
         # raise exceptions when CanvasPart is (or not) a composition but misses essential info
@@ -180,11 +172,9 @@ class CanvasPart(object):
 
     def set_color_dictionaries(self):
         ''' Set up the dictionaries translating the color index to the corresponding rgb or hex color'''
-        color_dict_file = open(os.path.join(self.data_path, 'ColorsFromIdx.json'))
-        color_dict = json.load(color_dict_file)
-        self.colidx_to_hex = np.empty([len(color_dict)], dtype='object')
-        self.colidx_to_rgb = np.empty([len(color_dict), 3], dtype='int32')
-        for (k, v) in color_dict.items():  # rather make these dictionaries numpy arrays, for more efficient use later
+        self.colidx_to_hex = np.empty([var.NUM_COLORS], dtype='object')
+        self.colidx_to_rgb = np.empty([var.NUM_COLORS, 3], dtype='int32')
+        for (k, v) in var.COLOR_DICT.items():  # rather make these dictionaries numpy arrays, for more efficient use later
             self.colidx_to_hex[int(k)] = v
             self.colidx_to_rgb[int(k)] = np.asarray(ImageColor.getrgb(v))
 
@@ -204,7 +194,7 @@ class CanvasPart(object):
 
         # get the atlas
         if atlas == None:
-            atlas_path = os.path.join(self.data_path, 'atlas.json')
+            atlas_path = os.path.join(var.DATA_PATH, 'atlas.json')
             with open(atlas_path) as f:
                 atlas = json.load(f)
 
@@ -308,7 +298,7 @@ class CanvasPart(object):
 
     def reject_off_times(self):
         '''
-        Cut away in self.coords_timerange the times where some quarters of the canvas were off
+        Cut away in self.coords_timerange the times at which some quarters of the canvas were off
         '''
         off1_ind = np.nonzero(np.asarray(self.coords[0]>=1000) * np.asarray(self.coords[1]<1000))[0]
         off2_ind = np.nonzero(np.asarray(self.coords[1]>=1000))[0]
@@ -342,8 +332,6 @@ class CanvasPart(object):
         ----------
         pixel_changes_all : numpy recarray or None
             Contains all of the pixel change data from the entire dataset
-        data_path : str, optional
-            Path to where the pixel data file is stored
         '''
         if pixel_changes_all is None:
             pixel_changes_all = get_all_pixel_changes()
@@ -398,6 +386,36 @@ class CanvasPart(object):
         self.pixel_changes['color'] = np.array(pixel_changes_lim['color'])
         self.pixel_changes['in_timerange'] = np.array(is_in_comp)
         self.pixel_changes['moderator'] = np.array(pixel_changes_lim['moderator'])
+
+    def coord_indices_in_timerange(self, t0, t1):
+        ''' Return indices of coordinates for which the interval [t0, t1] intersects with the 'active' timerange '''
+        num_coord = self.coords.shape[1]
+        timeranges = self.coords_timerange
+
+        if self.is_rectangle:
+            (t0ref, t1ref) = timeranges[0][0]
+            if (t0 >= t0ref or t1 > t0ref) and (t0 < t1ref or t1 <= t1ref):
+                inds_in_timerange = np.arange(0, num_coord)
+            else:
+                inds_in_timerange = np.array([])
+
+        else:
+            if timeranges.dtype != object: # case where the timeranges array is a numpy array, with only 1 timerange per pixel
+                # tried to reduce this through distributivity of logical operations, but inconclusive
+                inds_in_timerange = np.where( ((t0 >= timeranges[:,0,0]) | (t1 > timeranges[:,0,0])) 
+                                            & ((t0 < timeranges[:,0,1]) | (t1 <= timeranges[:,0,1])) )
+            else: # dirty python here: timeranges is not a full numpy array, so cannot use broadcasting
+                inds_in_timerange = []
+                for i in range(0, num_coord):
+                    in_timerange = False
+                    for timerange in timeranges[i]:
+                        in_timerange |= (((t0 >= timerange[0]) | (t1 > timerange[0])) 
+                                        & ((t0 < timerange[1]) | (t1 <= timerange[1])) )
+                    if in_timerange:
+                        inds_in_timerange.append(i)
+                inds_in_timerange = np.array(inds_in_timerange, dtype=int)
+
+        return inds_in_timerange
 
 class ColorMovement:
     '''
@@ -495,7 +513,7 @@ def save_part_over_time(canvas_part,
 
     pixels = np.full((canvas_part.ymax - canvas_part.ymin + 1, canvas_part.xmax - canvas_part.xmin + 1, 3), 255, dtype=np.uint8) #[r,g,b] will be readable as (r,g,b) ##### fill as white first ##### the pixels must be [y,x,rgb]
         
-    out_path = os.path.join(os.getcwd(), 'figs', 'history_' + canvas_part.out_name())
+    out_path = os.path.join(var.FIGS_PATH, 'history_' + canvas_part.out_name())
     out_path_time = os.path.join(out_path, 'VsTime')
     try:
         os.makedirs(out_path)
@@ -581,25 +599,23 @@ def plot_compression(file_size_bmp, file_size_png, times, out_name=''):
     sns.despine()
     plt.ylabel('Computable Information Density (file size ratio)')
     plt.xlabel('Time (s)')
-    plt.savefig(os.path.join(os.getcwd(), 'figs', 'history_' + out_name, '_file_size_compression_ratio.png'))
+    plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + out_name, '_file_size_compression_ratio.png'))
 
 
-def get_all_pixel_changes(data_file='PixelChangesCondensedData_sorted.npz',
-                          data_path=os.path.join(os.getcwd(), 'data')):
+def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
     '''
     load all the pixel change data and put it in a numpy array for easy access
 
     parameters
     ----------
     data_file : string that ends in .npz, optional
-    data_path : location of data, assumed to be in cwd in 'data' folder, optional
 
     returns
     -------
     pixel_changes_all : numpy structured array
             Contains all of the pixel change data from the entire dataset
     '''
-    pixel_changes_all_npz = np.load(os.path.join(data_path, data_file))
+    pixel_changes_all_npz = np.load(os.path.join(var.DATA_PATH, data_file))
 
     # save pixel changes as a structured array
     pixel_changes_all = np.zeros(len(pixel_changes_all_npz['seconds']),
@@ -625,13 +641,12 @@ def save_canvas_part_time_steps(canvas_comp,
                                 times,
                                 file_size_bmp,
                                 file_size_png,
-                                data_path=os.path.join(os.getcwd(), 'data'),
                                 file_name='canvas_part_data'):
     '''
     save the variables associated with the CanvasPart object 
 
     '''
-    file_path = os.path.join(data_path, file_name + '.pickle')
+    file_path = os.path.join(var.DATA_PATH, file_name + '.pickle')
     with open(file_path, 'wb') as handle:
         pickle.dump([canvas_comp,
                     time_inds_list_comp,
@@ -642,12 +657,11 @@ def save_canvas_part_time_steps(canvas_comp,
                     protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def load_canvas_part_time_steps(data_path=os.path.join(os.getcwd(), 'data'),
-                                file_name='canvas_part_data'):
+def load_canvas_part_time_steps(file_name='canvas_part_data'):
     '''
     save the variables associated with the CanvasPart object 
     '''
-    file_path = os.path.join(data_path, file_name + '.pickle')
+    file_path = os.path.join(var.DATA_PATH, file_name + '.pickle')
     with open(file_path, 'rb') as f:
         canvas_part_parameters = pickle.load(f)
 
