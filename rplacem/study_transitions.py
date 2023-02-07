@@ -24,7 +24,7 @@ def find_all_transitions(keep_idx_compos, stability_vs_time, time_ranges, v, x, 
     #print('fraction of compositions showing a transition =', num_comp_with_trans / num_comp)
     return(num_trans / num_comp, num_comp_with_trans / num_comp)
 
-def transition_reference_image(canvas_part, 
+def transition_reference_image(canpart, 
                                time_ranges, stability_vs_time,
                                save_images,
                                cutoff=0.88,
@@ -56,14 +56,14 @@ def transition_reference_image(canvas_part,
         trans_times2[6] = trans_times2[5] + averaging_period * (time_ranges[-3] - time_ranges[-4]) # calculate the (post)stable image in only the earliest stable time interval 
         print(trans_times2)
         trans_times_mod.append(trans_times2)
-        _, stablepixels1, stablepixels2, stablepixels3 = th.stability(canvas_part, trans_times2, True, save_images, False, False)
+        _, stablepixels1, stablepixels2, stablepixels3 = th.stability(canpart, trans_times2, True, save_images, False, False)
         avimage_pre.append(stablepixels1[1])
         avimage_trans.append(stablepixels1[3])
         avimage_post.append(stablepixels1[5])
 
-        #'pixels' are filled only for the canvas_part.coords, white otherwise. So the differences will show only for the canvas_part.coords
-        num_differing_pixels = th.count_image_differences(avimage_post[j], avimage_pre[j], canvas_part)
-        frac_differing_pixels.append( num_differing_pixels / len(canvas_part.coords[0]) )
+        #'pixels' are filled only for the canpart.coords, white otherwise. So the differences will show only for the canpart.coords
+        num_differing_pixels = th.count_image_differences(avimage_post[j], avimage_pre[j], canpart)
+        frac_differing_pixels.append( num_differing_pixels / len(canpart.coords[0]) )
         print(num_differing_pixels, frac_differing_pixels)
 
     #print('average number of transitions per composition =', num_trans / num_comp)
@@ -81,27 +81,30 @@ with open(file_path_stab, 'rb') as handle:
 # get all compos
 file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
 with open(file_path, 'rb') as f:
-    canvas_parts = pickle.load(f)
+    canparts = pickle.load(f)
+
+canpart = cp.CanvasPart(id='000006', 
+                                pixel_changes_all=None)
 
 # test only compositions of significant size
-#keep_idx_comps = np.nonzero(np.array([(cp.coords.shape[1] >= 100) for cp in canvas_parts]))[0]
+#keep_idx_comps = np.nonzero(np.array([(cp.coords.shape[1] >= 100) for cp in canparts]))[0]
 
 time_bins_stab = 80
-time_bins_trans = 250
+time_bins_trans = 50
 time_interval_stab = var.TIME_WHITEONLY / time_bins_stab  # seconds
 time_interval_trans = var.TIME_WHITEONLY / time_bins_trans  # seconds
 time_ranges_stab = np.arange(0, var.TIME_WHITEONLY+time_interval_stab-1e-4, time_interval_stab)
 time_ranges_trans = np.arange(0, var.TIME_WHITEONLY+time_interval_trans-1e-4, time_interval_trans)
 
 j = 0
-#find_all_transitions(keep_idx_comps, stability_vs_time, time_ranges_stab, canvas_parts, 0.88, 0.985, 3, 3, True)
-image_pre, _, _, trans_times, trans_times_modif = transition_reference_image(canvas_parts[5], time_ranges_stab, stability_vs_time[5], True, 0.88, 0.99, 3, 4)
-res = th.num_deviating_pixels(canvas_parts[5], time_ranges_trans, image_pre[j])
+#find_all_transitions(keep_idx_comps, stability_vs_time, time_ranges_stab, canparts, 0.88, 0.985, 3, 3, True)
+image_pre, _, _, trans_times, trans_times_modif = transition_reference_image(canpart, time_ranges_stab, stability_vs_time[5], True, 0.88, 0.99, 3, 4)
+res = th.num_deviating_pixels(canpart, time_ranges_trans, image_pre[j], True)
 pix_changes = res[0] * 300 / (time_interval_trans * res[3]) 
 defense_changes = res[1] * 300 / (time_interval_trans * res[3]) 
 attack_changes = res[2] * 300 / (time_interval_trans * res[3])
 deviating_pixels = res[4] / res[3]
-instability = (1-stability_vs_time[5][0]) * 3600 / time_interval_trans
+instability = (1-stability_vs_time[5][0]) * 3600 / time_interval_stab
 
 plt.figure()
 plt.plot(time_ranges_trans[:-1]+time_interval_trans/2, pix_changes, label='# pixel changes / active area / 5 min')
@@ -117,7 +120,7 @@ plt.xlim([trans_times[j][0], trans_times[j][5]])
 lege = plt.legend(loc="upper left")
 plt.vlines(x = [trans_times_modif[j][1], trans_times_modif[j][2]], ymin=0, ymax=100, colors = 'black', linestyle='dashed')
 refimstr = plt.text(trans_times_modif[j][1] + (trans_times_modif[j][2]-trans_times_modif[j][1])*0.6, 0.6*ymax, 'ref image', horizontalalignment='center', verticalalignment='center', rotation=90)
-plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + canvas_parts[5].out_name(), 'number_attack_pixel_changes.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), 'number_attack_pixel_changes.png'), bbox_inches='tight')
 
 
 with np.errstate(divide='ignore', invalid='ignore'):
@@ -127,6 +130,7 @@ plt.figure()
 plt.plot(time_ranges_trans[:-1]+time_interval_trans/2, attack_defense_ratio, label='# attack / # defense changes')
 plt.plot(time_ranges_trans[:-1]+time_interval_trans/2, pix_changes, label='# pixel changes / active area / 5 min')
 plt.plot(time_ranges_stab[:-1]+time_interval_stab/2, instability, label='(1 - stability) / 1 h')
+plt.plot(time_ranges_trans[:-1]+time_interval_trans/2, deviating_pixels*10, label='# deviating pixels / active area')
 sns.despine()
 plt.xlabel('Time [s]')
 ymax = max(attack_defense_ratio)*1.3
@@ -137,7 +141,7 @@ lege = plt.legend(loc="upper left")
 plt.vlines(x = [trans_times_modif[j][1], trans_times_modif[j][2]], ymin=0, ymax=100, colors = 'black', linestyle='dashed')
 plt.hlines(y = 1, xmin=0, xmax=4e5, colors = 'black', linestyle='dashed')
 plt.text(trans_times_modif[j][1] + (trans_times_modif[j][2]-trans_times_modif[j][1])*0.6, 0.6*ymax, 'ref image', horizontalalignment='center', verticalalignment='center', rotation=90)
-plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + canvas_parts[5].out_name(), 'attack_defense_changes_ratio.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), 'attack_defense_changes_ratio.png'), bbox_inches='tight')
 
 plt.figure()
 plt.plot(time_ranges_trans[:-1]+time_interval_trans/2, deviating_pixels, label='# deviating pixels / active area')
@@ -152,7 +156,7 @@ plt.xlim([trans_times[j][0], trans_times[j][5]])
 lege = plt.legend(loc="upper left")
 plt.vlines(x = [trans_times_modif[j][1], trans_times_modif[j][2]], ymin=0, ymax=100, colors = 'black', linestyle='dashed')
 plt.text(trans_times_modif[j][1] + (trans_times_modif[j][2]-trans_times_modif[j][1])*0.6, 0.6*ymax, 'ref image', horizontalalignment='center', verticalalignment='center', rotation=90)
-plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + canvas_parts[5].out_name(), 'deviating_pixels.png'), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), 'deviating_pixels.png'), bbox_inches='tight')
 
 '''
 # Test grid of parameters

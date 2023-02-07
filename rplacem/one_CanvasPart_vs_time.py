@@ -16,24 +16,24 @@ if icp < 0: # not using the stored compositions
     y2 = 2000
 
     border_path = np.array([[[x1, y1], [x1, y2], [x2, y2], [x2, y1]]])
-    canvas_part = cp.CanvasPart(border_path=border_path, #id='000021', 
+    canpart = cp.CanvasPart(border_path=border_path, #id='000021', 
                                 pixel_changes_all=None)
 
 else: # getting the composition from the stored ones
     file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
     with open(file_path, 'rb') as f:
         canvas_parts = pickle.load(f)
-    canvas_part = canvas_parts[icp]
-    print(canvas_part)
+    canpart = canvas_parts[icp]
+    print(canpart)
 
 
 # create directories if they don't exist yet
 try:
-    os.makedirs(os.path.join(var.FIGS_PATH, 'history_' + canvas_part.out_name()))
+    os.makedirs(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name()))
 except OSError: 
     pass
 try:
-    os.makedirs(os.path.join(var.FIGS_PATH, 'history_' + canvas_part.out_name(), 'VsTime'))
+    os.makedirs(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), 'VsTime'))
 except OSError: 
     pass
 
@@ -41,8 +41,8 @@ except OSError:
 # time-dependent images + file sizes and compression
 time_intervals = np.arange(0, var.TIME_TOTAL, 300)
 file_size_bmp, file_size_png, t_inds_list = cp.save_part_over_time(canvas_part, time_intervals, delete_bmp=True, delete_png=False, show_plot=False)
-cp.save_movie(os.path.join(var.FIGS_PATH, 'history_' + canvas_part.out_name(),'VsTime'), 15)
-cp.plot_compression(file_size_bmp, file_size_png, time_intervals, out_name = canvas_part.out_name())
+cp.save_movie(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(),'VsTime'), 15)
+th.plot_compression(file_size_bmp, file_size_png, time_intervals, out_name = canpart.out_name())
 
 # mean stability 
 mean_stability = th.stability(canvas_part,np.asarray([0, var.TIME_WHITEONLY]), True,True,False,True)[0][0]
@@ -62,8 +62,8 @@ plt.xlabel('Time [s]')
 plt.ylim([0, 1])
 plt.xlim([0, var.TIME_TOTAL])
 
-plt.savefig(os.path.join(var.FIGS_PATH, 'history_'+canvas_part.out_name(), 'stability.png'))
+plt.savefig(os.path.join(var.FIGS_PATH, 'history_'+canpart.out_name(), 'stability.png'))
 
 transitions = th.find_transitions(time_ranges, stability_vs_time)
 print(transitions)
-print(canvas_part.border_path_times)
+print(canpart.border_path_times)
