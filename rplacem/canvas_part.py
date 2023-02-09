@@ -494,7 +494,7 @@ class ColorMovement:
     '''
 
 
-def save_part_over_time(canvas_part,
+def save_part_over_time(cpart,
                         times, # in seconds
                         delete_bmp=True,
                         delete_png=False,
@@ -506,7 +506,7 @@ def save_part_over_time(canvas_part,
 
     parameters
     ----------
-    canvas_part : CanvasPart object
+    cpart : CanvasPart object
     times : 1d array of floats
         time limits of intervals in which to plot (in seconds)
     delete_bmp / delete_png : boolean, optional
@@ -525,17 +525,16 @@ def save_part_over_time(canvas_part,
         each time interval
     '''
 
-    seconds = np.array(canvas_part.pixel_changes['seconds'])
-    coords = canvas_part.pixel_changes_coords()
-    color = np.array(canvas_part.pixel_changes['color'])
+    coords = cpart.pixel_changes_coords()
+    color = np.array(cpart.pixel_changes['color'])
 
     num_time_steps = len(times)-1
     file_size_bmp = np.zeros(num_time_steps+1)
     file_size_png = np.zeros(num_time_steps+1)
 
-    pixels = np.full((canvas_part.ymax - canvas_part.ymin + 1, canvas_part.xmax - canvas_part.xmin + 1, 3), 255, dtype=np.uint8) #[r,g,b] will be readable as (r,g,b) ##### fill as white first ##### the pixels must be [y,x,rgb]
+    pixels = np.full((cpart.ymax - cpart.ymin + 1, cpart.xmax - cpart.xmin + 1, 3), 255, dtype=np.uint8) #[r,g,b] will be readable as (r,g,b) ##### fill as white first ##### the pixels must be [y,x,rgb]
         
-    out_path = os.path.join(var.FIGS_PATH, 'history_' + canvas_part.out_name())
+    out_path = os.path.join(var.FIGS_PATH, 'history_' + cpart.out_name())
     out_path_time = os.path.join(out_path, 'VsTime')
     try:
         os.makedirs(out_path)
@@ -564,10 +563,10 @@ def save_part_over_time(canvas_part,
                 print('Ran', 100*t_step_idx/num_time_steps, '%% of the steps')
 
         # get the indices of the times within the interval
-        t_inds = np.where((seconds >= times[t_step_idx - 1]) & (seconds < times[t_step_idx]))[0]
+        t_inds = cpart.intimerange_pixchanges_inds(times[t_step_idx - 1], times[t_step_idx])
         t_inds_list.append(t_inds)
         if len(t_inds) != 0:
-            pixels[coords[1, t_inds]-canvas_part.ymin, coords[0, t_inds]-canvas_part.xmin, :] = canvas_part.get_rgb(color[t_inds])
+            pixels[coords[1, t_inds]-cpart.ymin, coords[0, t_inds]-cpart.xmin, :] = cpart.get_rgb(color[t_inds])
 
         # save image
         im = Image.fromarray(pixels)
@@ -588,7 +587,7 @@ def save_part_over_time(canvas_part,
                 else:
                     ax_single = ax[t_step_idx]
                 ax_single.axis('off')
-                plot.show_canvas_part(pixels, ax=ax_single)
+                plot.show_cpart(pixels, ax=ax_single)
 
                 if colcount < 9:
                     colcount += 1

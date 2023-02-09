@@ -21,7 +21,7 @@ class CanvasPartStatistics(object):
         time range on which to compute the variables
     mean_stability:
         stability averaged over time and over all pixels of the CanvasPart.
-    stability_vst: 1d numpy array
+    stability: 1d numpy array
         stability averaged over all pixels of the CanvasPart, for all time intervals.
     '''
 
@@ -29,7 +29,9 @@ class CanvasPartStatistics(object):
                  cpart,
                  nbins=80,
                  tmin=0,
-                 tmax=var.TIME_WHITEONLY # rejecting period with only white pixels
+                 tmax=var.TIME_WHITEONLY, # rejecting period with only white pixels
+                 vars_to_compute={'stability': True},
+                 verbose=False
                  ):
 
         self.id = cpart.out_name() 
@@ -40,8 +42,13 @@ class CanvasPartStatistics(object):
         self.t_interval = tmax / nbins # seconds
         self.t_ranges = np.arange(tmin, tmax + self.t_interval - 1e-4, self.t_interval) 
 
-        # mean stability
-        mean_stability = comp.stability(cpart,np.asarray([tmin, tmax]), False,False,False,True)[0][0]
+        if vars_to_compute['stability']:
+            if verbose:
+                print('computing stability')
+            # mean stability
+            self.mean_stability = comp.stability(cpart, np.asarray([tmin, tmax]), False,False,False,True)[0][0]
 
-        # time dependent stability
-        stability_vst = [comp.stability(cpart, self.t_ranges, False,False,False,True)[0]]
+            # time dependent stability
+            self.stability = comp.stability(cpart, self.t_ranges, False,False,False,True)[0]
+        
+        
