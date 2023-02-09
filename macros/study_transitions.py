@@ -1,76 +1,12 @@
 import numpy as np
 import os
-import canvas_part as cp
+import rplacem.canvas_part as cp
 import rplacem.compute_variables as comp
 import rplacem.variables_rplace2022 as var
+import rplacem.transitions as tr
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-def find_all_transitions(keep_idx_compos, stability_vs_time, time_ranges, v, x, y, z):
-    ''' Find and count transitions for compositions of indices keep_idx_compos, using parameters v, x, y ,z '''
-    num_comp_with_trans = 0
-    num_trans = 0
-    num_comp = 0
-
-    for i in keep_idx_compos:
-        num_comp += 1
-        transitions = comp.find_transitions(time_ranges, stability_vs_time[i][0], v, x, y ,z)
-        if len(transitions[0]) > 0:
-            num_comp_with_trans += 1
-            num_trans += len(transitions[0])
-
-    #print('average number of transitions per composition =', num_trans / num_comp)
-    #print('fraction of compositions showing a transition =', num_comp_with_trans / num_comp)
-    return(num_trans / num_comp, num_comp_with_trans / num_comp)
-
-def transition_reference_image(canpart, 
-                               time_ranges, stability_vs_time,
-                               save_images,
-                               cutoff=0.88,
-                               cutoff_stable=0.985,
-                               len_stable_intervals=3,
-                               dist_stableregion_transition=3
-                               ):
-    ''' Finds transitions for a given canvas part, 
-    and returns the images containing the most stable pixels for the stable periods before and after the transition, and during the transition.
-    stability_vs_time input must be the one corresponding to the input canvas_part.'''
-    
-    transitions = comp.find_transitions(time_ranges, stability_vs_time[0], 
-                                      cutoff, cutoff_stable, len_stable_intervals, dist_stableregion_transition)
-
-    avimage_pre = []
-    avimage_trans = []
-    avimage_post = []
-    frac_differing_pixels = []
-    trans_times_mod = []
-
-    for j in range(0, len(transitions[0])):
-        print(transitions[0][j])
-        print(transitions[1][j])
-        trans_times2 = np.hstack((0, transitions[1][j]))
-        print(trans_times2)
-        # number of time intervals used for averaging the pre- and post-transition stable periods
-        averaging_period = 1 #len_stable
-        trans_times2[1] = trans_times2[2] - averaging_period * (time_ranges[-3] - time_ranges[-4]) # calculate the (pre)stable image in only the latest stable time interval 
-        trans_times2[6] = trans_times2[5] + averaging_period * (time_ranges[-3] - time_ranges[-4]) # calculate the (post)stable image in only the earliest stable time interval 
-        print(trans_times2)
-        trans_times_mod.append(trans_times2)
-        _, stablepixels1, stablepixels2, stablepixels3 = comp.stability(canpart, trans_times2, True, save_images, False, False)
-        avimage_pre.append(stablepixels1[1])
-        avimage_trans.append(stablepixels1[3])
-        avimage_post.append(stablepixels1[5])
-
-        #'pixels' are filled only for the canpart.coords, white otherwise. So the differences will show only for the canpart.coords
-        num_differing_pixels = comp.count_image_differences(avimage_post[j], avimage_pre[j], canpart)
-        frac_differing_pixels.append( num_differing_pixels / len(canpart.coords[0]) )
-        print(num_differing_pixels, frac_differing_pixels)
-
-    #print('average number of transitions per composition =', num_trans / num_comp)
-    #print('fraction of compositions showing a transition =', num_comp_with_trans / num_comp)
-    return (avimage_pre, avimage_trans, avimage_post, transitions[1], trans_times_mod)
-
-
 
 # get time-dependent stability for all compos
 file_path_stab = os.path.join(var.DATA_PATH, 'stability_all_canvas_compositions.pickle')
@@ -96,8 +32,8 @@ time_ranges_stab = np.arange(0, var.TIME_WHITEONLY+time_interval_stab-1e-4, time
 time_ranges_trans = np.arange(0, var.TIME_WHITEONLY+time_interval_trans-1e-4, time_interval_trans)
 
 j = 0
-#find_all_transitions(keep_idx_comps, stability_vs_time, time_ranges_stab, canparts, 0.88, 0.985, 3, 3, True)
-image_pre, _, _, trans_times, trans_times_modif = transition_reference_image(canpart, time_ranges_stab, stability_vs_time[5], True, 0.88, 0.99, 3, 4)
+#tr.find_all_transitions(keep_idx_comps, stability_vs_time, time_ranges_stab, canparts, 0.88, 0.985, 3, 3, True)
+image_pre, _, _, trans_times, trans_times_modif = tr.transition_reference_image(canpart, time_ranges_stab, stability_vs_time[5], True, 0.88, 0.99, 3, 4)
 res = comp.num_changes_and_users(canpart, time_ranges_trans, image_pre[j], True)
 pix_changes = res[0] * 300 / (time_interval_trans * res[3]) 
 defense_changes = res[1] * 300 / (time_interval_trans * res[3]) 
