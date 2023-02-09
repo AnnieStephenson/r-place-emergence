@@ -7,22 +7,10 @@ import rplacem.compute_variables as comp
 import matplotlib.pyplot as plt
 import matplotlib.colors as pltcolors
 import seaborn as sns
+import rplacem.utilities as util
 
 # Grab full dataset
-pixel_changes_all_npz = np.load(os.path.join(var.DATA_PATH, 'PixelChangesCondensedData_sorted.npz'))                                            
-pixel_changes_all = np.core.records.fromarrays( [np.array(pixel_changes_all_npz['seconds'], dtype=np.float64),
-                                                np.array(pixel_changes_all_npz['pixelXpos'], dtype=np.uint16),
-                                                np.array(pixel_changes_all_npz['pixelYpos'], dtype=np.uint16),
-                                                np.array(pixel_changes_all_npz['userIndex'], dtype=np.uint32),
-                                                np.array(pixel_changes_all_npz['colorIndex'], dtype=np.uint8),
-                                                np.array(pixel_changes_all_npz['moderatorEvent'], dtype=np.bool_)],
-                                dtype=np.dtype([('seconds', np.float64), 
-                                                ('xcoor', np.uint16), 
-                                                ('ycoor', np.uint16), 
-                                                ('user', np.uint32), 
-                                                ('color', np.uint8), 
-                                                ('moderator', np.bool_)])
-                                            )
+pixel_changes_all = util.get_all_pixel_changes()
 
 ############ CALCULATE TIME DIFFERENCES BETWEEN PIXEL CHANGES FROM SAME USER
 

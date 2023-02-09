@@ -8,7 +8,8 @@ import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-icp = 27 # index of the studied composition. If negative, the CanvasPart is redefined
+'''
+icp = 5 # index of the studied composition. If negative, the CanvasPart is redefined
 
 if icp < 0: # not using the stored compositions
     x1 = 0
@@ -27,22 +28,25 @@ else: # getting the composition from the stored ones
     canpart = canvas_parts[icp]
     print(canpart)
 
+'''
+
+# only quick check here
+canpart = cp.CanvasPart(id='000006', pixel_changes_all=None)
 
 # create directories if they don't exist yet
 try:
-    os.makedirs(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name()))
+    os.makedirs(os.path.join(var.FIGS_PATH, canpart.out_name()))
 except OSError: 
     pass
 try:
-    os.makedirs(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), 'VsTime'))
+    os.makedirs(os.path.join(var.FIGS_PATH, canpart.out_name(), 'VsTime'))
 except OSError: 
     pass
 
-
 # time-dependent images + file sizes and compression
 time_intervals = np.arange(0, var.TIME_TOTAL, 300)
-file_size_bmp, file_size_png, t_inds_list = cp.save_part_over_time(canpart, time_intervals, delete_bmp=True, delete_png=False, show_plot=False)
-util.save_movie(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(),'VsTime'), 15)
+file_size_bmp, file_size_png, t_inds_list = comp.save_part_over_time(canpart, time_intervals, delete_bmp=True, delete_png=False, show_plot=False)
+util.save_movie(os.path.join(var.FIGS_PATH, canpart.out_name(),'VsTime'), 15)
 comp.plot_compression(file_size_bmp, file_size_png, time_intervals, out_name = canpart.out_name())
 
 # mean stability 
@@ -53,7 +57,9 @@ print('mean stability = ', mean_stability)
 time_bins = 80
 time_interval = var.TIME_WHITEONLY / time_bins  # seconds
 time_ranges = np.arange(0, var.TIME_WHITEONLY+time_interval-1e-4, time_interval)
-stability_vs_time = comp.stability(canpart, time_ranges, False, False, icp < 0, True)[0]
+stability_vs_time = comp.stability(canpart, time_ranges, False, False, 
+                                   True, #icp < 0, 
+                                   True)[0]
 
 plt.figure()
 plt.plot(time_ranges[:-1]+time_interval/2, stability_vs_time)
@@ -63,7 +69,7 @@ plt.xlabel('Time [s]')
 plt.ylim([0, 1])
 plt.xlim([0, var.TIME_TOTAL])
 
-plt.savefig(os.path.join(var.FIGS_PATH, 'history_'+canpart.out_name(), 'stability.png'))
+plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'stability.png'))
 
 transitions = comp.find_transitions(time_ranges, stability_vs_time)
 print(transitions)
