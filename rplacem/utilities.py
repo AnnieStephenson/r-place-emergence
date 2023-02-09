@@ -4,6 +4,7 @@ import sys
 import numpy as np
 import glob
 import rplacem.variables_rplace2022 as var
+from PIL import Image
 
 def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
     '''
@@ -38,6 +39,10 @@ def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
 
     return pixel_changes_all
 
+def get_rgb(col_idx):
+    ''' Returns the (r,g,b) triplet corresponding to the input color index '''
+    return var.COLIDX_TO_RGB[col_idx]
+
 def get_file_size(path):
     ''' Gets the length of a file in bytes'''
     f = open(path, "rb").read()
@@ -59,6 +64,23 @@ def equalize_list_sublengths(l):
     for i in range(0,len(l)):
         l[i] += [l[i][0]] * max(maxlen - len(l[i]), 0)
     return l
+
+def pixels_to_image(pix, dir='', save_name='', save_name2=''):
+    ''' Transform the 2d array of color indices into an image object, and saves it if (save_name!='') '''
+    im = Image.fromarray( get_rgb(pix).astype(np.uint8) )
+
+    if save_name != '':
+        try:
+            os.makedirs( os.path.join(var.FIGS_PATH, dir) )
+        except OSError: 
+            pass
+        impath1 = os.path.join(var.FIGS_PATH, dir, save_name) 
+        impath2 = os.path.join(var.FIGS_PATH, dir, save_name2) 
+        im.save(impath1)
+        if save_name2 != '':
+            im.save(impath2)
+
+    return im, impath1, impath2
 
 def save_movie(image_path,
                fps=1,
@@ -106,6 +128,8 @@ def update_image(image, xcoords, ycoords, color, t_inds=None):
     '''Update the pixels of the [image] using the 1d arrays [xcoords], [ycoords], [color]. 
     These latter arrays are taken at indices [t_inds].
     For each (x,y) pixel, one needs to keep only the last pixel change. '''
+    if len(t_inds) == 0:
+        return
     if t_inds is None:
         t_inds = np.arange(0, len(color))
     

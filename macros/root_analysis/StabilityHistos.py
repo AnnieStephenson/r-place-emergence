@@ -24,7 +24,7 @@ ROOT.gStyle.SetOptStat(0)  # no statistics box on canvas
 ROOT.gStyle.SetPalette(60)
 
 DrawHeatMap(stability_hist, 0.1, 1,
-            os.path.join('ColorStability_time{:06d}to{:06d}.png'.format(int(t_lims[0]), int(t_lims[1]))), # 'history_' + 'rectangle_0.0-2000.2000', 
+            os.path.join('ColorStability_time{:06d}to{:06d}.png'.format(int(t_lims[0]), int(t_lims[1]))), # 'rectangle_0.0-2000.2000', 
             ';pixel X; pixel Y;dominance of main color', False)
 
 pixelstability_distrib = ROOT.TH1D('pixelstab', 'pixelstab', 200, 0, 1)
@@ -40,7 +40,7 @@ c2.SetMargin(0.15, 0.05, 0.1, 0.04)  # left,right,bottom,top
 pixelstability_distrib.SetLineWidth(2)
 pixelstability_distrib.Draw('hist')
 
-c2.SaveAs(os.path.join('figs', 'ColorStability_PixelDistribution_time{:06d}to{:06d}.pdf'.format(int(t_lims[0]), int(t_lims[1])))) # 'history_' + 'rectangle_0.0-2000.2000', 
+c2.SaveAs(os.path.join('figs', 'ColorStability_PixelDistribution_time{:06d}to{:06d}.pdf'.format(int(t_lims[0]), int(t_lims[1])))) # 'rectangle_0.0-2000.2000', 
 
 
 used_colors_perpixel = ROOT.TH1D('used_colors_perpixel', 'used_colors_perpixel', 32, 0, 32)
@@ -54,5 +54,5 @@ used_colors_perpixel.SetLineWidth(2)
 c3 = ROOT.TCanvas('c3', 'c3', 2000, 2000)
 c3.SetMargin(0.12, 0.05, 0.1, 0.05)  # left,right,bottom,top
 used_colors_perpixel.Draw('hist')
-c3.SaveAs(os.path.join('figs', 'NumberOfUsedColors_PixelDistribution_time{:06d}to{:06d}.pdf'.format(int(t_lims[0]), int(t_lims[1])))) # 'history_' + 'rectangle_0.0-2000.2000', 
+c3.SaveAs(os.path.join('figs', 'NumberOfUsedColors_PixelDistribution_time{:06d}to{:06d}.pdf'.format(int(t_lims[0]), int(t_lims[1])))) # 'rectangle_0.0-2000.2000', 
 

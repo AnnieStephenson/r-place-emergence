@@ -83,14 +83,13 @@ file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle')
 with open(file_path, 'rb') as f:
     canparts = pickle.load(f)
 
-canpart = cp.CanvasPart(id='000006', 
-                                pixel_changes_all=None)
-
+canpart = cp.CanvasPart(id='000006', pixel_changes_all=None)
+print(canpart.coords)
 # test only compositions of significant size
 #keep_idx_comps = np.nonzero(np.array([(cp.coords.shape[1] >= 100) for cp in canparts]))[0]
 
 time_bins_stab = 80
-time_bins_trans = 20
+time_bins_trans = 50
 time_interval_stab = var.TIME_WHITEONLY / time_bins_stab  # seconds
 time_interval_trans = var.TIME_WHITEONLY / time_bins_trans  # seconds
 time_ranges_stab = np.arange(0, var.TIME_WHITEONLY+time_interval_stab-1e-4, time_interval_stab)
@@ -123,7 +122,7 @@ plt.xlim([trans_times[j][0], trans_times[j][5]])
 lege = plt.legend(loc="upper left")
 plt.vlines(x = [trans_times_modif[j][1], trans_times_modif[j][2]], ymin=0, ymax=100, colors = 'black', linestyle='dashed')
 refimstr = plt.text(trans_times_modif[j][1] + (trans_times_modif[j][2]-trans_times_modif[j][1])*0.6, 0.6*ymax, 'ref image', horizontalalignment='center', verticalalignment='center', rotation=90)
-plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), 'number_attack_pixel_changes_timeinterval{:.0f}s.png'.format(time_interval_trans)), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'number_attack_pixel_changes_timeinterval{:.0f}s.png'.format(time_interval_trans)), bbox_inches='tight')
 
 
 with np.errstate(divide='ignore', invalid='ignore'):
@@ -144,7 +143,7 @@ lege = plt.legend(loc="upper left")
 plt.vlines(x = [trans_times_modif[j][1], trans_times_modif[j][2]], ymin=0, ymax=100, colors = 'black', linestyle='dashed')
 plt.hlines(y = 1, xmin=0, xmax=4e5, colors = 'black', linestyle='dashed')
 plt.text(trans_times_modif[j][1] + (trans_times_modif[j][2]-trans_times_modif[j][1])*0.6, 0.6*ymax, 'ref image', horizontalalignment='center', verticalalignment='center', rotation=90)
-plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), 'attack_defense_changes_ratio_timeinterval{:.0f}s.png'.format(time_interval_trans)), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'attack_defense_changes_ratio_timeinterval{:.0f}s.png'.format(time_interval_trans)), bbox_inches='tight')
 
 plt.figure()
 plt.plot(time_ranges_trans[:-1]+time_interval_trans/2, deviating_pixels, label='# deviating pixels / active area')
@@ -159,7 +158,7 @@ plt.xlim([trans_times[j][0], trans_times[j][5]])
 lege = plt.legend(loc="upper left")
 plt.vlines(x = [trans_times_modif[j][1], trans_times_modif[j][2]], ymin=0, ymax=100, colors = 'black', linestyle='dashed')
 plt.text(trans_times_modif[j][1] + (trans_times_modif[j][2]-trans_times_modif[j][1])*0.6, 0.6*ymax, 'ref image', horizontalalignment='center', verticalalignment='center', rotation=90)
-plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), 'deviating_pixels_timeinterval{:.0f}s.png'.format(time_interval_trans)), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'deviating_pixels_timeinterval{:.0f}s.png'.format(time_interval_trans)), bbox_inches='tight')
 
 with np.errstate(divide='ignore', invalid='ignore'):
     onlyattackordefense_users_ratio = num_attackonly_users / num_defenseonly_users
@@ -181,7 +180,7 @@ lege = plt.legend(loc="upper left")
 plt.hlines(y = 1, xmin=0, xmax=4e5, colors = 'black', linestyle='dashed')
 plt.vlines(x = [trans_times_modif[j][1], trans_times_modif[j][2]], ymin=0, ymax=ymax, colors = 'black', linestyle='dashed')
 plt.text(trans_times_modif[j][1] + (trans_times_modif[j][2]-trans_times_modif[j][1])*0.6, 0.6*ymax, 'ref image', horizontalalignment='center', verticalalignment='center', rotation=90)
-plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), 'attacking_vs_defending_users_ratio_timeinterval{:.0f}s.png'.format(time_interval_trans)), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'attacking_vs_defending_users_ratio_timeinterval{:.0f}s.png'.format(time_interval_trans)), bbox_inches='tight')
 
 plt.figure()
 plt.plot(time_ranges_trans[:-1]+time_interval_trans/2, num_attackonly_users, label='# users that only attack / # total users / 1h')
@@ -197,7 +196,7 @@ plt.xlim([trans_times[j][0], trans_times[j][5]])
 lege = plt.legend(loc="upper left")
 plt.vlines(x = [trans_times_modif[j][1], trans_times_modif[j][2]], ymin=0, ymax=ymax, colors = 'black', linestyle='dashed')
 plt.text(trans_times_modif[j][1] + (trans_times_modif[j][2]-trans_times_modif[j][1])*0.6, 0.6*ymax, 'ref image', horizontalalignment='center', verticalalignment='center', rotation=90)
-plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), 'attacking_vs_defending_users_timeinterval{:.0f}s.png'.format(time_interval_trans)), bbox_inches='tight')
+plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'attacking_vs_defending_users_timeinterval{:.0f}s.png'.format(time_interval_trans)), bbox_inches='tight')
 
 '''
 # Test grid of parameters
