@@ -1,14 +1,11 @@
 import json
-import math
 import os
 import pickle
-import shutil
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image, ImageColor
 import rplacem.variables_rplace2022 as var
-import rplacem.plot_utilities as plot
 import rplacem.utilities as util
 
 class CanvasPart(object):
@@ -27,7 +24,7 @@ class CanvasPart(object):
     pixel_changes : numpy structured array
         Pixel changes over time within the CanvasPart boundary. 
         Columns are called 'seconds', 'coord_index', 'user', 'color', 'moderator', 'active'.
-        The (x,y) coordinates can be obtained with the self.pixel_changes_coords() function
+        The (x,y) coordinates can be obtained with the self.pixchanges_coords() function
             Set in_find_pixel_changes_in_boundary()
     border_path : 3d numpy array with shape (number of border paths in time, number of points in path, 2)
         For each time range where a boundary is defined, contains an array of x,y coordinates defining the boundary of the CanvasPart
@@ -45,12 +42,6 @@ class CanvasPart(object):
     xmin, xmax, ymin, ymax : integers
         limits of the smallest rectangle encompassing all pixels in boundary. 
             Set in __init__()
-    colidx_to_hex : dictionary
-        dictionary with keys of color index and values of color hex code. 
-            Set in __init__()
-    colidx_to_rgb : dictionary
-        dictionary with keys of color index and values of color rgb. 
-            Set in __init__()
     description : string
         description of the composition from the atlas.json. Empty in general for non-compositions. 
             Set in _get_atlas_border()
@@ -67,15 +58,17 @@ class CanvasPart(object):
         __str__
     protected:
         _set_is_rectangle(self)
-        _set_color_dictionaries(self)
         _get_atlas_border(self, id, atlas=None)
         _reject_off_times(self)
         _get_bounded_coords(self, show_coords =False)
         _find_pixel_changes_in_boundary(self, pixel_changes_all)
     public:
         out_name(self)
-        get_rgb(self, col_idx)
-        pixel_changes_coords(self)
+        pixchanges_coords(self)
+        pixchanges_coords_offset(self)
+        coords_offset(self)
+        width(self, xory=-1)
+        num_pix(self)
         white_image(self, dimension=2, images_number=-1)
         set_quarters_coord_inds(self)
         intimerange_pixchanges_inds(self, t0, t1)
@@ -150,11 +143,6 @@ class CanvasPart(object):
         self.pixel_changes = None
         self._find_pixel_changes_in_boundary(pixel_changes_all)
 
-        # set the color (hex and rgb) dictionaries
-        self.colidx_to_hex = {}
-        self.colidx_to_rgb = {}
-        self._set_color_dictionaries()
-
     def __str__(self):
         return f"CanvasPart \n{'Atlas Composition, id: '+self.id if self.id!='' else 'user-defined area, name: '+self.out_name()}, \
         \n{'' if self.is_rectangle else 'not '}Rectangle, {len(self.border_path)} time-dependent border_path(s)\n{len(self.coords[0])} pixels in total, x in [{self.xmin}, {self.xmax}], y in [{self.ymin}, {self.ymax}]\
@@ -176,14 +164,6 @@ class CanvasPart(object):
             and (border[0][3][0] == border[0][0][0] or border[0][3][1] == border[0][0][1])
                 ):
                 self.is_rectangle = True
-
-    def _set_color_dictionaries(self):
-        ''' Set up the dictionaries translating the color index to the corresponding rgb or hex color'''
-        self.colidx_to_hex = np.empty([var.NUM_COLORS], dtype='object')
-        self.colidx_to_rgb = np.empty([var.NUM_COLORS, 3], dtype='int32')
-        for (k, v) in var.IDX_TO_COLOR.items():  # rather make these dictionaries numpy arrays, for more efficient use later
-            self.colidx_to_hex[int(k)] = v
-            self.colidx_to_rgb[int(k)] = np.asarray(ImageColor.getrgb(v))
 
     def _get_atlas_border(self, atlas=None):
         '''
@@ -226,7 +206,7 @@ class CanvasPart(object):
         vals = util.equalize_list_sublengths(vals)
 
         # fill attributes
-        self.border_path = np.array(vals, dtype=np.uint16)
+        self.border_path = np.array(vals, dtype=np.int16)
         self.border_path_times = np.array(times, dtype=np.float64)
         self.description = atlas[id_index]['description']
 
@@ -252,8 +232,8 @@ class CanvasPart(object):
 
         for i in range(0, len(self.border_path)):
             # total final size of the r/place canvas
-            img = np.ones((self.ymax - self.ymin + 1, self.xmax - self.xmin + 1))
-            mask = np.zeros((self.ymax - self.ymin + 1, self.xmax - self.xmin + 1))
+            img = np.ones((self.width(1), self.width(0)))
+            mask = np.zeros((self.width(1), self.width(0)))
 
             # create mask from border_path
             cv2.fillPoly(mask, pts=np.int32( [np.add(self.border_path[i], np.array([ -int(self.xmin), -int(self.ymin)]) )] ), color=[1, 1, 1])
@@ -288,8 +268,8 @@ class CanvasPart(object):
                         x_coords.append(x)
                         coor_timerange.append([list(timerange_new)])
 
-        self.coords = np.vstack(( (np.array(x_coords) + self.xmin).astype(np.uint16),
-                                  (np.array(y_coords) + self.ymin).astype(np.uint16)) )
+        self.coords = np.vstack(( (np.array(x_coords) + self.xmin).astype(np.int16),
+                                  (np.array(y_coords) + self.ymin).astype(np.int16)) )
         max_disjoint_timeranges = max(len(v) for v in coor_timerange)
         self.coords_timerange = np.array(coor_timerange, dtype = (np.float64 if max_disjoint_timeranges == 1 else object))
 
@@ -436,14 +416,39 @@ class CanvasPart(object):
         else:
             return 'area_within_'+str(self.xmin)+'.'+str(self.ymin)+'_to_'+str(self.xmax)+'.'+str(self.ymax)
 
-    def get_rgb(self, col_idx):
-        ''' Returns the (r,g,b) triplet corresponding to the input color index '''
-        return self.colidx_to_rgb[col_idx]
-
-    def pixel_changes_coords(self):
+    def pixchanges_coords(self):
         ''' Returns the 2d array of the (x, y) coordinates of all pixel changes. 
         Shape (2, number of pixel changes) '''
         return self.coords[:, self.pixel_changes['coord_index'] ]
+
+    def pixchanges_coords_offset(self):
+        ''' Returns the (x, y) coordinates of all pixel changes, but starting from x=0 and y=0. 
+        Shape (2, number of pixel changes) '''
+        res = self.pixchanges_coords()
+        res[0] -= self.xmin
+        res[1] -= self.ymin
+        return res
+
+    def coords_offset(self):
+        ''' Returns the (x, y) coordinates of the canvas part, but starting from x=0 and y=0. 
+        Shape (2, number of pixels) '''
+        res = np.copy(self.coords)
+        res[0] -= self.xmin
+        res[1] -= self.ymin
+        return res
+
+    def width(self, xory=-1):
+        ''' widest size of the canvas part in the x and y dimensions '''
+        if xory == 0:
+            return self.xmax - self.xmin + 1
+        if xory == 1:
+            return self.ymax - self.ymin + 1
+        else:
+            return np.array([self.xmax - self.xmin + 1, self.ymax - self.ymin + 1])
+    
+    def num_pix(self):
+        ''' number of pixels of the canvas part that are active at some time '''
+        return self.coords.shape[1]
 
     def white_image(self, dimension=2, images_number=-1):
         ''' Creates a white image of the size of the canvas part. 
@@ -451,11 +456,11 @@ class CanvasPart(object):
         or a 2D array being the actual pixels/image of the part; 
         or a 3D array containing [images_number] of these 2D images. '''
         if dimension == 1:
-            return np.full(self.coords.shape[1], var.WHITE, dtype='int8')
+            return np.full(self.num_pix(), var.WHITE, dtype='int8')
         if dimension == 2:
-            return np.full((self.ymax - self.ymin + 1, self.xmax - self.xmin + 1), var.WHITE, dtype=np.int8)
+            return np.full((self.width(1), self.width(0)), var.WHITE, dtype=np.int8)
         if dimension == 3:
-            return np.full((images_number, self.ymax - self.ymin + 1, self.xmax - self.xmin + 1), var.WHITE, dtype=np.int8)
+            return np.full((images_number, self.width(1), self.width(0)), var.WHITE, dtype=np.int8)
 
     def set_quarters_coord_inds(self):
         ''' Set the attributes quarter1_coordinds, quarter2_coordinds, quarter34_coordinds '''
@@ -494,112 +499,6 @@ class ColorMovement:
     '''
 
 
-def save_part_over_time(cpart,
-                        times, # in seconds
-                        delete_bmp=True,
-                        delete_png=False,
-                        show_plot=True,
-                        print_progress=True
-                        ):
-    '''
-    Saves images of the canvas part for each time step
-
-    parameters
-    ----------
-    cpart : CanvasPart object
-    times : 1d array of floats
-        time limits of intervals in which to plot (in seconds)
-    delete_bmp / delete_png : boolean, optional
-        if True, the .bmp / .png files are deleted after their size is determined
-    show_plot : boolean, optional
-        if True, plots all the frames on a grid
-
-    returns
-    -------
-    file_size_bmp : float
-        size of png image in bytes
-    file_size_png : float
-        size of png image in bytes
-    t_inds_list : list
-        list of arrays of all the time indices of pixel changes in 
-        each time interval
-    '''
-
-    coords = cpart.pixel_changes_coords()
-    color = np.array(cpart.pixel_changes['color'])
-
-    num_time_steps = len(times)-1
-    file_size_bmp = np.zeros(num_time_steps+1)
-    file_size_png = np.zeros(num_time_steps+1)
-
-    pixels = np.full((cpart.ymax - cpart.ymin + 1, cpart.xmax - cpart.xmin + 1, 3), 255, dtype=np.uint8) #[r,g,b] will be readable as (r,g,b) ##### fill as white first ##### the pixels must be [y,x,rgb]
-        
-    out_path = os.path.join(var.FIGS_PATH, 'history_' + cpart.out_name())
-    out_path_time = os.path.join(out_path, 'VsTime')
-    try:
-        os.makedirs(out_path)
-    except OSError:  # empty directory if it already exists
-        shutil.rmtree(out_path_time)
-        #os.makedirs(out_path)
-    os.makedirs(os.path.join(out_path_time))
-
-    if show_plot:
-        ncols = np.min([num_time_steps, 10])
-        nrows = np.max([1, int(math.ceil(num_time_steps/10))])
-        # fig = plt.figure(figsize=(10,nrows)) # height corresponds in inches to number of rows. auto dpi is 100
-        #gs = fig.add_gridspec(nrows, ncols, hspace=0.05, wspace=0.05)
-        fig, ax = plt.subplots(nrows, ncols, sharex=True, sharey=True)
-        #ax = gs.subplots(sharex=True, sharey=True)
-        rowcount = 0
-        colcount = 0
-    t_inds_list = []
-
-    i_fraction_print = 0  # only for output of a message when a fraction of the steps are ran
-
-    for t_step_idx in range(0, num_time_steps+1):  # fixed this: want a blank image at t=0
-        if print_progress:
-            if t_step_idx/num_time_steps > i_fraction_print/10:
-                i_fraction_print += 1
-                print('Ran', 100*t_step_idx/num_time_steps, '%% of the steps')
-
-        # get the indices of the times within the interval
-        t_inds = cpart.intimerange_pixchanges_inds(times[t_step_idx - 1], times[t_step_idx])
-        t_inds_list.append(t_inds)
-        if len(t_inds) != 0:
-            pixels[coords[1, t_inds]-cpart.ymin, coords[0, t_inds]-cpart.xmin, :] = cpart.get_rgb(color[t_inds])
-
-        # save image
-        im = Image.fromarray(pixels)
-        im_path = os.path.join(out_path_time, 'canvaspart_time{:06d}'.format(int(times[t_step_idx])))
-        im.save(im_path + '.png')
-        im.save(im_path + '.bmp')
-        file_size_png[t_step_idx] = util.get_file_size(im_path + '.png')
-        file_size_bmp[t_step_idx] = util.get_file_size(im_path + '.bmp')
-        if delete_bmp:
-            os.remove(im_path + '.bmp')
-        if delete_png:
-            os.remove(im_path + '.png')
-
-        if show_plot:
-            if t_step_idx>-1:
-                if len(ax.shape) == 2:
-                    ax_single = ax[rowcount, colcount]
-                else:
-                    ax_single = ax[t_step_idx]
-                ax_single.axis('off')
-                plot.show_cpart(pixels, ax=ax_single)
-
-                if colcount < 9:
-                    colcount += 1
-                else:
-                    colcount = 0
-                    rowcount += 1
-    if print_progress:
-        print('produced', num_time_steps, 'images vs time')
-    return file_size_bmp, file_size_png, t_inds_list
-
-
-
 def save_canvas_part_time_steps(canvas_comp,
                                 time_inds_list_comp,
                                 times,
@@ -608,7 +507,6 @@ def save_canvas_part_time_steps(canvas_comp,
                                 file_name='canvas_part_data'):
     '''
     save the variables associated with the CanvasPart object 
-
     '''
     file_path = os.path.join(var.DATA_PATH, file_name + '.pickle')
     with open(file_path, 'wb') as handle:
@@ -623,7 +521,7 @@ def save_canvas_part_time_steps(canvas_comp,
 
 def load_canvas_part_time_steps(file_name='canvas_part_data'):
     '''
-    save the variables associated with the CanvasPart object 
+    load the variables associated with the CanvasPart object 
     '''
     file_path = os.path.join(var.DATA_PATH, file_name + '.pickle')
     with open(file_path, 'rb') as f:
