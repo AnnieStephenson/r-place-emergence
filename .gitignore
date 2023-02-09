@@ -98,3 +98,9 @@ figs/
 *.pickle
 *.root
 *.npz
+
+# large data files
+data/userIDsFromIdx.json
+
+# additional scripts
+my_scripts/
