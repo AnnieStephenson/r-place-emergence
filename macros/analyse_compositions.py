@@ -1,12 +1,9 @@
 import numpy as np
 import os
-import canvas_part as cp
-import thermo as th
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
-import matplotlib.mlab as mlab
-import Variables.Variables as var
+import rplacem.variables_rplace2022 as var
 
 file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
 

@@ -1,16 +1,13 @@
-import json
 import os
 import pickle
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import seaborn as sns
-from PIL import Image, ImageColor
-import Variables.Variables as var
-import canvas_part as cp
+import rplacem.variables_rplace2022 as var
+import rplacem.utilities as util
+from PIL import Image
 
-def calc_num_pixel_changes(canvas_part,
+def calc_num_pixel_changes(canpart,
                            time_inds_list,
                            time_interval):
     '''
@@ -18,7 +15,7 @@ def calc_num_pixel_changes(canvas_part,
 
     parameters
     ----------
-    canvas_part : CanvasPart object
+    canpart : CanvasPart object
         The CanvasPart object for which we want to calculate the pixel change quantities
     time_inds_list : list of numpy arrays
         list containing arrays of the time indices integrated up to each time step
@@ -39,7 +36,7 @@ def calc_num_pixel_changes(canvas_part,
     num_pixel_changes = np.zeros(len(time_inds_list))
     num_touched_pixels = np.zeros(len(time_inds_list))
     num_users = np.zeros(len(time_inds_list))
-    coords_all = canvas_part.pixel_changes_coords()
+    coords_all = canpart.pixel_changes_coords()
 
     for i in range(0, len(time_inds_list)):
 
@@ -47,7 +44,7 @@ def calc_num_pixel_changes(canvas_part,
         # since the start
 
         # get the pixel change coordinates for the interval
-        pixel_changes_time_int = canvas_part.pixel_changes[time_inds_list[i]]
+        pixel_changes_time_int = canpart.pixel_changes[time_inds_list[i]]
         coords = coords_all[:, time_inds_list[i]]
         user_id = np.array(pixel_changes_time_int['user'])
 
@@ -74,11 +71,11 @@ def find_transitions(t_lims,
                      dist_stableregion_transition=3
                      ):
     '''
-    identifies transitions in a canvas_part.
+    identifies transitions in a canpart.
     
     parameters
     ----------
-    canvas_part : CanvasPart object
+    canpart : CanvasPart object
         The CanvasPart object for which we want to calculate the stability
     t_lims : 1d array-like of floats
         time intervals in which the pixel states are studied. Must be ordered in a crescent way, and start at 0
@@ -203,7 +200,7 @@ def find_transitions(t_lims,
     return (full_transition, full_transition_times)
 
 def count_image_differences(pixels1, pixels2, cpart, indices=None):
-    ''' Count the number of pixels (at given *indices* of coordinates of canvas_part *cpart*) that differ 
+    ''' Count the number of pixels (at given *indices* of coordinates of canpart *cpart*) that differ 
     between *pixels1* and *pixels2* (both 2d numpy arrays of shape (num y coords, num x coords))'''
     if indices is None:
         indices = np.arange(0, cpart.coords.shape[1])
@@ -211,20 +208,18 @@ def count_image_differences(pixels1, pixels2, cpart, indices=None):
     xcoor = cpart.coords[0, indices] - cpart.xmin
     return np.count_nonzero(pixels2[ycoor, xcoor] - pixels1[ycoor, xcoor])
 
-def pixels_to_image(pix, canvas_part=None, save_name=''):
+def pixels_to_image(pix, canpart, save_name=''):
     ''' Transform the 2d array of color indices into an image object, and saves it if (save_name!='') '''
-    im = Image.fromarray( canvas_part.get_rgb(pix).astype(np.uint8) )
+    im = Image.fromarray( canpart.get_rgb(pix).astype(np.uint8) )
     if save_name != '':
-        if canvas_part == None:
-            im.save( save_name )
-        else:
-            try:
-                os.makedirs( os.path.join(var.FIGS_PATH, 'history_' + canvas_part.out_name()) )
-            except OSError: 
-                pass
-            im.save( os.path.join(var.FIGS_PATH, 'history_' + canvas_part.out_name(), save_name) )
+        try:
+            os.makedirs( os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name()) )
+        except OSError: 
+            pass
+        im.save( os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), save_name) )
+    return im
 
-def stability(canvas_part,
+def stability(canpart,
               t_lims=[0, var.TIME_TOTAL],
               create_images=False,
               save_images=False,
@@ -237,7 +232,7 @@ def stability(canvas_part,
 
     parameters
     ----------
-    canvas_part : CanvasPart object
+    canpart : CanvasPart object
         The CanvasPart object for which we want to calculate the stability
     t_lims : 1d array-like of floats
         time intervals in which the pixel states are studied. Must be ordered in a crescent way, and start at 0
@@ -250,7 +245,7 @@ def stability(canvas_part,
         stability array averaged over all the pixels, for each time step
         Calculated only if compute_average==True
     The saved pickle file (if save_pickle==True) records the stable_timefraction (time fraction spent in the dominant color)
-        and the stable_color (the dominant colors). They are indexed in the same way than canvas_part.coords.
+        and the stable_color (the dominant colors). They are indexed in the same way than canpart.coords.
     The images (computed if create_images==True, saved if save_images==True) show 
         the most stable color of each pixel during each time interval.
     '''
@@ -258,36 +253,33 @@ def stability(canvas_part,
     if t_lims[0] != 0:
         print('WARNING: this function \'stability\' is not meant to work from a lower time limit > 0 !!!')
 
-    seconds = np.array(canvas_part.pixel_changes['seconds'])
-    color = np.array(canvas_part.pixel_changes['color'])
-    coord_inds = np.array(canvas_part.pixel_changes['coord_index']) # indices of canvas_part.coords where to find the (x,y) of a given pixel_change 
-    num_coords = canvas_part.coords.shape[1]
+    seconds = np.array(canpart.pixel_changes['seconds'])
+    color = np.array(canpart.pixel_changes['color'])
+    coord_inds = np.array(canpart.pixel_changes['coord_index']) # indices of canpart.coords where to find the (x,y) of a given pixel_change 
+    num_coords = canpart.coords.shape[1]
     coord_range = np.arange(0, num_coords)
-
-    quarter1_inds = np.where((canvas_part.coords[0]<1000) & (canvas_part.coords[1]<1000))
-    quarter2_inds = np.where((canvas_part.coords[0]>=1000) & (canvas_part.coords[1]<1000))
-    quarter34_inds = np.where(canvas_part.coords[1]>=1000)
+    canpart.set_quarters_coord_inds()
     
-    current_color = np.full(num_coords, var.WHITE, dtype='int8')
+    current_color = canpart.white_image(1)
     stability_vs_time = np.zeros(len(t_lims)-1)
     if create_images:
         # 2d numpy arrays containing color indices (from 0 to 31) for each pixel of the composition
-        pixels1 = np.full((len(t_lims)-1, canvas_part.ymax - canvas_part.ymin + 1, canvas_part.xmax - canvas_part.xmin + 1), var.WHITE, dtype=np.int8)
-        pixels2 = np.full((len(t_lims)-1, canvas_part.ymax - canvas_part.ymin + 1, canvas_part.xmax - canvas_part.xmin + 1), var.WHITE, dtype=np.int8)
-        pixels3 = np.full((len(t_lims)-1, canvas_part.ymax - canvas_part.ymin + 1, canvas_part.xmax - canvas_part.xmin + 1), var.WHITE, dtype=np.int8)
+        pixels1 = canpart.white_image(3, images_number=len(t_lims)-1)
+        pixels2 = canpart.white_image(3, images_number=len(t_lims)-1)
+        pixels3 = canpart.white_image(3, images_number=len(t_lims)-1)
 
 
     for t_step in range(0, len(t_lims)-1):
         # get indices of all pixel changes that happen in the step
-        t_inds = np.where((seconds >= t_lims[t_step]) & (seconds < t_lims[t_step+1]))[0]
+        t_inds = canpart.intimerange_pixchanges_inds(t_lims[t_step], t_lims[t_step+1])
 
         # time spent for each pixel in each of the 32 colors
         time_spent_in_color = np.zeros((num_coords, var.NUM_COLORS), dtype='float64')
 
         last_time_changed = np.full(num_coords, t_lims[t_step], dtype='float64')
         # neglect the time before the opening of the supplementary canvas quarters
-        last_time_changed[quarter2_inds] = max(t_lims[t_step], var.TIME_ENLARGE1)
-        last_time_changed[quarter34_inds] = max(t_lims[t_step], var.TIME_ENLARGE2)
+        last_time_changed[canpart.quarter2_coordinds] = max(t_lims[t_step], var.TIME_ENLARGE1)
+        last_time_changed[canpart.quarter34_coordinds] = max(t_lims[t_step], var.TIME_ENLARGE2)
 
         for tidx in t_inds: # loop through each pixel change in the step, indexing by time
             s = seconds[tidx]
@@ -312,20 +304,20 @@ def stability(canvas_part,
         stable_timefraction = np.take_along_axis(time_spent_in_color, stable_colors, axis=1)
      
         # normalize by the total time the canvas quarter was on
-        stable_timefraction[quarter1_inds] /= t_lims[t_step+1] - t_lims[t_step]
-        stable_timefraction[quarter2_inds] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE1)
-        stable_timefraction[quarter34_inds] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE2)
+        stable_timefraction[canpart.quarter1_coordinds] /= t_lims[t_step+1] - t_lims[t_step]
+        stable_timefraction[canpart.quarter2_coordinds] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE1)
+        stable_timefraction[canpart.quarter34_coordinds] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE2)
 
         ##############
-        # calculate the stability averaged over the whole canvas_part
+        # calculate the stability averaged over the whole canpart
         if compute_average:
             stab_per_pixel = stable_timefraction[:, 0] # get time fraction for most stable pixel
             inds_nonzero = np.where(stab_per_pixel>1e-10) # will remove indices with stab==0
 
             # get indices of coordinates for which the interval [t_lims[t_step], t_lims[t_step+1]] intersects with the 'active' timerange for the composition
-            inds_in_timerange = canvas_part.coord_indices_in_timerange(t_lims[t_step], t_lims[t_step+1])
+            inds_active = canpart.active_coord_inds(t_lims[t_step], t_lims[t_step+1])
 
-            stab_per_pixel = stab_per_pixel[np.intersect1d(inds_nonzero, inds_in_timerange, assume_unique=True)] 
+            stab_per_pixel = stab_per_pixel[np.intersect1d(inds_nonzero, inds_active, assume_unique=True)] 
             # now actually get stability averaged over pixels
             if len(stab_per_pixel) > 0:
                 stability = np.mean(stab_per_pixel)
@@ -336,7 +328,7 @@ def stability(canvas_part,
 
         # save full result to pickle file
         if save_pickle:
-            file_path = os.path.join(os.path.join(os.getcwd(), 'data'), 'stability_' + canvas_part.out_name() + '_time{:06d}to{:06d}.pickle'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+            file_path = os.path.join(os.path.join(os.getcwd(), 'data'), 'stability_' + canpart.out_name() + '_time{:06d}to{:06d}.pickle'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
             with open(file_path, 'wb') as handle:
                 pickle.dump([stable_timefraction,
                             stable_colors],
@@ -345,28 +337,28 @@ def stability(canvas_part,
 
         # create images containing the (sub)dominant color only
         if create_images:
-            pixels1[t_step, canvas_part.coords[1]-canvas_part.ymin, canvas_part.coords[0]-canvas_part.xmin] = stable_colors[:,0]
-            pixels2[t_step, canvas_part.coords[1]-canvas_part.ymin, canvas_part.coords[0]-canvas_part.xmin] = stable_colors[:,1]
-            pixels3[t_step, canvas_part.coords[1]-canvas_part.ymin, canvas_part.coords[0]-canvas_part.xmin] = stable_colors[:,2]
+            pixels1[t_step, canpart.coords[1]-canpart.ymin, canpart.coords[0]-canpart.xmin] = stable_colors[:,0]
+            pixels2[t_step, canpart.coords[1]-canpart.ymin, canpart.coords[0]-canpart.xmin] = stable_colors[:,1]
+            pixels3[t_step, canpart.coords[1]-canpart.ymin, canpart.coords[0]-canpart.xmin] = stable_colors[:,2]
 
             # if second and/or third most used colors don't exist (time_spent == 0), then use the first or second most used color instead
             inds_to_change1 = np.where(stable_timefraction[:,1] < 1e-9)
-            pixels2[t_step, canvas_part.coords[1,inds_to_change1] - canvas_part.ymin, 
-                    canvas_part.coords[0,inds_to_change1]-canvas_part.xmin] = pixels1[t_step, canvas_part.coords[1,inds_to_change1]-canvas_part.ymin, 
-                                                                                      canvas_part.coords[0,inds_to_change1]-canvas_part.xmin]
+            pixels2[t_step, canpart.coords[1,inds_to_change1] - canpart.ymin, 
+                    canpart.coords[0,inds_to_change1]-canpart.xmin] = pixels1[t_step, canpart.coords[1,inds_to_change1]-canpart.ymin, 
+                                                                                      canpart.coords[0,inds_to_change1]-canpart.xmin]
             inds_to_change2 = np.where(stable_timefraction[:,2] < 1e-9)
-            pixels3[t_step, canvas_part.coords[1,inds_to_change2] - canvas_part.ymin, 
-                    canvas_part.coords[0,inds_to_change2]-canvas_part.xmin] = pixels2[t_step, canvas_part.coords[1,inds_to_change2]-canvas_part.ymin, 
-                                                                                      canvas_part.coords[0,inds_to_change2]-canvas_part.xmin]
+            pixels3[t_step, canpart.coords[1,inds_to_change2] - canpart.ymin, 
+                    canpart.coords[0,inds_to_change2]-canpart.xmin] = pixels2[t_step, canpart.coords[1,inds_to_change2]-canpart.ymin, 
+                                                                                      canpart.coords[0,inds_to_change2]-canpart.xmin]
 
             # save images
             if save_images:
                 timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1]))
-                pixels_to_image( pixels1[t_step], canvas_part,
+                pixels_to_image( pixels1[t_step], canpart,
                                  'MostStableColor_' + timerange_str )
-                pixels_to_image( pixels1[t_step], canvas_part,
+                pixels_to_image( pixels1[t_step], canpart,
                                  'SecondMostStableColor_' + timerange_str )
-                pixels_to_image( pixels1[t_step], canvas_part,
+                pixels_to_image( pixels1[t_step], canpart,
                                  'ThirdMostStableColor_' + timerange_str )
     
     if not compute_average:
@@ -376,19 +368,21 @@ def stability(canvas_part,
 
     return (stability_vs_time, pixels1, pixels2, pixels3)
 
-
-def num_deviating_pixels(canvas_part, t_lims, ref_image):
+def num_changes_and_users(canpart, t_lims, ref_image, save_ratio_images):
     '''
-    Gives the number of pixel changes that agree or disagree with the provided reference (stable) image
+    Returnes multiple variables dealing with the number of pixel changes and users
+    and their relation to the provided reference (stable) image
 
     parameters
     ----------
-    canvas_part : CanvasPart object
+    canpart : CanvasPart object
         The CanvasPart object under study
     t_lims : 1d array-like of floats
         time intervals in which the pixel states are studied. Must be ordered in a crescent way, and start at 0
     ref_image: 2d array, shape (# y coords, # of x coords)
         Image to which pixels at every time step are compared
+    save_ratio_images: bool
+        save the images of the pixel-by-pixel attack/defense ratio
 
     returns
     -------
@@ -396,49 +390,118 @@ def num_deviating_pixels(canvas_part, t_lims, ref_image):
         the number of total pixel changes, those that restore the ref_image (defense), and those that destroy the ref_image (attack).
     num_active_coords:
         Active area of the composition in each timerange
+    num_differing_pixels:
+        number of active pixels that are different than the ref image
+    num_attackonly_users, num_defenseonly_users, num_attackdefense_users, num_users_total:
+        number of users that contributed changes (attacking, defending, doing both, or all) in the given time interval
     '''
 
     if t_lims[0] != 0:
-        print('WARNING: this function \'stability\' is not meant to work from a lower time limit > 0 !!!')
+        print('WARNING: this function \'num_deviating_pixels\' is not meant to work from a lower time limit > 0 !!!')
 
-    seconds = np.array(canvas_part.pixel_changes['seconds'])
-    color = np.array(canvas_part.pixel_changes['color'])
-    in_timerange = np.array(canvas_part.pixel_changes['in_timerange'])
-    pix_change_coords = canvas_part.pixel_changes_coords()
+    color = np.array(canpart.pixel_changes['color'])
+    user = np.array(canpart.pixel_changes['user'])
+    pix_change_coords = canpart.pixel_changes_coords()
 
     num_changes = np.zeros(len(t_lims)-1)
     num_defense_changes = np.zeros(len(t_lims)-1)
     num_active_coords = np.zeros(len(t_lims)-1)
     num_differing_pixels = np.zeros(len(t_lims)-1)
+    num_attackdefense_users = np.zeros(len(t_lims)-1)
+    num_attackonly_users = np.zeros(len(t_lims)-1)
+    num_defenseonly_users = np.zeros(len(t_lims)-1)
 
-    current_image = np.full((canvas_part.ymax - canvas_part.ymin + 1, canvas_part.xmax - canvas_part.xmin + 1), var.WHITE, dtype=np.int8)
+    current_image = canpart.white_image(2)
     for t_step in range(0, len(t_lims)-1):
         # get indices of all pixel changes that happen in the step (and that are part of the composition timerange for this pixel)
-        t_inds = np.where((seconds >= t_lims[t_step]) & (seconds < t_lims[t_step+1]) & in_timerange)[0]
-        t_inds_active = t_inds[ np.where(in_timerange[t_inds])[0] ]
+        t_inds = canpart.intimerange_pixchanges_inds(t_lims[t_step], t_lims[t_step+1])
+        t_inds_active = canpart.select_active_pixchanges_inds(t_inds)
         num_changes[t_step] = len(t_inds_active)
 
         # test if the color of this pixel change agrees with the reference image (ie is it of the same color)
-        ycoords = np.array(pix_change_coords[1], np.int16) - canvas_part.ymin
-        xcoords = np.array(pix_change_coords[0], np.int16) - canvas_part.xmin
+        ycoords = np.array(pix_change_coords[1], np.int16) - canpart.ymin
+        xcoords = np.array(pix_change_coords[0], np.int16) - canpart.xmin
         agreeing_changes = np.array( ref_image[ycoords[t_inds_active], xcoords[t_inds_active]] == color[t_inds_active] , np.bool_)
         num_defense_changes[t_step] = np.count_nonzero(agreeing_changes)
 
-        # Update current_image with the pixel changes in this time interval. For each (x,y) pixel, need to keep only the last pixel change.
-        color_inv = (color[t_inds])[::-1]
-        ycoords_inv = (ycoords[t_inds])[::-1]
-        xcoords_inv = (xcoords[t_inds])[::-1]
-        xycoords_inv = np.column_stack((xcoords_inv, ycoords_inv))
-        xyidx_unique, idx_first = np.unique(xycoords_inv, return_index=True, axis=0) # keeping the index of the first occurence in the reverse-order array
-        current_image[xyidx_unique[:,1] , xyidx_unique[:,0]] = color_inv[idx_first]
+        # count users making defense or attack moves
+        agree_indinds = np.where(agreeing_changes)[0]
+        disagree_indinds = np.where(np.invert(agreeing_changes))[0]
+        defense_users = np.unique( user[t_inds_active[agree_indinds]] )
+        attack_users = np.unique( user[t_inds_active[disagree_indinds]] )
+        attackdefense_users = np.intersect1d(attack_users, defense_users)
+        num_attackdefense_users[t_step] = len(attackdefense_users)
+        num_attack_users = len(attack_users)
+        num_defense_users = len(defense_users)
+        num_attackonly_users[t_step] = num_attack_users - num_attackdefense_users[t_step]
+        num_defenseonly_users[t_step] = num_defense_users - num_attackdefense_users[t_step]
+
+        # count attack and defense changes for each pixel of the canvas
+        if save_ratio_images:
+            att = np.zeros((canpart.ymax - canpart.ymin + 1, canpart.xmax - canpart.xmin + 1), dtype=np.float16)
+            defe = np.zeros((canpart.ymax - canpart.ymin + 1, canpart.xmax - canpart.xmin + 1), dtype=np.float16)
+            for t in np.where(agreeing_changes)[0]:
+                defe[ycoords[t_inds_active[t]], xcoords[t_inds_active[t]]] += 1
+            for t in np.where(np.invert(agreeing_changes))[0]:
+                att[ycoords[t_inds_active[t]], xcoords[t_inds_active[t]]] += 1
+            with np.errstate(divide='ignore', invalid='ignore'):
+                pixels = att / defe
+            inds_nan = np.where((att>0) & (defe==0))
+            pixels[inds_nan[0], inds_nan[1]] = 100.
+
+            plt.figure()
+            pcm = plt.pcolormesh(np.arange(0,canpart.xmax - canpart.xmin + 1), np.arange(canpart.ymax - canpart.ymin, -1, -1), pixels, shading='nearest')
+            plt.xlabel('x_pixel')
+            plt.ylabel('y_pixel')
+            plt.colorbar(pcm, label='# attack / # defense changes')
+            plt.clim(0.99,1.01)
+            try:
+                os.makedirs(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), 'attack_defense_ratio'))
+            except OSError: 
+                pass
+            plt.savefig(os.path.join(var.FIGS_PATH, 'history_'+canpart.out_name(), 'attack_defense_ratio', 'attack_defense_ratio_perpixel_time{:06d}.png'.format(int(t_lims[t_step+1]))), 
+                        bbox_inches='tight')
+            plt.close()
+
+        # Update current_image with the pixel changes in this time interval.
+        util.update_image(current_image, xcoords, ycoords, color, t_inds)
 
         # count active (ie in timerange) coordinates and the differences with the ref_image at these coordinates
-        active_coords_inds = canvas_part.coord_indices_in_timerange(t_lims[t_step], t_lims[t_step+1])
-        num_active_coords[t_step] = len(active_coords_inds)
-        num_differing_pixels[t_step] = count_image_differences(current_image, ref_image, canvas_part, active_coords_inds)
+        active_coor_inds = canpart.active_coord_inds(t_lims[t_step], t_lims[t_step+1])
+        num_active_coords[t_step] = len(active_coor_inds)
+        num_differing_pixels[t_step] = count_image_differences(current_image, ref_image, canpart, active_coor_inds)
 
     num_attack_changes = num_changes - num_defense_changes
-    return (num_changes, num_defense_changes, num_attack_changes, num_active_coords, num_differing_pixels)
+    print(num_attack_changes / num_defense_changes)
+    num_users_total = len(np.unique(user))
+
+    return (num_changes, num_defense_changes, num_attack_changes, 
+            num_active_coords, 
+            num_differing_pixels, 
+            num_attackonly_users, num_defenseonly_users, num_attackdefense_users, num_users_total)
+
+def plot_compression(file_size_bmp, file_size_png, times, out_name=''):
+    '''
+    plot the file size ratio over time
+
+    parameters
+    ----------
+    file_size_bmp : float
+        size of png image in bytes
+    file_size_png : float
+        size of png image in bytes
+    times : 1d array of floats
+        time intervals at which to plot (in seconds)
+    out_name : string
+        for the naming of the output saved plot
+    '''
+
+    plt.figure()
+    plt.plot(times, file_size_png/file_size_bmp)
+    sns.despine()
+    plt.ylabel('Computable Information Density (file size ratio)')
+    plt.xlabel('Time (s)')
+    plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + out_name, '_file_size_compression_ratio.png'))
 
 def plot_compression_vs_pixel_changes(num_pixel_changes,
                                       num_touched_pixels,

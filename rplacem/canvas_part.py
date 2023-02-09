@@ -1,78 +1,90 @@
-import cProfile
-import glob
 import json
 import math
 import os
 import pickle
 import shutil
-import sys
-from operator import mod
-from re import T
 import cv2
-import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
+import matplotlib.pyplot as plt
 from PIL import Image, ImageColor
-import Variables.Variables as var
-from numpy.lib.recfunctions import append_fields
-
-def equalize_list_sublengths(l):
-    ''' Fill out each sublist-member of the list up to the length of the longest member, with redundant values (so that it can be a np.array)'''
-    maxlen = max(len(v) for v in l)  
-    for i in range(0,len(l)):
-        l[i] += [l[i][0]] * max(maxlen - len(l[i]), 0)
-    return l
+import rplacem.variables_rplace2022 as var
+import rplacem.plot_utilities as plot
+import rplacem.utilities as util
 
 class CanvasPart(object):
     '''
-    superclass with subclasses CanvasComposition and CanvasArea. A CanvasPart 
-    object is a defined "part" of a canvas with a set spatial border, which 
-    can be any shape or size (up to the size of the full canvas) 
+    A CanvasPart object is a defined "part" of a canvas with a set spatial border, which 
+    can be any shape or size (up to the size of the full canvas)
 
     attributes
     ----------
     id : str
-        name used to store output. 
         When specified, 'id' is the string from the atlas file that identifies a particular composition.
+            Set in __init__()
     is_rectangle : bool
         True if the boundaries of the canvas part are exactly rectangular (and that there is only one boundary for the whole time). 
+            Set in _set_is_rectangle()
     pixel_changes : numpy structured array
         Pixel changes over time within the CanvasPart boundary. 
-        Columns are called 'seconds', 'coord_index', 'user', 'color', 'moderator', 'in_timerange'.
+        Columns are called 'seconds', 'coord_index', 'user', 'color', 'moderator', 'active'.
         The (x,y) coordinates can be obtained with the self.pixel_changes_coords() function
+            Set in_find_pixel_changes_in_boundary()
     border_path : 3d numpy array with shape (number of border paths in time, number of points in path, 2)
         For each time range where a boundary is defined, contains an array of x,y coordinates defining the boundary of the CanvasPart
+            Set in __init__()
     border_path_times : 2d numpy array with shape (number of border paths, 2)
         The time ranges [t0,t1] in which each boundary from the border_path array is valid
+            Set in __init__()
     coords : 2d numpy array with shape (2, number of pixels in the CanvasPart)
         [x coordinates, y coordinates] of all the pixels contained inside the CanvasPart.
+            Set in __init__() (if is_rectangle) or in _get_bounded_coords().
     coords_timerange : 3d numpy array with shape (number of pixels in the CanvasPart, max number of disjoint timeranges, 2)
         timeranges in which the pixels at this index (first dimension) are "on".
         Is actually a 1d numpy array (dtype=object) of list objects when there are more than 1 disjoint timeranges for a given pixel.
+            Set in __init__() (if is_rectangle) or in _get_bounded_coords().
     xmin, xmax, ymin, ymax : integers
-        limits of the smallest rectangle encompassing all pixels in boundary
+        limits of the smallest rectangle encompassing all pixels in boundary. 
+            Set in __init__()
     colidx_to_hex : dictionary
-        dictionary with keys of color index and values of color hex code
+        dictionary with keys of color index and values of color hex code. 
+            Set in __init__()
     colidx_to_rgb : dictionary
-        dictionary with keys of color index and values of color rgb
+        dictionary with keys of color index and values of color rgb. 
+            Set in __init__()
     description : string
-        description of the composition from the atlas.json. Empty in general for non-compositions.
+        description of the composition from the atlas.json. Empty in general for non-compositions. 
+            Set in _get_atlas_border()
+    quarter1_coordinds, quarter2_coordinds, quarter34_coordinds:
+        the indices (referring to the self.coords array) that point to coordinates
+        in the 1st, 2nd, or 3rd and 4th quarters (which were not all "on" from the beginning).
+            Set in set_quarters_coord_inds(), at the responsibility of the user.
+    
 
     methods
     -------
-    __init__
-    __str__
-    get_bounded_coords(self, show_coords =False)
-    find_pixel_changes_in_boundary(self, pixel_changes_all)
-    set_color_dictionaries(self)
-    out_name(self)
-    get_rgb(self, col_idx)
-    set_is_rectangle(self)
-    get_atlas_border(self, id, atlas=None)
-    reject_off_times(self)
-    pixel_changes_coords(self)
+    private:
+        __init__
+        __str__
+    protected:
+        _set_is_rectangle(self)
+        _set_color_dictionaries(self)
+        _get_atlas_border(self, id, atlas=None)
+        _reject_off_times(self)
+        _get_bounded_coords(self, show_coords =False)
+        _find_pixel_changes_in_boundary(self, pixel_changes_all)
+    public:
+        out_name(self)
+        get_rgb(self, col_idx)
+        pixel_changes_coords(self)
+        white_image(self, dimension=2, images_number=-1)
+        set_quarters_coord_inds(self)
+        intimerange_pixchanges_inds(self, t0, t1)
+        active_coord_inds(self, t0, t1)
+        select_active_pixchanges_inds(self, input_inds)
     '''
+
+
+    # PRIVATE METHODS
 
     def __init__(self,
                  id='',
@@ -95,7 +107,7 @@ class CanvasPart(object):
             If True, plots the mask of the CanvasPart boundary
         atlas : dictionary
             Composition atlas from the atlas.json file, only needed for compositions. 
-            If =None, it is extracted from the file in the get_atlas_border method.
+            If =None, it is extracted from the file in the _get_atlas_border method.
         '''
         self.id = id
 
@@ -107,12 +119,12 @@ class CanvasPart(object):
         
         # get the border path from the atlas of compositions, when it is not provided
         if border_path != [[[]]]:
-            border_path = equalize_list_sublengths(border_path)
+            border_path = util.equalize_list_sublengths(border_path)
             self.border_path = np.array(border_path, np.int16)
             self.border_path_times = border_path_times
             self.description = ''
         else:
-            self.get_atlas_border(atlas)
+            self._get_atlas_border(atlas)
         # check if path is fully inside canvas
         self.border_path[self.border_path < 0] = 0
         self.border_path[self.border_path > 1999] = 1999
@@ -123,42 +135,37 @@ class CanvasPart(object):
         self.ymax = self.border_path[:,:,1].max()
 
         # set "is_rectangle" attribute -- True if the border_path has length 1 and is a strict rectangle
-        self.set_is_rectangle()
+        self._set_is_rectangle()
 
         # set the [x, y] coords within the border
         if self.is_rectangle:
             self.coords = np.mgrid[ self.xmin:(self.xmax+1), self.ymin:(self.ymax+1) ].reshape(2,-1)
             self.coords_timerange = np.full( (len(self.coords[0]), 1, 2), self.border_path_times[0])
         else:
-            self.get_bounded_coords(show_coords=show_coords)
+            self._get_bounded_coords(show_coords=show_coords)
         # reject times where a canvas quarter was off, for pixels in these quarters
-        self.reject_off_times()
+        self._reject_off_times()
 
         # set the pixel changes within the boundary
         self.pixel_changes = None
-        self.find_pixel_changes_in_boundary(pixel_changes_all)
+        self._find_pixel_changes_in_boundary(pixel_changes_all)
 
         # set the color (hex and rgb) dictionaries
         self.colidx_to_hex = {}
         self.colidx_to_rgb = {}
-        self.set_color_dictionaries()
+        self._set_color_dictionaries()
 
     def __str__(self):
         return f"CanvasPart \n{'Atlas Composition, id: '+self.id if self.id!='' else 'user-defined area, name: '+self.out_name()}, \
         \n{'' if self.is_rectangle else 'not '}Rectangle, {len(self.border_path)} time-dependent border_path(s)\n{len(self.coords[0])} pixels in total, x in [{self.xmin}, {self.xmax}], y in [{self.ymin}, {self.ymax}]\
-        \n{len(self.pixel_changes['seconds'])} pixel changes (including {np.count_nonzero(self.pixel_changes['in_timerange'])} in composition time ranges)\
+        \n{len(self.pixel_changes['seconds'])} pixel changes (including {np.count_nonzero(self.pixel_changes['active'])} in composition time ranges)\
         \n\nDescription: \n{self.description} \n\nPixel changes: \n{self.pixel_changes}\
         \n{f'    Time ranges for boundary paths: {chr(10)}{self.border_path_times}' if len(self.border_path)>1 else ''}" # chr(10) is equivalent to \n
 
-    def out_name(self):
-        if self.id != '':
-            return self.id
-        elif self.is_rectangle:
-            return 'rectangle_'+str(self.xmin)+'.'+str(self.ymin)+'_to_'+str(self.xmax)+'.'+str(self.ymax)
-        else:
-            return 'area_within_'+str(self.xmin)+'.'+str(self.ymin)+'_to_'+str(self.xmax)+'.'+str(self.ymax)
 
-    def set_is_rectangle(self):
+    # PROTECTED METHODS
+
+    def _set_is_rectangle(self):
         ''' Determines the is_rectangle attribute. Needs self.border_path to be defined.'''
         self.is_rectangle = False
         border = self.border_path
@@ -170,23 +177,15 @@ class CanvasPart(object):
                 ):
                 self.is_rectangle = True
 
-    def set_color_dictionaries(self):
+    def _set_color_dictionaries(self):
         ''' Set up the dictionaries translating the color index to the corresponding rgb or hex color'''
         self.colidx_to_hex = np.empty([var.NUM_COLORS], dtype='object')
         self.colidx_to_rgb = np.empty([var.NUM_COLORS, 3], dtype='int32')
-        for (k, v) in var.COLOR_DICT.items():  # rather make these dictionaries numpy arrays, for more efficient use later
+        for (k, v) in var.IDX_TO_COLOR.items():  # rather make these dictionaries numpy arrays, for more efficient use later
             self.colidx_to_hex[int(k)] = v
             self.colidx_to_rgb[int(k)] = np.asarray(ImageColor.getrgb(v))
 
-    def get_rgb(self, col_idx):
-        ''' Returns the (r,g,b) triplet corresponding to the input color index '''
-        return self.colidx_to_rgb[col_idx]
-
-    def pixel_changes_coords(self):
-        ''' Returns the 2d array of the (x, y) coordinates of all pixel changes. Shape (2, number of pixel changes). '''
-        return self.coords[:, self.pixel_changes['coord_index'] ]
-
-    def get_atlas_border(self, atlas=None):
+    def _get_atlas_border(self, atlas=None):
         '''
         Get the path(s) of the boundary of the composition from the atlas of the atlas.json file. 
         Also gets the time ranges in which these paths are valid, and the composition description.
@@ -224,7 +223,7 @@ class CanvasPart(object):
                 vals.append(v)
 
         # fill out each border_path up to the length of the longest border_path, with redundant values (so that it can be a np.array)
-        vals = equalize_list_sublengths(vals)
+        vals = util.equalize_list_sublengths(vals)
 
         # fill attributes
         self.border_path = np.array(vals, dtype=np.uint16)
@@ -236,12 +235,10 @@ class CanvasPart(object):
         self.border_path_times = self.border_path_times[sort_idx]
         self.border_path = self.border_path[sort_idx]
 
-
-    def get_bounded_coords(self, show_coords=False):
+    def _get_bounded_coords(self, show_coords=False):
         '''
-        Finds the x and y coordinates within the boundary of the 
-        CanvasPart object. Sets the x_coord and y_coord attributes
-        of the CanvasPart object
+        Finds the x and y coordinates within the boundary (including the time ranges) of the CanvasPart object. 
+        Sets the coords and coords_timerange attributes of the CanvasPart object.
 
         parameters
         ----------
@@ -277,7 +274,7 @@ class CanvasPart(object):
                     coor_timerange = coor_timerange.tolist()
                 for (y, x) in zip(*np.where(masked_img == 1)): # loop over the coordinates of border_path #i
                     it = 0
-                    for (yref, xref) in zip(y_coords,x_coords): # loop over pre-existing coordinates
+                    for (yref, xref) in zip(y_coords, x_coords): # loop over pre-existing coordinates
                         if y == yref and x == xref:
                             timerange_old = coor_timerange[it][-1] # last [t0, t1] timerange contains the latest times
                             if np.allclose([timerange_old[1]], [timerange_new[0]], rtol=1e-10, atol=1e-5): # are the two timeranges adjacent? 
@@ -296,7 +293,7 @@ class CanvasPart(object):
         max_disjoint_timeranges = max(len(v) for v in coor_timerange)
         self.coords_timerange = np.array(coor_timerange, dtype = (np.float64 if max_disjoint_timeranges == 1 else object))
 
-    def reject_off_times(self):
+    def _reject_off_times(self):
         '''
         Cut away in self.coords_timerange the times at which some quarters of the canvas were off
         '''
@@ -323,7 +320,7 @@ class CanvasPart(object):
             self.coords_timerange = np.array(self.coords_timerange, dtype = np.float64)
 
 
-    def find_pixel_changes_in_boundary(self, pixel_changes_all):
+    def _find_pixel_changes_in_boundary(self, pixel_changes_all):
         '''
         Find all the pixel changes within the boundary of the CanvasPart object
         and set the pixel_changes attribute of the CanvasPart object accordingly
@@ -334,7 +331,7 @@ class CanvasPart(object):
             Contains all of the pixel change data from the entire dataset
         '''
         if pixel_changes_all is None:
-            pixel_changes_all = get_all_pixel_changes()
+            pixel_changes_all = util.get_all_pixel_changes()
 
         # limit the pixel changes array to the min and max boundary coordinates
         ind_x = np.where((pixel_changes_all['xcoor']<=self.xmax)
@@ -378,16 +375,18 @@ class CanvasPart(object):
                                                       ('coord_index', np.uint16 if len(self.coords[0]) < 65530 else np.uint32 ), 
                                                       ('user', np.uint32), 
                                                       ('color', np.uint8), 
-                                                      ('in_timerange', np.bool_),
+                                                      ('active', np.bool_),
                                                       ('moderator', np.bool_)]) )
         self.pixel_changes['seconds'] = np.array(pixel_changes_lim['seconds'])
         self.pixel_changes['coord_index'] = np.array(inds_in_coords)
         self.pixel_changes['user'] = np.array(pixel_changes_lim['user'])
         self.pixel_changes['color'] = np.array(pixel_changes_lim['color'])
-        self.pixel_changes['in_timerange'] = np.array(is_in_comp)
+        self.pixel_changes['active'] = np.array(is_in_comp)
         self.pixel_changes['moderator'] = np.array(pixel_changes_lim['moderator'])
 
-    def coord_indices_in_timerange(self, t0, t1):
+    # PUBLIC METHODS
+
+    def active_coord_inds(self, t0, t1):
         ''' Return indices of coordinates for which the interval [t0, t1] intersects with the 'active' timerange '''
         num_coord = self.coords.shape[1]
         timeranges = self.coords_timerange
@@ -395,27 +394,74 @@ class CanvasPart(object):
         if self.is_rectangle:
             (t0ref, t1ref) = timeranges[0][0]
             if (t0 >= t0ref or t1 > t0ref) and (t0 < t1ref or t1 <= t1ref):
-                inds_in_timerange = np.arange(0, num_coord)
+                inds_active = np.arange(0, num_coord)
             else:
-                inds_in_timerange = np.array([])
+                inds_active = np.array([])
 
         else:
             if timeranges.dtype != object: # case where the timeranges array is a numpy array, with only 1 timerange per pixel
                 # tried to reduce this through distributivity of logical operations, but inconclusive
-                inds_in_timerange = np.where( ((t0 >= timeranges[:,0,0]) | (t1 > timeranges[:,0,0])) 
+                inds_active = np.where( ((t0 >= timeranges[:,0,0]) | (t1 > timeranges[:,0,0])) 
                                             & ((t0 < timeranges[:,0,1]) | (t1 <= timeranges[:,0,1])) )
             else: # dirty python here: timeranges is not a full numpy array, so cannot use broadcasting
-                inds_in_timerange = []
+                inds_active = []
                 for i in range(0, num_coord):
-                    in_timerange = False
+                    active = False
                     for timerange in timeranges[i]:
-                        in_timerange |= (((t0 >= timerange[0]) | (t1 > timerange[0])) 
+                        active |= (((t0 >= timerange[0]) | (t1 > timerange[0])) 
                                         & ((t0 < timerange[1]) | (t1 <= timerange[1])) )
-                    if in_timerange:
-                        inds_in_timerange.append(i)
-                inds_in_timerange = np.array(inds_in_timerange, dtype=int)
+                    if active:
+                        inds_active.append(i)
+                inds_active = np.array(inds_active, dtype=int)
 
-        return inds_in_timerange
+        return inds_active
+
+    def intimerange_pixchanges_inds(self, t0, t1):
+        ''' Indices in self.pixel_changes whose time is in the range [t0, t1['''
+        seconds = np.array(self.pixel_changes['seconds'])
+        return np.where((seconds >= t0) & (seconds < t1))[0]
+
+    def select_active_pixchanges_inds(self, input_inds):
+        ''' Returns the part of the input_inds indices (referring to self.pixel_changes)
+        that point to an active pixel change (meaning its time is within border_path_times)'''
+        active = np.array(self.pixel_changes['active'])
+        return input_inds[ np.where(active[input_inds])[0] ]
+
+    def out_name(self):
+        ''' Returns standard name used to identify the composition (used in output paths) '''
+        if self.id != '':
+            return self.id
+        elif self.is_rectangle:
+            return 'rectangle_'+str(self.xmin)+'.'+str(self.ymin)+'_to_'+str(self.xmax)+'.'+str(self.ymax)
+        else:
+            return 'area_within_'+str(self.xmin)+'.'+str(self.ymin)+'_to_'+str(self.xmax)+'.'+str(self.ymax)
+
+    def get_rgb(self, col_idx):
+        ''' Returns the (r,g,b) triplet corresponding to the input color index '''
+        return self.colidx_to_rgb[col_idx]
+
+    def pixel_changes_coords(self):
+        ''' Returns the 2d array of the (x, y) coordinates of all pixel changes. 
+        Shape (2, number of pixel changes) '''
+        return self.coords[:, self.pixel_changes['coord_index'] ]
+
+    def white_image(self, dimension=2, images_number=-1):
+        ''' Creates a white image of the size of the canvas part. 
+        It can be a 1D array of the length of the coordinates;
+        or a 2D array being the actual pixels/image of the part; 
+        or a 3D array containing [images_number] of these 2D images. '''
+        if dimension == 1:
+            return np.full(self.coords.shape[1], var.WHITE, dtype='int8')
+        if dimension == 2:
+            return np.full((self.ymax - self.ymin + 1, self.xmax - self.xmin + 1), var.WHITE, dtype=np.int8)
+        if dimension == 3:
+            return np.full((images_number, self.ymax - self.ymin + 1, self.xmax - self.xmin + 1), var.WHITE, dtype=np.int8)
+
+    def set_quarters_coord_inds(self):
+        ''' Set the attributes quarter1_coordinds, quarter2_coordinds, quarter34_coordinds '''
+        self.quarter1_coordinds = np.where((self.coords[0]<1000) & (self.coords[1]<1000))
+        self.quarter2_coordinds = np.where((self.coords[0]>=1000) & (self.coords[1]<1000))
+        self.quarter34_coordinds = np.where(self.coords[1]>=1000)
 
 class ColorMovement:
     '''
@@ -448,31 +494,7 @@ class ColorMovement:
     '''
 
 
-def get_file_size(path):
-    ''' Gets the length of a file in bytes'''
-    f = open(path, "rb").read()
-    byte_array = bytearray(f)
-    return len(byte_array)
-
-
-def show_canvas_part(pixels, ax=None):
-    '''
-    Plots the pixels of a CanvasPart at a snapshot in time
-
-    parameters
-    ----------
-    cp: CanvasPart class instance
-    time_inds: array of time indices of the pixel changes taken into account in the shown canvas
-
-    '''
-    if ax == None:
-        plt.figure(origin='upper')
-        plt.imshow(pixels, origin='upper')
-    else:
-        ax.imshow(pixels, origin='upper')
-
-
-def save_part_over_time(canvas_part,
+def save_part_over_time(cpart,
                         times, # in seconds
                         delete_bmp=True,
                         delete_png=False,
@@ -484,7 +506,7 @@ def save_part_over_time(canvas_part,
 
     parameters
     ----------
-    canvas_part : CanvasPart object
+    cpart : CanvasPart object
     times : 1d array of floats
         time limits of intervals in which to plot (in seconds)
     delete_bmp / delete_png : boolean, optional
@@ -503,17 +525,16 @@ def save_part_over_time(canvas_part,
         each time interval
     '''
 
-    seconds = np.array(canvas_part.pixel_changes['seconds'])
-    coords = canvas_part.pixel_changes_coords()
-    color = np.array(canvas_part.pixel_changes['color'])
+    coords = cpart.pixel_changes_coords()
+    color = np.array(cpart.pixel_changes['color'])
 
     num_time_steps = len(times)-1
     file_size_bmp = np.zeros(num_time_steps+1)
     file_size_png = np.zeros(num_time_steps+1)
 
-    pixels = np.full((canvas_part.ymax - canvas_part.ymin + 1, canvas_part.xmax - canvas_part.xmin + 1, 3), 255, dtype=np.uint8) #[r,g,b] will be readable as (r,g,b) ##### fill as white first ##### the pixels must be [y,x,rgb]
+    pixels = np.full((cpart.ymax - cpart.ymin + 1, cpart.xmax - cpart.xmin + 1, 3), 255, dtype=np.uint8) #[r,g,b] will be readable as (r,g,b) ##### fill as white first ##### the pixels must be [y,x,rgb]
         
-    out_path = os.path.join(var.FIGS_PATH, 'history_' + canvas_part.out_name())
+    out_path = os.path.join(var.FIGS_PATH, 'history_' + cpart.out_name())
     out_path_time = os.path.join(out_path, 'VsTime')
     try:
         os.makedirs(out_path)
@@ -542,18 +563,18 @@ def save_part_over_time(canvas_part,
                 print('Ran', 100*t_step_idx/num_time_steps, '%% of the steps')
 
         # get the indices of the times within the interval
-        t_inds = np.where((seconds >= times[t_step_idx - 1]) & (seconds < times[t_step_idx]))[0]
+        t_inds = cpart.intimerange_pixchanges_inds(times[t_step_idx - 1], times[t_step_idx])
         t_inds_list.append(t_inds)
         if len(t_inds) != 0:
-            pixels[coords[1, t_inds]-canvas_part.ymin, coords[0, t_inds]-canvas_part.xmin, :] = canvas_part.get_rgb(color[t_inds])
+            pixels[coords[1, t_inds]-cpart.ymin, coords[0, t_inds]-cpart.xmin, :] = cpart.get_rgb(color[t_inds])
 
         # save image
         im = Image.fromarray(pixels)
         im_path = os.path.join(out_path_time, 'canvaspart_time{:06d}'.format(int(times[t_step_idx])))
         im.save(im_path + '.png')
         im.save(im_path + '.bmp')
-        file_size_png[t_step_idx] = get_file_size(im_path + '.png')
-        file_size_bmp[t_step_idx] = get_file_size(im_path + '.bmp')
+        file_size_png[t_step_idx] = util.get_file_size(im_path + '.png')
+        file_size_bmp[t_step_idx] = util.get_file_size(im_path + '.bmp')
         if delete_bmp:
             os.remove(im_path + '.bmp')
         if delete_png:
@@ -566,7 +587,7 @@ def save_part_over_time(canvas_part,
                 else:
                     ax_single = ax[t_step_idx]
                 ax_single.axis('off')
-                show_canvas_part(pixels, ax=ax_single)
+                plot.show_cpart(pixels, ax=ax_single)
 
                 if colcount < 9:
                     colcount += 1
@@ -577,63 +598,6 @@ def save_part_over_time(canvas_part,
         print('produced', num_time_steps, 'images vs time')
     return file_size_bmp, file_size_png, t_inds_list
 
-
-def plot_compression(file_size_bmp, file_size_png, times, out_name=''):
-    '''
-    plot the file size ratio over time
-
-    parameters
-    ----------
-    file_size_bmp : float
-        size of png image in bytes
-    file_size_png : float
-        size of png image in bytes
-    times : 1d array of floats
-        time intervals at which to plot (in seconds)
-    out_name : string
-        for the naming of the output saved plot
-    '''
-
-    plt.figure()
-    plt.plot(times, file_size_png/file_size_bmp)
-    sns.despine()
-    plt.ylabel('Computable Information Density (file size ratio)')
-    plt.xlabel('Time (s)')
-    plt.savefig(os.path.join(var.FIGS_PATH, 'history_' + out_name, '_file_size_compression_ratio.png'))
-
-
-def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
-    '''
-    load all the pixel change data and put it in a numpy array for easy access
-
-    parameters
-    ----------
-    data_file : string that ends in .npz, optional
-
-    returns
-    -------
-    pixel_changes_all : numpy structured array
-            Contains all of the pixel change data from the entire dataset
-    '''
-    pixel_changes_all_npz = np.load(os.path.join(var.DATA_PATH, data_file))
-
-    # save pixel changes as a structured array
-    pixel_changes_all = np.zeros(len(pixel_changes_all_npz['seconds']),
-                                 dtype=np.dtype([('seconds', np.float64), 
-                                                 ('xcoor', np.uint16), 
-                                                 ('ycoor', np.uint16), 
-                                                 ('user', np.uint32), 
-                                                 ('color', np.uint8), 
-                                                 ('moderator', np.bool_)])
-                                 )
-    pixel_changes_all['seconds'] = np.array(pixel_changes_all_npz['seconds'])
-    pixel_changes_all['xcoor'] = np.array(pixel_changes_all_npz['pixelXpos'])
-    pixel_changes_all['ycoor'] = np.array(pixel_changes_all_npz['pixelYpos'])
-    pixel_changes_all['user'] = np.array(pixel_changes_all_npz['userIndex'])
-    pixel_changes_all['color'] = np.array(pixel_changes_all_npz['colorIndex'])
-    pixel_changes_all['moderator'] = np.array(pixel_changes_all_npz['moderatorEvent'])
-
-    return pixel_changes_all
 
 
 def save_canvas_part_time_steps(canvas_comp,
@@ -666,56 +630,3 @@ def load_canvas_part_time_steps(file_name='canvas_part_data'):
         canvas_part_parameters = pickle.load(f)
 
     return canvas_part_parameters
-
-
-def save_movie(image_path,
-               fps=1,
-               movie_tool='moviepy',
-               codec='libx264',
-               video_type='mp4'):
-    '''
-    Save movie of .png images in the path.
-
-    parameters
-    ----------
-    image_path: string
-        Path where .png images can be found
-    movie_tool: string
-        Movie handling package you want to use
-        values can be 'moviepy', 'ffmpeg-python', or 'ffmpeg'
-        You must have the corresponding packages installed for this to work.
-        'moviepy' and 'ffmpeg-python' refer to python packages. 'ffmpeg' refers 
-        to software that must be installed on your system without requiring a 
-        specific python package. 
-    '''
-    image_files = list(np.sort(glob.glob(os.path.join(image_path, '*.png'))))
-    png_name0 = os.path.basename(image_files[0][0:-15])
-    movie_name = png_name0 + '_fps' + str(fps)
-    movie_file = os.path.join(image_path, movie_name) + '.' + video_type
-
-    if movie_tool == 'moviepy':
-        if 'imsc' not in sys.modules:
-            import moviepy.video.io.ImageSequenceClip as imsc
-        clip = imsc.ImageSequenceClip(image_files, fps=fps)
-        clip.write_videofile(movie_file,  codec=codec)
-
-    if movie_tool == 'ffmpeg-python':
-        # frames may not be in order
-        if movie_tool not in sys.modules:
-            import ffmpeg
-        (ffmpeg.input(image_path + '/*.png', pattern_type='glob', framerate=fps)
-         .output(movie_file, vcodec=codec).overwrite_output().run())
-
-    if movie_tool == 'ffmpeg':
-        # frames may not be in order
-        os.system('ffmpeg -framerate ' + str(fps) + '-pattern_type glob -i *.png' + codec + ' -y ' + movie_file)
-
-
-def check_time(statement, sort = 'cumtime'):
-    '''
-    parameters:
-    -----------
-    statement: string
-
-    '''
-    cProfile.run(statement, sort=sort)

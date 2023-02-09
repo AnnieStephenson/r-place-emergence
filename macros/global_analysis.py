@@ -1,17 +1,12 @@
 import numpy as np
 import os
-import cProfile, pstats, io
-import Variables.Variables as var
+import rplacem.variables_rplace2022 as var
 import numpy as np
 import rplacem.canvas_part as cp
-import rplacem.thermo as th
+import rplacem.compute_variables as comp
 import matplotlib.pyplot as plt
 import matplotlib.colors as pltcolors
-import sys
-import glob
-import json
 import seaborn as sns
-import pickle
 
 # Grab full dataset
 pixel_changes_all_npz = np.load(os.path.join(var.DATA_PATH, 'PixelChangesCondensedData_sorted.npz'))                                            
