@@ -535,7 +535,7 @@ def save_part_over_time(cpart,
             if t_step_idx/num_time_steps > i_fraction_print/10:
                 #print()
                 i_fraction_print += 1
-                print('Ran', 100*t_step_idx/num_time_steps, '%% of the steps', end='\r')
+                print('Ran', 100*t_step_idx/num_time_steps, '% of the steps', end='\r')
 
         # get the indices of the times within the interval
         t_inds = cpart.intimerange_pixchanges_inds(times[t_step_idx - 1], times[t_step_idx])
@@ -568,90 +568,5 @@ def save_part_over_time(cpart,
                     rowcount += 1
 
     if print_progress:
-        print('          produced', num_time_steps, 'images vs time')
+        print('          produced', num_time_steps, 'images vs time ')
     return file_size_bmp, file_size_png, t_inds_list
-
-
-def plot_compression(file_size_bmp, file_size_png, times, out_name=''):
-    '''
-    plot the file size ratio over time
-
-    parameters
-    ----------
-    file_size_bmp : float
-        size of png image in bytes
-    file_size_png : float
-        size of png image in bytes
-    times : 1d array of floats
-        time intervals at which to plot (in seconds)
-    out_name : string
-        for the naming of the output saved plot
-    '''
-
-    plt.figure()
-    plt.plot(times, file_size_png/file_size_bmp)
-    sns.despine()
-    plt.ylabel('Computable Information Density (file size ratio)')
-    plt.xlabel('Time (s)')
-    plt.savefig(os.path.join(var.FIGS_PATH, out_name, '_file_size_compression_ratio.png'))
-
-def plot_compression_vs_pixel_changes(num_pixel_changes,
-                                      num_touched_pixels,
-                                      num_users,
-                                      times,
-                                      file_size_png,
-                                      file_size_bmp):
-    '''
-    plot the pixel change quanities and CID (computable information density)
-    '''
-
-    fig_cid_vs_time = plt.figure()
-    plt.plot(times, file_size_png/file_size_bmp)
-    plt.ylabel('Computational Information Density  (file size ratio)')
-    plt.xlabel('Time (s)')
-    sns.despine()
-
-    fig_num_touched_pix_vs_time = plt.figure()
-    plt.plot(times, num_touched_pixels)
-    plt.ylabel('Number of touched pixels')
-    plt.xlabel('Time (s)')
-    sns.despine()
-
-    fig_num_pix_changes_vs_time = plt.figure()
-    plt.plot(times, num_pixel_changes)
-    plt.ylabel('Number of Pixel Changes')
-    plt.xlabel('Time (s)')
-    sns.despine()
-
-    fig_users_vs_time = plt.figure()
-    plt.plot(times, num_users)
-    plt.ylabel('Number of Users')
-    plt.xlabel('Time (s)')
-    sns.despine()
-
-    fig_cid_vs_num_pix_changes = plt.figure()
-    plt.scatter(num_pixel_changes, file_size_png/file_size_bmp, s=5, alpha=0.7, c=times)
-    plt.xlabel('Number of Pixel Changes')
-    plt.ylabel('Computational Information Density (file size ratio)')
-    sns.despine()
-
-    fig_cid_vs_num_touched_pix = plt.figure()
-    plt.scatter(num_touched_pixels, file_size_png/file_size_bmp, s=5, alpha=0.7, c=times)
-    plt.xlabel('Number of touched Pixels')
-    plt.ylabel('Computational Information Density (file size ratio)')
-    sns.despine()
-
-    fig_cid_vs_num_users = plt.figure()
-    plt.scatter(num_users, file_size_png/file_size_bmp, s=5, alpha=0.7, c=times)
-    plt.xlabel('Number of Users')
-    plt.ylabel('Computational Information Density (file size ratio)')
-    sns.despine()
-
-    return (fig_cid_vs_time,
-            fig_num_touched_pix_vs_time,
-            fig_num_pix_changes_vs_time,
-            fig_users_vs_time,
-            fig_cid_vs_num_pix_changes,
-            fig_cid_vs_num_touched_pix,
-            fig_cid_vs_num_users)
-
