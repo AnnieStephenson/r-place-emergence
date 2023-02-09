@@ -3,6 +3,7 @@ import os
 import rplacem.canvas_part as cp
 import rplacem.compute_variables as comp
 import rplacem.variables_rplace2022 as var
+import rplacem.transitions as tr
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -31,8 +32,8 @@ time_ranges_stab = np.arange(0, var.TIME_WHITEONLY+time_interval_stab-1e-4, time
 time_ranges_trans = np.arange(0, var.TIME_WHITEONLY+time_interval_trans-1e-4, time_interval_trans)
 
 j = 0
-#find_all_transitions(keep_idx_comps, stability_vs_time, time_ranges_stab, canparts, 0.88, 0.985, 3, 3, True)
-image_pre, _, _, trans_times, trans_times_modif = transition_reference_image(canpart, time_ranges_stab, stability_vs_time[5], True, 0.88, 0.99, 3, 4)
+#tr.find_all_transitions(keep_idx_comps, stability_vs_time, time_ranges_stab, canparts, 0.88, 0.985, 3, 3, True)
+image_pre, _, _, trans_times, trans_times_modif = tr.transition_reference_image(canpart, time_ranges_stab, stability_vs_time[5], True, 0.88, 0.99, 3, 4)
 res = comp.num_changes_and_users(canpart, time_ranges_trans, image_pre[j], True)
 pix_changes = res[0] * 300 / (time_interval_trans * res[3]) 
 defense_changes = res[1] * 300 / (time_interval_trans * res[3]) 
