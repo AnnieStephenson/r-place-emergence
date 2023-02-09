@@ -1,8 +1,9 @@
 import numpy as np
 import os
-import canvas_part as cp
-import thermo as th
-import Variables.Variables as var
+import rplacem.canvas_part as cp
+import rplacem.compute_variables as comp
+import rplacem.utilities as util
+import rplacem.variables_rplace2022 as var
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -40,19 +41,19 @@ except OSError:
 
 # time-dependent images + file sizes and compression
 time_intervals = np.arange(0, var.TIME_TOTAL, 300)
-file_size_bmp, file_size_png, t_inds_list = cp.save_part_over_time(canvas_part, time_intervals, delete_bmp=True, delete_png=False, show_plot=False)
-cp.save_movie(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(),'VsTime'), 15)
-th.plot_compression(file_size_bmp, file_size_png, time_intervals, out_name = canpart.out_name())
+file_size_bmp, file_size_png, t_inds_list = cp.save_part_over_time(canpart, time_intervals, delete_bmp=True, delete_png=False, show_plot=False)
+util.save_movie(os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(),'VsTime'), 15)
+comp.plot_compression(file_size_bmp, file_size_png, time_intervals, out_name = canpart.out_name())
 
 # mean stability 
-mean_stability = th.stability(canvas_part,np.asarray([0, var.TIME_WHITEONLY]), True,True,False,True)[0][0]
+mean_stability = comp.stability(canpart,np.asarray([0, var.TIME_WHITEONLY]), True,True,False,True)[0][0]
 print('mean stability = ', mean_stability)
 
 # time-dependent stability
 time_bins = 80
 time_interval = var.TIME_WHITEONLY / time_bins  # seconds
 time_ranges = np.arange(0, var.TIME_WHITEONLY+time_interval-1e-4, time_interval)
-stability_vs_time = th.stability(canvas_part, time_ranges, False, False, icp < 0, True)[0]
+stability_vs_time = comp.stability(canpart, time_ranges, False, False, icp < 0, True)[0]
 
 plt.figure()
 plt.plot(time_ranges[:-1]+time_interval/2, stability_vs_time)
@@ -64,6 +65,6 @@ plt.xlim([0, var.TIME_TOTAL])
 
 plt.savefig(os.path.join(var.FIGS_PATH, 'history_'+canpart.out_name(), 'stability.png'))
 
-transitions = th.find_transitions(time_ranges, stability_vs_time)
+transitions = comp.find_transitions(time_ranges, stability_vs_time)
 print(transitions)
 print(canpart.border_path_times)

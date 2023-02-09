@@ -1,35 +1,24 @@
-import cProfile
-import glob
 import json
 import math
 import os
 import pickle
 import shutil
-import sys
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
+import matplotlib.pyplot as plt
 from PIL import Image, ImageColor
-import Variables.Variables as var
-
-def equalize_list_sublengths(l):
-    ''' Fill out each sublist-member of the list up to the length of the longest member, with redundant values (so that it can be a np.array)'''
-    maxlen = max(len(v) for v in l)  
-    for i in range(0,len(l)):
-        l[i] += [l[i][0]] * max(maxlen - len(l[i]), 0)
-    return l
+import rplacem.variables_rplace2022 as var
+import rplacem.plot_utilities as plot
+import rplacem.utilities as util
 
 class CanvasPart(object):
     '''
-    superclass with subclasses CanvasComposition and CanvasArea. A CanvasPart 
-    object is a defined "part" of a canvas with a set spatial border, which 
-    can be any shape or size (up to the size of the full canvas) 
+    A CanvasPart object is a defined "part" of a canvas with a set spatial border, which 
+    can be any shape or size (up to the size of the full canvas)
 
     attributes
     ----------
     id : str
-        name used to store output. 
         When specified, 'id' is the string from the atlas file that identifies a particular composition.
             Set in __init__()
     is_rectangle : bool
@@ -130,7 +119,7 @@ class CanvasPart(object):
         
         # get the border path from the atlas of compositions, when it is not provided
         if border_path != [[[]]]:
-            border_path = equalize_list_sublengths(border_path)
+            border_path = util.equalize_list_sublengths(border_path)
             self.border_path = np.array(border_path, np.int16)
             self.border_path_times = border_path_times
             self.description = ''
@@ -234,7 +223,7 @@ class CanvasPart(object):
                 vals.append(v)
 
         # fill out each border_path up to the length of the longest border_path, with redundant values (so that it can be a np.array)
-        vals = equalize_list_sublengths(vals)
+        vals = util.equalize_list_sublengths(vals)
 
         # fill attributes
         self.border_path = np.array(vals, dtype=np.uint16)
@@ -342,7 +331,7 @@ class CanvasPart(object):
             Contains all of the pixel change data from the entire dataset
         '''
         if pixel_changes_all is None:
-            pixel_changes_all = get_all_pixel_changes()
+            pixel_changes_all = util.get_all_pixel_changes()
 
         # limit the pixel changes array to the min and max boundary coordinates
         ind_x = np.where((pixel_changes_all['xcoor']<=self.xmax)
@@ -505,30 +494,6 @@ class ColorMovement:
     '''
 
 
-def get_file_size(path):
-    ''' Gets the length of a file in bytes'''
-    f = open(path, "rb").read()
-    byte_array = bytearray(f)
-    return len(byte_array)
-
-
-def show_canvas_part(pixels, ax=None):
-    '''
-    Plots the pixels of a CanvasPart at a snapshot in time
-
-    parameters
-    ----------
-    cp: CanvasPart class instance
-    time_inds: array of time indices of the pixel changes taken into account in the shown canvas
-
-    '''
-    if ax == None:
-        plt.figure(origin='upper')
-        plt.imshow(pixels, origin='upper')
-    else:
-        ax.imshow(pixels, origin='upper')
-
-
 def save_part_over_time(canvas_part,
                         times, # in seconds
                         delete_bmp=True,
@@ -609,8 +574,8 @@ def save_part_over_time(canvas_part,
         im_path = os.path.join(out_path_time, 'canvaspart_time{:06d}'.format(int(times[t_step_idx])))
         im.save(im_path + '.png')
         im.save(im_path + '.bmp')
-        file_size_png[t_step_idx] = get_file_size(im_path + '.png')
-        file_size_bmp[t_step_idx] = get_file_size(im_path + '.bmp')
+        file_size_png[t_step_idx] = util.get_file_size(im_path + '.png')
+        file_size_bmp[t_step_idx] = util.get_file_size(im_path + '.bmp')
         if delete_bmp:
             os.remove(im_path + '.bmp')
         if delete_png:
@@ -623,7 +588,7 @@ def save_part_over_time(canvas_part,
                 else:
                     ax_single = ax[t_step_idx]
                 ax_single.axis('off')
-                show_canvas_part(pixels, ax=ax_single)
+                plot.show_canvas_part(pixels, ax=ax_single)
 
                 if colcount < 9:
                     colcount += 1
@@ -634,38 +599,6 @@ def save_part_over_time(canvas_part,
         print('produced', num_time_steps, 'images vs time')
     return file_size_bmp, file_size_png, t_inds_list
 
-def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
-    '''
-    load all the pixel change data and put it in a numpy array for easy access
-
-    parameters
-    ----------
-    data_file : string that ends in .npz, optional
-
-    returns
-    -------
-    pixel_changes_all : numpy structured array
-            Contains all of the pixel change data from the entire dataset
-    '''
-    pixel_changes_all_npz = np.load(os.path.join(var.DATA_PATH, data_file))
-
-    # save pixel changes as a structured array
-    pixel_changes_all = np.zeros(len(pixel_changes_all_npz['seconds']),
-                                 dtype=np.dtype([('seconds', np.float64), 
-                                                 ('xcoor', np.uint16), 
-                                                 ('ycoor', np.uint16), 
-                                                 ('user', np.uint32), 
-                                                 ('color', np.uint8), 
-                                                 ('moderator', np.bool_)])
-                                 )
-    pixel_changes_all['seconds'] = np.array(pixel_changes_all_npz['seconds'])
-    pixel_changes_all['xcoor'] = np.array(pixel_changes_all_npz['pixelXpos'])
-    pixel_changes_all['ycoor'] = np.array(pixel_changes_all_npz['pixelYpos'])
-    pixel_changes_all['user'] = np.array(pixel_changes_all_npz['userIndex'])
-    pixel_changes_all['color'] = np.array(pixel_changes_all_npz['colorIndex'])
-    pixel_changes_all['moderator'] = np.array(pixel_changes_all_npz['moderatorEvent'])
-
-    return pixel_changes_all
 
 
 def save_canvas_part_time_steps(canvas_comp,
@@ -698,56 +631,3 @@ def load_canvas_part_time_steps(file_name='canvas_part_data'):
         canvas_part_parameters = pickle.load(f)
 
     return canvas_part_parameters
-
-
-def save_movie(image_path,
-               fps=1,
-               movie_tool='moviepy',
-               codec='libx264',
-               video_type='mp4'):
-    '''
-    Save movie of .png images in the path.
-
-    parameters
-    ----------
-    image_path: string
-        Path where .png images can be found
-    movie_tool: string
-        Movie handling package you want to use
-        values can be 'moviepy', 'ffmpeg-python', or 'ffmpeg'
-        You must have the corresponding packages installed for this to work.
-        'moviepy' and 'ffmpeg-python' refer to python packages. 'ffmpeg' refers 
-        to software that must be installed on your system without requiring a 
-        specific python package. 
-    '''
-    image_files = list(np.sort(glob.glob(os.path.join(image_path, '*.png'))))
-    png_name0 = os.path.basename(image_files[0][0:-15])
-    movie_name = png_name0 + '_fps' + str(fps)
-    movie_file = os.path.join(image_path, movie_name) + '.' + video_type
-
-    if movie_tool == 'moviepy':
-        if 'imsc' not in sys.modules:
-            import moviepy.video.io.ImageSequenceClip as imsc
-        clip = imsc.ImageSequenceClip(image_files, fps=fps)
-        clip.write_videofile(movie_file,  codec=codec)
-
-    if movie_tool == 'ffmpeg-python':
-        # frames may not be in order
-        if movie_tool not in sys.modules:
-            import ffmpeg
-        (ffmpeg.input(image_path + '/*.png', pattern_type='glob', framerate=fps)
-         .output(movie_file, vcodec=codec).overwrite_output().run())
-
-    if movie_tool == 'ffmpeg':
-        # frames may not be in order
-        os.system('ffmpeg -framerate ' + str(fps) + '-pattern_type glob -i *.png' + codec + ' -y ' + movie_file)
-
-
-def check_time(statement, sort = 'cumtime'):
-    '''
-    parameters:
-    -----------
-    statement: string
-
-    '''
-    cProfile.run(statement, sort=sort)

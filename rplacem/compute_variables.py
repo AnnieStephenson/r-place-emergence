@@ -1,14 +1,11 @@
-import json
 import os
 import pickle
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import seaborn as sns
-from PIL import Image, ImageColor
-import Variables.Variables as var
-import canvas_part as cp
+import rplacem.variables_rplace2022 as var
+import rplacem.utilities as util
+from PIL import Image
 
 def calc_num_pixel_changes(canpart,
                            time_inds_list,
@@ -211,18 +208,16 @@ def count_image_differences(pixels1, pixels2, cpart, indices=None):
     xcoor = cpart.coords[0, indices] - cpart.xmin
     return np.count_nonzero(pixels2[ycoor, xcoor] - pixels1[ycoor, xcoor])
 
-def pixels_to_image(pix, canpart=None, save_name=''):
+def pixels_to_image(pix, canpart, save_name=''):
     ''' Transform the 2d array of color indices into an image object, and saves it if (save_name!='') '''
     im = Image.fromarray( canpart.get_rgb(pix).astype(np.uint8) )
     if save_name != '':
-        if canpart == None:
-            im.save( save_name )
-        else:
-            try:
-                os.makedirs( os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name()) )
-            except OSError: 
-                pass
-            im.save( os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), save_name) )
+        try:
+            os.makedirs( os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name()) )
+        except OSError: 
+            pass
+        im.save( os.path.join(var.FIGS_PATH, 'history_' + canpart.out_name(), save_name) )
+    return im
 
 def stability(canpart,
               t_lims=[0, var.TIME_TOTAL],
@@ -373,24 +368,10 @@ def stability(canpart,
 
     return (stability_vs_time, pixels1, pixels2, pixels3)
 
-def update_image(image, xcoords, ycoords, color, t_inds=None):
-    '''Update the pixels of the [image] using the 1d arrays [xcoords], [ycoords], [color]. 
-    These info arrays are taken at indices [t_inds].
-    For each (x,y) pixel, one needs to keep only the last pixel change. '''
-    if t_inds is None:
-        t_inds = np.arange(0, len(color))
-    
-    color_inv = (color[t_inds])[::-1]
-    ycoords_inv = (ycoords[t_inds])[::-1]
-    xcoords_inv = (xcoords[t_inds])[::-1]
-    xycoords_inv = np.column_stack((xcoords_inv, ycoords_inv))
-    xyidx_unique, idx_first = np.unique(xycoords_inv, return_index=True, axis=0) # keeping the index of the first occurence in the reverse-order array
-    image[xyidx_unique[:,1] , xyidx_unique[:,0]] = color_inv[idx_first]
-
-
-def num_deviating_pixels(canpart, t_lims, ref_image, save_ratio_images):
+def num_changes_and_users(canpart, t_lims, ref_image, save_ratio_images):
     '''
-    Gives the number of pixel changes that agree or disagree with the provided reference (stable) image
+    Returnes multiple variables dealing with the number of pixel changes and users
+    and their relation to the provided reference (stable) image
 
     parameters
     ----------
@@ -411,18 +392,24 @@ def num_deviating_pixels(canpart, t_lims, ref_image, save_ratio_images):
         Active area of the composition in each timerange
     num_differing_pixels:
         number of active pixels that are different than the ref image
+    num_attackonly_users, num_defenseonly_users, num_attackdefense_users, num_users_total:
+        number of users that contributed changes (attacking, defending, doing both, or all) in the given time interval
     '''
 
     if t_lims[0] != 0:
         print('WARNING: this function \'num_deviating_pixels\' is not meant to work from a lower time limit > 0 !!!')
 
     color = np.array(canpart.pixel_changes['color'])
+    user = np.array(canpart.pixel_changes['user'])
     pix_change_coords = canpart.pixel_changes_coords()
 
     num_changes = np.zeros(len(t_lims)-1)
     num_defense_changes = np.zeros(len(t_lims)-1)
     num_active_coords = np.zeros(len(t_lims)-1)
     num_differing_pixels = np.zeros(len(t_lims)-1)
+    num_attackdefense_users = np.zeros(len(t_lims)-1)
+    num_attackonly_users = np.zeros(len(t_lims)-1)
+    num_defenseonly_users = np.zeros(len(t_lims)-1)
 
     current_image = canpart.white_image(2)
     for t_step in range(0, len(t_lims)-1):
@@ -437,6 +424,18 @@ def num_deviating_pixels(canpart, t_lims, ref_image, save_ratio_images):
         agreeing_changes = np.array( ref_image[ycoords[t_inds_active], xcoords[t_inds_active]] == color[t_inds_active] , np.bool_)
         num_defense_changes[t_step] = np.count_nonzero(agreeing_changes)
 
+        # count users making defense or attack moves
+        agree_indinds = np.where(agreeing_changes)[0]
+        disagree_indinds = np.where(np.invert(agreeing_changes))[0]
+        defense_users = np.unique( user[t_inds_active[agree_indinds]] )
+        attack_users = np.unique( user[t_inds_active[disagree_indinds]] )
+        attackdefense_users = np.intersect1d(attack_users, defense_users)
+        num_attackdefense_users[t_step] = len(attackdefense_users)
+        num_attack_users = len(attack_users)
+        num_defense_users = len(defense_users)
+        num_attackonly_users[t_step] = num_attack_users - num_attackdefense_users[t_step]
+        num_defenseonly_users[t_step] = num_defense_users - num_attackdefense_users[t_step]
+
         # count attack and defense changes for each pixel of the canvas
         if save_ratio_images:
             att = np.zeros((canpart.ymax - canpart.ymin + 1, canpart.xmax - canpart.xmin + 1), dtype=np.float16)
@@ -450,7 +449,7 @@ def num_deviating_pixels(canpart, t_lims, ref_image, save_ratio_images):
             inds_nan = np.where((att>0) & (defe==0))
             pixels[inds_nan[0], inds_nan[1]] = 100.
 
-            f1 = plt.figure()
+            plt.figure()
             pcm = plt.pcolormesh(np.arange(0,canpart.xmax - canpart.xmin + 1), np.arange(canpart.ymax - canpart.ymin, -1, -1), pixels, shading='nearest')
             plt.xlabel('x_pixel')
             plt.ylabel('y_pixel')
@@ -465,7 +464,7 @@ def num_deviating_pixels(canpart, t_lims, ref_image, save_ratio_images):
             plt.close()
 
         # Update current_image with the pixel changes in this time interval.
-        update_image(current_image, xcoords, ycoords, color, t_inds)
+        util.update_image(current_image, xcoords, ycoords, color, t_inds)
 
         # count active (ie in timerange) coordinates and the differences with the ref_image at these coordinates
         active_coor_inds = canpart.active_coord_inds(t_lims[t_step], t_lims[t_step+1])
@@ -474,7 +473,12 @@ def num_deviating_pixels(canpart, t_lims, ref_image, save_ratio_images):
 
     num_attack_changes = num_changes - num_defense_changes
     print(num_attack_changes / num_defense_changes)
-    return (num_changes, num_defense_changes, num_attack_changes, num_active_coords, num_differing_pixels)
+    num_users_total = len(np.unique(user))
+
+    return (num_changes, num_defense_changes, num_attack_changes, 
+            num_active_coords, 
+            num_differing_pixels, 
+            num_attackonly_users, num_defenseonly_users, num_attackdefense_users, num_users_total)
 
 def plot_compression(file_size_bmp, file_size_png, times, out_name=''):
     '''
