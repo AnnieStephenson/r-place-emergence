@@ -36,6 +36,7 @@ class CanvasPart(object):
         [x coordinates, y coordinates] of all the pixels contained inside the CanvasPart.
             Set in __init__() (if is_rectangle) or in _get_bounded_coords().
     coords_timerange : 3d numpy array with shape (number of pixels in the CanvasPart, max number of disjoint timeranges, 2)
+        [pixel index, time range index?, start time or end time]
         timeranges in which the pixels at this index (first dimension) are "on".
         Is actually a 1d numpy array (dtype=object) of list objects when there are more than 1 disjoint timeranges for a given pixel.
             Set in __init__() (if is_rectangle) or in _get_bounded_coords().
@@ -49,6 +50,10 @@ class CanvasPart(object):
         the indices (referring to the self.coords array) that point to coordinates
         in the 1st, 2nd, or 3rd and 4th quarters (which were not all "on" from the beginning).
             Set in set_quarters_coord_inds(), at the responsibility of the user.
+    has_loc_jump : bool
+        True if the canvas part 'jumps' from one location to another. If at least one pixel coordinate is active 
+        during the time that the cavnas_part is active, then there is no jump and has_loc_jump is set to False. This condition
+        allows for small shifts in the canvas location, which do not constitute a jump. 
     
 
     methods
@@ -60,8 +65,9 @@ class CanvasPart(object):
         _set_is_rectangle(self)
         _get_atlas_border(self, id, atlas=None)
         _reject_off_times(self)
-        _get_bounded_coords(self, show_coords =False)
+        _get_bounded_coords(self, show_coords=False)
         _find_pixel_changes_in_boundary(self, pixel_changes_all)
+        _set_has_loc_jump(self)
     public:
         out_name(self)
         pixchanges_coords(self)
@@ -82,25 +88,25 @@ class CanvasPart(object):
     def __init__(self,
                  id='',
                  border_path=[[[]]],
-                 border_path_times=[[0, var.TIME_TOTAL]],
+                 border_path_times=np.array([0, var.TIME_TOTAL]),
                  atlas=None,
                  pixel_changes_all=None,
-                 show_coords=False
+                 show_coords=False,
                  ):
         '''
         Constructor for CanvasPart object
 
         Parameters
         ----------
-        border_path, border_path_times, data_file, id : 
+        id, border_path, border_path_times: 
             directly set the attributes of the CanvasPart class, documented in the class
+        atlas : dictionary
+            Composition atlas from the atlas.json file, only needed for compositions. 
+            If =None, it is extracted from the file in the _get_atlas_border method.
         pixel_changes_all : numpy recarray or None, optional
             Contains all of the pixel change data from the entire dataset. If ==None, then the whole dataset is loaded when the class instance is initialized.
         show_coords : bool, optional
             If True, plots the mask of the CanvasPart boundary
-        atlas : dictionary
-            Composition atlas from the atlas.json file, only needed for compositions. 
-            If =None, it is extracted from the file in the _get_atlas_border method.
         '''
         self.id = id
 
@@ -142,6 +148,9 @@ class CanvasPart(object):
         # set the pixel changes within the boundary
         self.pixel_changes = None
         self._find_pixel_changes_in_boundary(pixel_changes_all)
+
+        # set the boolean describing whether the canvas_part jumps to a new part of the canvas
+        self._set_has_loc_jump()
 
     def __str__(self):
         return f"CanvasPart \n{'Atlas Composition, id: '+self.id if self.id!='' else 'user-defined area, name: '+self.out_name()}, \
@@ -356,13 +365,62 @@ class CanvasPart(object):
                                                       ('user', np.uint32), 
                                                       ('color', np.uint8), 
                                                       ('active', np.bool_),
-                                                      ('moderator', np.bool_)]) )
+                                                      ('moderator', np.bool_),
+                                                      ('redundant', np.bool_)]) )
         self.pixel_changes['seconds'] = np.array(pixel_changes_lim['seconds'])
         self.pixel_changes['coord_index'] = np.array(inds_in_coords)
         self.pixel_changes['user'] = np.array(pixel_changes_lim['user'])
         self.pixel_changes['color'] = np.array(pixel_changes_lim['color'])
         self.pixel_changes['active'] = np.array(is_in_comp)
         self.pixel_changes['moderator'] = np.array(pixel_changes_lim['moderator'])
+
+        # find redundant pixel changes
+        pix_change_redundant = self._find_redundant_pix_change()
+        self.pixel_changes['redundant'] = pix_change_redundant
+
+    def _find_redundant_pix_change(self):
+        ''' 
+        Finds all the pixel_changes that are redundant
+        and returns and array where zeros indicate non-reduntant
+        pixel color changes and ones indicate redundant pixel color changes
+        '''
+        color = self.pixel_changes['color']
+        color_diff = np.diff(color.astype(np.int8))
+        redundant_ind = np.where(color_diff==0)[0] + 1
+        pix_change_redundant = np.zeros(len(color))
+        pix_change_redundant[redundant_ind]=1
+        return pix_change_redundant.astype(bool)
+
+    def _set_has_loc_jump(self):
+        '''
+        Finds wether the canvas_part has a location jump
+        and sets the has_loc_jump boolean attribute accordingly
+
+        A location jump is defined as a change in the border path
+        where no pixel contained in the border is the same before and 
+        after. 
+        '''
+        border_times = np.ndarray.flatten(self.border_path_times)
+        
+        _, times_unique_inv = np.unique(border_times, return_inverse=True)
+        time_reps = np.where(np.diff(times_unique_inv)==0)[0]
+        time_reps_tot = np.hstack([time_reps,time_reps+1])
+
+        comp_active_time = []
+        for i in range(len(border_times)):
+            if ~np.isin(border_times[i], border_times[time_reps_tot]):
+                comp_active_time.append(border_times[i])         
+        comp_active_time = np.reshape(np.array(comp_active_time),(-1,2))
+        
+        time_ranges_pix = np.array(self.coords_timerange)
+        self.has_loc_jump = True
+        for i in range(len(time_ranges_pix)):
+            cont_pix_bool = time_ranges_pix[i] == comp_active_time
+            if type(cont_pix_bool) != bool:
+                cont_pix_bool = cont_pix_bool.all()
+            if cont_pix_bool:
+                self.has_loc_jump = False
+                break
 
     # PUBLIC METHODS
 
