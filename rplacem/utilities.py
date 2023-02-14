@@ -4,6 +4,7 @@ import sys
 import numpy as np
 import glob
 import rplacem.variables_rplace2022 as var
+import json
 from PIL import Image
 
 def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
@@ -139,3 +140,14 @@ def update_image(image, xcoords, ycoords, color, t_inds=None):
     xycoords_inv = np.column_stack((xcoords_inv, ycoords_inv))
     xyidx_unique, idx_first = np.unique(xycoords_inv, return_index=True, axis=0) # keeping the index of the first occurence in the reverse-order array
     image[xyidx_unique[:,1] , xyidx_unique[:,0]] = color_inv[idx_first]
+
+def load_atlas():
+    '''
+    Load the composition atlas and return the atlas and the number of entries in the atlas
+    '''
+    atlas_path = os.path.join(var.DATA_PATH, 'atlas.json')
+    atlas_file = open(atlas_path)
+    atlas = json.load(atlas_file)
+
+    atlas_size = len(list(atlas))
+    return atlas, atlas_size
