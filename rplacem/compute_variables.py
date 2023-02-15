@@ -215,7 +215,8 @@ def stability(cpart,
               create_images=False,
               save_images=False,
               save_pickle=False,
-              compute_average=True
+              compute_average=True,
+              print_progress=True
               ):
     '''
     makes map of stability in some time range.
@@ -227,7 +228,7 @@ def stability(cpart,
         The CanvasPart object for which we want to calculate the stability
     t_lims : 1d array-like of floats
         time intervals in which the pixel states are studied. Must be ordered in a crescent way, and start at 0
-    save_images, save_pickle, compute_average: bools
+    create_images, save_images, save_pickle, compute_average: bools
         flags, see 'returns' section
 
     returns
@@ -253,6 +254,9 @@ def stability(cpart,
     current_color = cpart.white_image(1)
     stability_vs_time = np.zeros(len(t_lims)-1)
     if create_images:
+        out_path = os.path.join(var.FIGS_PATH, cpart.out_name())
+        util.make_dir(out_path)
+
         # 2d numpy arrays containing color indices (from 0 to 31) for each pixel of the composition
         pixels1 = cpart.white_image(3, images_number=len(t_lims)-1)
         pixels2 = cpart.white_image(3, images_number=len(t_lims)-1)
@@ -263,9 +267,14 @@ def stability(cpart,
             Coordinates at given indices in [start] must be replaced by the content of [target]'''
             start[step, coor_offset[1,indices], coor_offset[0,indices]] = target[step, coor_offset[1,indices], coor_offset[0,indices]]
       
-
+    i_fraction_print = 0  # only for output of a message when some fraction of the steps are ran
 
     for t_step in range(0, len(t_lims)-1):
+        if print_progress:
+            if t_step/len(t_lims) > i_fraction_print/10:
+                i_fraction_print += 1
+                print('Ran', 100*t_step/len(t_lims), '%% of the steps', end='\r')
+
         # get indices of all pixel changes that happen in the step
         t_inds = cpart.intimerange_pixchanges_inds(t_lims[t_step], t_lims[t_step+1])
 
@@ -304,7 +313,6 @@ def stability(cpart,
         stable_timefraction[cpart.quarter2_coordinds] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE1)
         stable_timefraction[cpart.quarter34_coordinds] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE2)
 
-        ##############
         # calculate the stability averaged over the whole cpart
         if compute_average:
             stab_per_pixel = stable_timefraction[:, 0] # get time fraction for most stable pixel
@@ -320,7 +328,6 @@ def stability(cpart,
             else:
                 stability = 1
             stability_vs_time[t_step] = stability
-        #############
 
         # save full result to pickle file
         if save_pickle:
@@ -333,9 +340,9 @@ def stability(cpart,
 
         # create images containing the (sub)dominant color only
         if create_images:
+            pixels1[t_step, coor_offset[1], coor_offset[0]] = stable_colors[:,0]
             pixels2[t_step, coor_offset[1], coor_offset[0]] = stable_colors[:,1]
             pixels3[t_step, coor_offset[1], coor_offset[0]] = stable_colors[:,2]
-            pixels1[t_step, coor_offset[1], coor_offset[0]] = stable_colors[:,0]
 
             # if second and/or third most used colors don't exist (time_spent == 0), then use the first or second most used color instead
             inds_to_change1 = np.where(stable_timefraction[:,1] < 1e-9)
@@ -355,7 +362,7 @@ def stability(cpart,
     if not create_images:
         (pixels1, pixels2, pixels3) = (np.array([]), np.array([]), np.array([]))
 
-    return (stability_vs_time, pixels1, pixels2, pixels3)
+    return [stability_vs_time, pixels1, pixels2, pixels3]
 
 def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_images):
     '''
@@ -471,6 +478,7 @@ def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_images):
 
 def save_part_over_time(cpart,
                         times, # in seconds
+                        record_pixels=False,
                         delete_bmp=True,
                         delete_png=False,
                         show_plot=True,
@@ -509,16 +517,16 @@ def save_part_over_time(cpart,
     file_size_bmp = np.zeros(num_time_steps+1)
     file_size_png = np.zeros(num_time_steps+1)
 
+    if record_pixels:
+        # 2d numpy arrays containing color indices for each pixel of the composition, at each time step
+        pixels_vst = cpart.white_image(3, images_number=num_time_steps+1)
+
     pixels = cpart.white_image(2) # fill as white first # the pixels must be [y,x,rgb]
         
     out_path = os.path.join(var.FIGS_PATH, cpart.out_name())
     out_path_time = os.path.join(out_path, 'VsTime')
-    try:
-        os.makedirs(out_path)
-    except OSError:  # empty directory if it already exists
-        shutil.rmtree(out_path_time)
-        #os.makedirs(out_path)
-    os.makedirs(os.path.join(out_path_time))
+    util.make_dir(out_path)
+    util.make_dir(out_path_time)
 
     if show_plot:
         ncols = np.min([num_time_steps, 10])
@@ -528,21 +536,22 @@ def save_part_over_time(cpart,
         colcount = 0
     t_inds_list = []
 
-    i_fraction_print = 0  # only for output of a message when a fraction of the steps are ran
+    i_fraction_print = 0  # only for output of a message when some fraction of the steps are ran
 
     for t_step_idx in range(0, num_time_steps+1):  # fixed this: want a blank image at t=0
         if print_progress:
             if t_step_idx/num_time_steps > i_fraction_print/10:
-                #print()
                 i_fraction_print += 1
-                print('Ran', 100*t_step_idx/num_time_steps, '% of the steps', end='\r')
+                print('Ran', 100*t_step_idx/num_time_steps, '%% of the steps', end='\r')
 
         # get the indices of the times within the interval
         t_inds = cpart.intimerange_pixchanges_inds(times[t_step_idx - 1], times[t_step_idx])
-        t_inds_list.append(t_inds)
+        t_inds_list.append(t_inds) # still needed?
         util.update_image(pixels, xcoords, ycoords, color, t_inds)
 
         # save image and file sizes
+        if record_pixels:
+            pixels_vst[t_step_idx] = pixels
         namecore = 'canvaspart_time{:06d}'.format(int(times[t_step_idx]))
         _, impath_png, impath_bmp = util.pixels_to_image(pixels, out_path_time, namecore + '.png', namecore + '.bmp')
         file_size_png[t_step_idx] = util.get_file_size(impath_png)
@@ -569,4 +578,5 @@ def save_part_over_time(cpart,
 
     if print_progress:
         print('          produced', num_time_steps, 'images vs time ')
-    return file_size_bmp, file_size_png, t_inds_list
+    return [file_size_bmp, file_size_png, pixels_vst, t_inds_list # do we still need t_inds_list?
+    ]

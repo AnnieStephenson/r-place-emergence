@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import rplacem.canvas_part as cp
+import rplacem.canvas_part_statistics as stat
 import rplacem.compute_variables as comp
 import rplacem.utilities as util
 import rplacem.variables_rplace2022 as var
@@ -13,13 +14,13 @@ icp = 5 # index of the studied composition. If negative, the CanvasPart is redef
 
 if icp < 0: # not using the stored compositions
     x1 = 0
-    x2 = 2000
+    x2 = 1999
     y1 = 0
-    y2 = 2000
+    y2 = 1999
 
     border_path = np.array([[[x1, y1], [x1, y2], [x2, y2], [x2, y1]]])
     canpart = cp.CanvasPart(border_path=border_path, #id='000021', 
-                                pixel_changes_all=None)
+                                pixel_changes_all=None) 
 
 else: # getting the composition from the stored ones
     file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
@@ -31,8 +32,19 @@ else: # getting the composition from the stored ones
 '''
 
 # only quick check here
-canpart = cp.CanvasPart(id='000006', pixel_changes_all=None)
 
+canpart = cp.CanvasPart(
+                        #border_path=[[[0, 0], [0, 100], [100, 100], [100, 0]]],
+                        id='000005', 
+                        pixel_changes_all=None,
+                        verbose=True, save=True)
+
+#canpart = cp.load_canvas_part('rectangle_0.0_to_100.100')
+print(canpart)
+cpstat = stat.CanvasPartStatistics(canpart, verbose=True)
+
+
+'''
 # create directories if they don't exist yet
 try:
     os.makedirs(os.path.join(var.FIGS_PATH, canpart.out_name()))
@@ -58,7 +70,7 @@ time_bins = 80
 time_interval = var.TIME_WHITEONLY / time_bins  # seconds
 time_ranges = np.arange(0, var.TIME_WHITEONLY+time_interval-1e-4, time_interval)
 stability_vs_time = comp.stability(canpart, time_ranges, False, False, 
-                                   True, #icp < 0, 
+                                   False, #icp < 0, 
                                    True)[0]
 
 plt.figure()
@@ -74,3 +86,5 @@ plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'stability.png'))
 transitions = comp.find_transitions(time_ranges, stability_vs_time)
 print(transitions)
 print(canpart.border_path_times)
+
+'''

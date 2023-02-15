@@ -7,11 +7,13 @@ TIME_ENLARGE1 = 99646.238
 TIME_ENLARGE2 = 195583.355
 TIME_WHITEONLY = 295410.186
 
-file_dir = os.path.dirname(os.path.realpath(__file__))
+COOLDOWN_MIN = 250
 
-DATA_PATH = os.path.join(file_dir, '..' ,'data')
+FILE_DIR = os.path.dirname(os.path.realpath(__file__))
+
+DATA_PATH = os.path.join(FILE_DIR, '..' ,'data')
 FULL_DATA_FILE = 'PixelChangesCondensedData_sorted.npz'
-FIGS_PATH = os.path.join(file_dir, '..', 'figs')
+FIGS_PATH = os.path.join(FILE_DIR, '..', 'figs')
 
 COLOR_TO_IDX = json.load(open(os.path.join(DATA_PATH, 'ColorDict.json')))
 IDX_TO_COLOR = json.load(open(os.path.join(DATA_PATH, 'ColorsFromIdx.json')))

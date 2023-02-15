@@ -143,23 +143,6 @@ def find_transitions(t_lims,
 
     return (full_transition, full_transition_times)
 
-def find_all_transitions(keep_idx_compos, stability_vs_time, time_ranges, v, x, y, z):
-    ''' Find and count transitions for compositions of indices keep_idx_compos, using parameters v, x, y ,z '''
-    num_comp_with_trans = 0
-    num_trans = 0
-    num_comp = 0
-
-    for i in keep_idx_compos:
-        num_comp += 1
-        transitions = comp.find_transitions(time_ranges, stability_vs_time[i][0], v, x, y ,z)
-        if len(transitions[0]) > 0:
-            num_comp_with_trans += 1
-            num_trans += len(transitions[0])
-
-    #print('average number of transitions per composition =', num_trans / num_comp)
-    #print('fraction of compositions showing a transition =', num_comp_with_trans / num_comp)
-    return(num_trans / num_comp, num_comp_with_trans / num_comp)
-
 def transition_reference_image(canpart, 
                                time_ranges, stability_vs_time,
                                save_images,

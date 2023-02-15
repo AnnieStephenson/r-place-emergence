@@ -22,7 +22,6 @@ with open(file_path, 'rb') as f:
 canpart = cp.CanvasPart(id='000006', pixel_changes_all=None)
 print(canpart.coords)
 # test only compositions of significant size
-#keep_idx_comps = np.nonzero(np.array([(cp.coords.shape[1] >= 100) for cp in canparts]))[0]
 
 time_bins_stab = 80
 time_bins_trans = 50
@@ -133,53 +132,3 @@ lege = plt.legend(loc="upper left")
 plt.vlines(x = [trans_times_modif[j][1], trans_times_modif[j][2]], ymin=0, ymax=ymax, colors = 'black', linestyle='dashed')
 plt.text(trans_times_modif[j][1] + (trans_times_modif[j][2]-trans_times_modif[j][1])*0.6, 0.6*ymax, 'ref image', horizontalalignment='center', verticalalignment='center', rotation=90)
 plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'attacking_vs_defending_users_timeinterval{:.0f}s.png'.format(time_interval_trans)), bbox_inches='tight')
-
-'''
-# Test grid of parameters
-cutoffs = np.array([0.8, 0.83, 0.85, 0.87, 0.885, 0.9, 0.915, 0.93, 0.945, 0.96])
-cutoff_stables = np.array([0.965, 0.97, 0.975, 0.98, 0.985, 0.99, 0.995, 0.998])
-num_stables = np.array([1, 2, 3, 4, 5, 6])
-dist_stables = np.array([1, 2, 3, 4, 5])
-
-vary_cutoffs = np.zeros((len(cutoff_stables), len(cutoffs)))
-vary_dist = np.zeros((len(dist_stables), len(num_stables)))
-
-# Vary first 2 parameters
-num_stab = num_stables[3]
-dist_stab = dist_stables[2]
-for i in range(0, len(cutoffs)):
-    print(i)
-    for j in range(0, len(cutoff_stables)):
-        print(j)
-        vary_cutoffs[j, i] = find_all_transitions(keep_idx_comps, stability_vs_time, None, time_ranges, cutoffs[i], cutoff_stables[j], num_stab, dist_stab)[1] # num_comp_with_trans / num_comp 
-
-
-# Vary last 2 parameters
-cut = cutoffs[3]
-cut_stab = cutoff_stables[4]
-for i in range(0, len(num_stables)):
-    print(i)
-    for j in range(0, len(dist_stables)):
-        print(j)
-        vary_dist[j, i] = find_all_transitions(keep_idx_comps, stability_vs_time, None, time_ranges, cut, cut_stab, num_stables[i], dist_stables[j])[1]
-
-f1 = plt.figure()
-ax1 = plt.axes()
-pcm = plt.pcolormesh(cutoffs, cutoff_stables, vary_cutoffs, shading='nearest')
-plt.xlabel('upper cutoff for transition region')
-plt.ylabel('lower cutoff for stable region')
-cbar = plt.colorbar(pcm, label='fraction of compositions showing a transition')
-plt.text(0.5, 1.02, 'min length of stable interval = ' + str(num_stab), horizontalalignment='center', transform=ax1.transAxes)
-plt.text(0.5, 1.07, 'max dist. between stable and transition = ' + str(dist_stab), horizontalalignment='center', transform=ax1.transAxes)
-plt.savefig(os.path.join(var.FIGS_PATH, 'Fraction_of_compos_with_transition_vs_cutoff_parameters.png'), bbox_inches='tight')
-
-f2 = plt.figure()
-ax2 = plt.axes()
-pcm = plt.pcolormesh(num_stables, dist_stables, vary_dist, shading='nearest')
-plt.xlabel('min length of stable interval')
-plt.ylabel('max distance between stable and transition regions')
-cbar = plt.colorbar(pcm, label='fraction of compositions showing a transition')
-plt.text(0.5, 1.02, 'upper cutoff for transition region = ' + str(cut), horizontalalignment='center', transform=ax2.transAxes)
-plt.text(0.5, 1.07, 'lower cutoff for stable region = ' + str(cut_stab), horizontalalignment='center', transform=ax2.transAxes)
-plt.savefig(os.path.join(var.FIGS_PATH, 'Fraction_of_compos_with_transition_vs_distance_parameters.png'), bbox_inches='tight')
-'''

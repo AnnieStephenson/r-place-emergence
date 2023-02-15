@@ -57,7 +57,7 @@ parser.add_argument("-b", "--beginning", default=0)
 parser.add_argument("-e", "--end", default=atlas_num)
 args = parser.parse_args()
 
-#store_compos(args.beginning, args.end)
+store_compos(args.beginning, args.end)
 
 merge_pickles([ 'data/canvas_compositions_files0to2199.pickle',
                 'data/canvas_compositions_files2200to4399.pickle',

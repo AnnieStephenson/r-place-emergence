@@ -5,6 +5,7 @@ import numpy as np
 import glob
 import rplacem.variables_rplace2022 as var
 import json
+import shutil
 from PIL import Image
 
 def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
@@ -151,3 +152,14 @@ def load_atlas():
 
     atlas_size = len(list(atlas))
     return atlas, atlas_size
+
+def make_dir(path, renew=False):
+    '''
+    Makes directory only if it does not exist yet. 
+    If [renew], removes the directory contents if it exists
+    '''
+    try:
+        os.makedirs(path)
+    except OSError:  # empty directory if it already exists
+        if renew:
+            shutil.rmtree(path)

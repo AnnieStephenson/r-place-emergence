@@ -36,7 +36,7 @@ class CanvasPart(object):
         [x coordinates, y coordinates] of all the pixels contained inside the CanvasPart.
             Set in __init__() (if is_rectangle) or in _get_bounded_coords().
     coords_timerange : 3d numpy array with shape (number of pixels in the CanvasPart, max number of disjoint timeranges, 2)
-        [pixel index, time range index?, start time or end time]
+        [pixel index, index of time ranges, start time and end time]
         timeranges in which the pixels at this index (first dimension) are "on".
         Is actually a 1d numpy array (dtype=object) of list objects when there are more than 1 disjoint timeranges for a given pixel.
             Set in __init__() (if is_rectangle) or in _get_bounded_coords().
@@ -54,6 +54,13 @@ class CanvasPart(object):
         True if the canvas part 'jumps' from one location to another. If at least one pixel coordinate is active 
         during the time that the cavnas_part is active, then there is no jump and has_loc_jump is set to False. This condition
         allows for small shifts in the canvas location, which do not constitute a jump. 
+            Set in _set_has_loc_jump()
+    pixch_sortcoord : 1d numpy array of length (number of pixel changes)
+        indices of pixel changes (from argsort) that sort the pixel changes in terms of 'coord_index'
+            Set in _find_redundant_pix_change(), within _find_pixel_changes_in_boundary()
+    pixch_sortuser : 1d numpy array of length (number of pixel changes)
+        indices of pixel changes (from argsort) that sort the pixel changes in terms of 'user'
+            Set in _find_cheated_pix_change(), within _find_pixel_changes_in_boundary()
     
 
     methods
@@ -66,8 +73,10 @@ class CanvasPart(object):
         _get_atlas_border(self, id, atlas=None)
         _reject_off_times(self)
         _get_bounded_coords(self, show_coords=False)
-        _find_pixel_changes_in_boundary(self, pixel_changes_all)
+        _find_pixel_changes_in_boundary(self, pixel_changes_all, verbose)
         _set_has_loc_jump(self)
+        _find_redundant_pix_change(self)
+        _find_cheated_pix_change(self)
     public:
         out_name(self)
         pixchanges_coords(self)
@@ -80,6 +89,7 @@ class CanvasPart(object):
         intimerange_pixchanges_inds(self, t0, t1)
         active_coord_inds(self, t0, t1)
         select_active_pixchanges_inds(self, input_inds)
+        save_object(self)
     '''
 
 
@@ -88,10 +98,12 @@ class CanvasPart(object):
     def __init__(self,
                  id='',
                  border_path=[[[]]],
-                 border_path_times=np.array([0, var.TIME_TOTAL]),
+                 border_path_times=np.array([[0, var.TIME_TOTAL]]),
                  atlas=None,
                  pixel_changes_all=None,
                  show_coords=False,
+                 verbose=False,
+                 save=False
                  ):
         '''
         Constructor for CanvasPart object
@@ -107,6 +119,10 @@ class CanvasPart(object):
             Contains all of the pixel change data from the entire dataset. If ==None, then the whole dataset is loaded when the class instance is initialized.
         show_coords : bool, optional
             If True, plots the mask of the CanvasPart boundary
+        verbose : bool
+            Whether to print progress
+        save : bool 
+            Whether to save the final canvas part in a pickle file
         '''
         self.id = id
 
@@ -117,6 +133,8 @@ class CanvasPart(object):
             raise ValueError('ERROR: cannot initialise a CanvasPart which has an atlas id but a user-specified border_path!')
         
         # get the border path from the atlas of compositions, when it is not provided
+        if verbose:
+            print('set border path (with _get_atlas_border() if composition)')
         if border_path != [[[]]]:
             border_path = util.equalize_list_sublengths(border_path)
             self.border_path = np.array(border_path, np.int16)
@@ -137,20 +155,31 @@ class CanvasPart(object):
         self._set_is_rectangle()
 
         # set the [x, y] coords within the border
+        if verbose:
+            print('set coordinates (with _get_bounded_coords() if is not rectangle)')
         if self.is_rectangle:
             self.coords = np.mgrid[ self.xmin:(self.xmax+1), self.ymin:(self.ymax+1) ].reshape(2,-1)
             self.coords_timerange = np.full( (len(self.coords[0]), 1, 2), self.border_path_times[0])
         else:
             self._get_bounded_coords(show_coords=show_coords)
         # reject times where a canvas quarter was off, for pixels in these quarters
+        if verbose:
+            print('_reject_off_times()')
         self._reject_off_times()
 
         # set the pixel changes within the boundary
+        if verbose:
+            print('set pixel changes with _find_pixel_changes_in_boundary()')
         self.pixel_changes = None
-        self._find_pixel_changes_in_boundary(pixel_changes_all)
+        self._find_pixel_changes_in_boundary(pixel_changes_all, verbose)
 
         # set the boolean describing whether the canvas_part jumps to a new part of the canvas
+        if verbose:
+            print('_set_has_loc_jump()')
         self._set_has_loc_jump()
+
+        if save:
+            self.save_object()
 
     def __str__(self):
         return f"CanvasPart \n{'Atlas Composition, id: '+self.id if self.id!='' else 'user-defined area, name: '+self.out_name()}, \
@@ -309,7 +338,7 @@ class CanvasPart(object):
             self.coords_timerange = np.array(self.coords_timerange, dtype = np.float64)
 
 
-    def _find_pixel_changes_in_boundary(self, pixel_changes_all):
+    def _find_pixel_changes_in_boundary(self, pixel_changes_all, verbose):
         '''
         Find all the pixel changes within the boundary of the CanvasPart object
         and set the pixel_changes attribute of the CanvasPart object accordingly
@@ -321,7 +350,9 @@ class CanvasPart(object):
         '''
         if pixel_changes_all is None:
             pixel_changes_all = util.get_all_pixel_changes()
-
+        
+        if verbose:
+            print('    find pixels inside boundary')        
         # limit the pixel changes array to the min and max boundary coordinates
         ind_x = np.where((pixel_changes_all['xcoor']<=self.xmax)
                          & (pixel_changes_all['xcoor']>=self.xmin))[0]
@@ -339,12 +370,16 @@ class CanvasPart(object):
             pixel_changes_lim = pixel_changes_lim[pixel_change_index]
 
         # indices of self.coords where to find the x,y of a given pixel_change 
+        if verbose:
+            print('    sort pixel_changes vs coordinates')   
         coord_sort_inds = np.argsort(coords_comb)
         inds_in_sorted_coords = np.searchsorted(coords_comb[coord_sort_inds], 
                                                 pixel_changes_lim['xcoor'] + 10000.*pixel_changes_lim['ycoor'])
         inds_in_coords = coord_sort_inds[inds_in_sorted_coords]
 
-        # determine if the pixel change in the 'active' timerange for the composition 
+        # determine if the pixel change is in the 'active' timerange for the composition 
+        if verbose:
+            print('    determine if the pixel change is in the active timerange')        
         is_in_comp = np.full(len(pixel_changes_lim), True if self.is_rectangle else False, dtype=np.bool_)
         if not self.is_rectangle:
             s = pixel_changes_lim['seconds']
@@ -359,6 +394,8 @@ class CanvasPart(object):
                         is_in_comp[i] |= (s[i] > timerange[0] and s[i] < timerange[1])
 
         # save pixel changes as a structured array
+        if verbose:
+            print('    make pixel_changes output')
         self.pixel_changes = np.zeros(len(pixel_changes_lim),
                                       dtype=np.dtype([('seconds', np.float64), 
                                                       ('coord_index', np.uint16 if len(self.coords[0]) < 65530 else np.uint32 ), 
@@ -366,7 +403,9 @@ class CanvasPart(object):
                                                       ('color', np.uint8), 
                                                       ('active', np.bool_),
                                                       ('moderator', np.bool_),
-                                                      ('redundant', np.bool_)]) )
+                                                      ('cooldown_cheat', np.bool_),
+                                                      ('redundant_col', np.bool_),
+                                                      ('redundant_colanduser', np.bool_)]) )
         self.pixel_changes['seconds'] = np.array(pixel_changes_lim['seconds'])
         self.pixel_changes['coord_index'] = np.array(inds_in_coords)
         self.pixel_changes['user'] = np.array(pixel_changes_lim['user'])
@@ -375,21 +414,65 @@ class CanvasPart(object):
         self.pixel_changes['moderator'] = np.array(pixel_changes_lim['moderator'])
 
         # find redundant pixel changes
-        pix_change_redundant = self._find_redundant_pix_change()
-        self.pixel_changes['redundant'] = pix_change_redundant
+        if verbose:
+            print('    find redundant pixel changes')
+        (self.pixel_changes['redundant_col'], self.pixel_changes['redundant_colanduser']) = self._find_redundant_pix_change()
+
+        # find changes with cheated cooldown (<250 seconds)
+        if verbose:
+            print('    find changes with cheated cooldown')
+        self.pixel_changes['cooldown_cheat'] = self._find_cheated_pix_change()
+
+
+    def _find_cheated_pix_change(self):
+        ''' 
+        Finds all the pixel_changes that cheated the 300 seconds cooldown significantly,
+        meaning all changes done by a user who had done a pixel change less than 250s earlier.
+        '''
+        # sorting vs user index, then the time ordering should be conserved at 2nd level
+        sorting = self.pixel_changes.argsort(order=['user']) 
+        self.pixch_sortuser = sorting
+        
+        # exclude moderator events
+        pix_change_cheat = np.zeros(len(self.pixel_changes))
+        pix_change_cheat[ self.pixel_changes['moderator'] ] = 1
+
+        ind_nomod = np.where( np.logical_not(self.pixel_changes['moderator'][sorting]) )[0]
+        pixchanges = self.pixel_changes[sorting[ind_nomod]]
+
+        # get the time difference between pixel changes (n+1) and n for same user, and when the user changes
+        timedif = np.hstack((1e5, np.diff(pixchanges['seconds'])))
+        userchange = np.hstack((1e5, np.diff(pixchanges['user'])))
+        ind_cheat = np.where((timedif < var.COOLDOWN_MIN) & (userchange == 0))[0]
+
+        pix_change_cheat[sorting[ind_nomod[ind_cheat]]] = 1
+        return pix_change_cheat.astype(bool)
 
     def _find_redundant_pix_change(self):
         ''' 
-        Finds all the pixel_changes that are redundant
-        and returns and array where zeros indicate non-reduntant
-        pixel color changes and ones indicate redundant pixel color changes
+        Finds all the pixel_changes that are redundant and returns
+        a boolean array indicating pixel changes whose color is redundant.
+
+        The second returned array is of the same form, 
+        but says if the color AND the user is the same.
         '''
-        color = self.pixel_changes['color']
-        color_diff = np.diff(color.astype(np.int8))
-        redundant_ind = np.where(color_diff==0)[0] + 1
+        # order pixel changes versus the coordinates (then the time ordering should be conserved at second level)
+        sorting = np.argsort(self.pixel_changes, order = ['coord_index'])
+        self.pixch_sortcoord = sorting
+        color = self.pixel_changes['color'][sorting]
+        coord = self.pixel_changes['coord_index'][sorting]
+        user = self.pixel_changes['user'][sorting]
+
+        # look for changes of the same color and concerning the same pixel
+        redundant_ind = np.where((np.diff(color) == 0) & (np.diff(coord) == 0))[0] + 1 
+        ind_xtra_redundant = np.where(user[redundant_ind] == user[redundant_ind-1])[0]
+
+        # returned objects
         pix_change_redundant = np.zeros(len(color))
-        pix_change_redundant[redundant_ind]=1
-        return pix_change_redundant.astype(bool)
+        pix_change_redundant[sorting[redundant_ind]] = 1
+        pix_change_extraredundant = np.zeros(len(color))
+        pix_change_extraredundant[sorting[redundant_ind[ind_xtra_redundant]]] = 1
+        return (pix_change_redundant.astype(bool), pix_change_extraredundant.astype(bool))
 
     def _set_has_loc_jump(self):
         '''
@@ -401,23 +484,26 @@ class CanvasPart(object):
         after. 
         '''
         border_times = np.ndarray.flatten(self.border_path_times)
-        
+        # get full time range during which compo was active
         _, times_unique_inv = np.unique(border_times, return_inverse=True)
-        time_reps = np.where(np.diff(times_unique_inv)==0)[0]
-        time_reps_tot = np.hstack([time_reps,time_reps+1])
+        time_reps = np.where(np.diff(times_unique_inv) == 0)[0]
+        time_reps_tot = np.hstack([time_reps,time_reps + 1])
 
         comp_active_time = []
         for i in range(len(border_times)):
             if ~np.isin(border_times[i], border_times[time_reps_tot]):
                 comp_active_time.append(border_times[i])         
-        comp_active_time = np.reshape(np.array(comp_active_time),(-1,2))
+        comp_active_time = np.reshape(np.array(comp_active_time, dtype = np.float64), (-1,2))
         
         time_ranges_pix = np.array(self.coords_timerange)
         self.has_loc_jump = True
+        # run over all pixels until finding one that is active the whole time
         for i in range(len(time_ranges_pix)):
-            cont_pix_bool = time_ranges_pix[i] == comp_active_time
-            if type(cont_pix_bool) != bool:
-                cont_pix_bool = cont_pix_bool.all()
+            timerange = np.array(time_ranges_pix[i], dtype = np.float64)
+            if len(comp_active_time) != len(timerange):
+                cont_pix_bool = False
+            else: # is the timerange for this pixel equal to the active timerange of the whole compo?
+                cont_pix_bool = np.allclose(timerange, comp_active_time, rtol=1e-10, atol=1e-5)
             if cont_pix_bool:
                 self.has_loc_jump = False
                 break
@@ -466,7 +552,8 @@ class CanvasPart(object):
         return input_inds[ np.where(active[input_inds])[0] ]
 
     def out_name(self):
-        ''' Returns standard name used to identify the composition (used in output paths) '''
+        ''' Returns standard name used to identify the composition (used in output paths).
+        Is unique, except for user-defined border_path areas that are not rectangles.'''
         if self.id != '':
             return self.id
         elif self.is_rectangle:
@@ -525,6 +612,17 @@ class CanvasPart(object):
         self.quarter1_coordinds = np.where((self.coords[0]<1000) & (self.coords[1]<1000))
         self.quarter2_coordinds = np.where((self.coords[0]>=1000) & (self.coords[1]<1000))
         self.quarter34_coordinds = np.where(self.coords[1]>=1000)
+
+    def save_object(self):
+        '''
+        save the whole CanvasPart object in a pickle file
+        '''
+        file_path = os.path.join(var.DATA_PATH, 'CanvasPart_'+ self.out_name() + '.pickle')
+        with open(file_path, 'wb') as handle:
+            pickle.dump(self,
+                        handle,
+                        protocol=pickle.HIGHEST_PROTOCOL)
+ 
 
 class ColorMovement:
     '''
@@ -586,3 +684,13 @@ def load_canvas_part_time_steps(file_name='canvas_part_data'):
         canvas_part_parameters = pickle.load(f)
 
     return canvas_part_parameters
+
+def load_canvas_part(file_name):
+    '''
+    load the CanvasPart stored in the pickle object in this file_name 
+    '''
+    file_path = os.path.join(var.DATA_PATH, 'CanvasPart_' + file_name + '.pickle')
+    with open(file_path, 'rb') as f:
+        canpart = pickle.load(f)
+
+    return canpart
