@@ -10,7 +10,7 @@ import seaborn as sns
 
 def find_transitions(t_lims,
                      instability_vs_time,
-                     cutoff=7e-3,
+                     cutoff=7e-3, 
                      cutoff_stable=1.5e-3,
                      len_stable_intervals=4,
                      dist_stableregion_transition=3
@@ -173,7 +173,7 @@ def transition_and_reference_image(canpart,
         trans_times2 = np.hstack((0, transitions[1][j]))
         trans_times2[1] = trans_times2[2] - averaging_period # calculate the (pre)stable image in only the latest stable time interval 
         trans_times2[6] = trans_times2[5] + averaging_period # calculate the (post)stable image in only the earliest stable time interval 
-        _, stablepixels1, _, _ = comp.stability(canpart, trans_times2, True,  False, False, False, False)
+        _, _, stablepixels1, _, _ = comp.stability(canpart, trans_times2, True,  False, False, False, False)
         avimage_pre.append(stablepixels1[1])
         avimage_trans.append(stablepixels1[3])
         avimage_post.append(stablepixels1[5])

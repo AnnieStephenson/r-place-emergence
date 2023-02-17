@@ -80,7 +80,8 @@ def stability(cpart,
               save_images=False,
               save_pickle=False,
               compute_average=True,
-              print_progress=True
+              print_progress=True,
+              t_unit = 300
               ):
     '''
     makes map of stability in some time range.
@@ -117,6 +118,7 @@ def stability(cpart,
     
     current_color = cpart.white_image(1)
     stability_vs_time = np.zeros(len(t_lims)-1)
+    instab_vs_time_norm = np.zeros(len(t_lims)-1)
     if create_images:
         util.make_dir(os.path.join(var.FIGS_PATH, cpart.out_name()))
         util.make_dir(os.path.join(var.FIGS_PATH, cpart.out_name(), 'VsTimeStab'))
@@ -179,7 +181,7 @@ def stability(cpart,
             stable_timefraction[cpart.quarter34_coordinds] /= t_lims[t_step+1] - max(t_lims[t_step], var.TIME_ENLARGE2)
 
         # calculate the stability averaged over the whole cpart
-        if compute_average:
+        if compute_average: 
             stab_per_pixel = stable_timefraction[:, 0] # get time fraction for most stable pixel
             inds_nonzero = np.where(stab_per_pixel>1e-10) # will remove indices with stab==0
 
@@ -222,6 +224,9 @@ def stability(cpart,
                 util.pixels_to_image( pixels2[t_step], os.path.join(cpart.out_name(), 'VsTimeStab'), 'SecondMostStableColor_' + timerange_str + '.png')
                 util.pixels_to_image( pixels3[t_step], os.path.join(cpart.out_name(), 'VsTimeStab'), 'ThirdMostStableColor_' + timerange_str + '.png')
     
+    t_interval = np.diff(t_lims)
+    instab_vs_time_norm = (1-stability_vs_time)*t_unit/t_interval
+
     if print_progress:
         print('                              ', end='\r')
     if not compute_average:
@@ -229,7 +234,7 @@ def stability(cpart,
     if not create_images:
         (pixels1, pixels2, pixels3) = (np.array([]), np.array([]), np.array([]))
 
-    return [stability_vs_time, pixels1, pixels2, pixels3]
+    return [stability_vs_time, instab_vs_time_norm, pixels1, pixels2, pixels3]
 
 def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_pixels, save_ratio_images):
     '''
