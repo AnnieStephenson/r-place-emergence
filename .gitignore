@@ -101,6 +101,7 @@ figs/
 
 # large data files
 data/userIDsFromIdx.json
+data/userDict.json
 
 # additional scripts
 my_scripts/

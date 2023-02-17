@@ -25,8 +25,7 @@ def store_compos(beg, end):
     #pr.enable()
 
     for i in range(int(beg),int(end)):
-        print(i)
-        print(atlas[i]['id'])
+        print(i, atlas[i]['id'])
         canvas_comps.append( cp.CanvasPart(id=atlas[i]['id'], pixel_changes_all=pixel_changes_all, atlas=atlas) )
 
     #pr.disable()
@@ -57,7 +56,7 @@ parser.add_argument("-b", "--beginning", default=0)
 parser.add_argument("-e", "--end", default=atlas_num)
 args = parser.parse_args()
 
-#store_compos(args.beginning, args.end)
+store_compos(args.beginning, args.end)
 
 merge_pickles([ 'data/canvas_compositions_files0to2199.pickle',
                 'data/canvas_compositions_files2200to4399.pickle',

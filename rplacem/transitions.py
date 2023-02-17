@@ -2,15 +2,16 @@ import numpy as np
 import os
 import rplacem.canvas_part as cp
 import rplacem.compute_variables as comp
+import rplacem.utilities as util
 import rplacem.variables_rplace2022 as var
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 def find_transitions(t_lims,
-                     stability_vs_time,
-                     cutoff=0.88,
-                     cutoff_stable=0.98,
+                     instability_vs_time,
+                     cutoff=7e-3,
+                     cutoff_stable=1.5e-3,
                      len_stable_intervals=4,
                      dist_stableregion_transition=3
                      ):
@@ -20,17 +21,17 @@ def find_transitions(t_lims,
     parameters
     ----------
     cpart : CanvasPart object
-        The CanvasPart object for which we want to calculate the stability
+        The CanvasPart object for which we want to calculate the instability
     t_lims : 1d array-like of floats
         time intervals in which the pixel states are studied. Must be ordered in a crescent way, and start at 0
-    stability_vs_time : 1d array-like of floats
-        stability array averaged over all the pixels, for each time step
+    instability_vs_time : 1d array-like of floats
+        instability array averaged over all the pixels and normalized, for each time step
     cutoff : float
-        the higher cutoff on stability to define when a transition is happening
+        the lower cutoff on instability to define when a transition is happening
     cutoff_stable : float
-        the lower cutoff on stability, needs to be exceeded before and after the potential transition, for a validated transition
+        the higher cutoff on instability, needs to be not exceeded before and after the potential transition, for a validated transition
     len_stable_intervals : int
-        the number of consecutive intervals before and after the potential transition, for which cutoff_stable must be exceeded. 
+        the number of consecutive intervals before and after the potential transition, for which cutoff_stable must not be exceeded. 
         No stable intervals is looked for if len_stable_intervals <= 1 or cutoff_stable == cutoff.
     dist_stableregion_transition: int
         maximal distance (in number of indices) between the borders of the stable regions and those of the transition region
@@ -39,7 +40,7 @@ def find_transitions(t_lims,
     -------
     (full_transition, full_transition_times) :
         full_transition is a 2d array. 
-        full_transition[i] contains, for the found transition #i, the following size-6 array (of indices of the input stability array) :
+        full_transition[i] contains, for the found transition #i, the following size-6 array (of indices of the input instability array) :
             [beginning of preceding stable region, end of stable, 
             beginning of transition region, end of transition, 
             beginning of subsequent stable region, end of stable]
@@ -47,22 +48,24 @@ def find_transitions(t_lims,
         full_transition_times is the same array but with the times corresponding to those indices 
     '''
     # preliminary
-    if cutoff > cutoff_stable:
-        raise ValueError("ERROR in find_transitions(): stability cutoff for transitions must be lower than that for stable periods")
+    if cutoff < cutoff_stable:
+        raise ValueError("ERROR in find_transitions(): instability cutoff for transitions must be higher than that for stable periods")
     dist_stableregion_transition = max(dist_stableregion_transition, 1)
     
-    #print([(i,stability_vs_time[i]) for i in range(0,len(stability_vs_time))])
-    # removing sequence of "1." at the beginning of stability_vs_time
-    ones_ind = np.where(stability_vs_time == 1.)[0]
+    #print([(i,instability_vs_time[i]) for i in range(0,len(instability_vs_time))])
+    # removing sequence of "1." at the beginning of instability_vs_time
+    ones_ind = np.where(instability_vs_time == 1.)[0]
     end_first_ones_sequence = -1
     if len(ones_ind) > 0:
         interruptions_ones_sequence = np.where( np.diff( ones_ind ) > 1)[0]
         end_first_ones_sequence = interruptions_ones_sequence[0] if len(interruptions_ones_sequence) > 0 else ones_ind[-1]
-        stability_vs_time = stability_vs_time[(end_first_ones_sequence+1):] # remove elements until first sequence of ones is over
+        instability_vs_time = instability_vs_time[(end_first_ones_sequence+1):] # remove elements until first sequence of ones is over
 
-    # indices of stability_vs_time that are stable or in transition
-    trans_ind = np.where(np.array(stability_vs_time) < cutoff)[0]
-    stable_ind = np.where(np.array(stability_vs_time) > cutoff_stable)[0]
+    # indices of instability_vs_time that are stable or in transition
+    trans_ind = np.where(np.array(instability_vs_time) > cutoff)[0]
+
+    stable_ind = np.where((np.array(instability_vs_time) < cutoff_stable)
+                       & ((np.array(instability_vs_time) > 0) | (np.roll(instability_vs_time, 1) > 0) | (np.roll(instability_vs_time, 2) > 0)))[0]
 
     # get the sequences of at least len_stable_intervals consecutive indices in stable_ind
     if len_stable_intervals < 2:
@@ -90,7 +93,6 @@ def find_transitions(t_lims,
     # get the start and end indices for transitions
     start_inds = 1 + np.where(np.diff(trans_ind) > 1)[0]
     end_inds = np.hstack([(start_inds - 1)[1:], -1]) # get rid of first value. Add an end value
-
     # keep only transitions that are surrounded by stable periods, 
     # and that the borders of the stable regions and those of the transition region are close enough
     start_inds_filtered = []
@@ -143,65 +145,44 @@ def find_transitions(t_lims,
 
     return (full_transition, full_transition_times)
 
-def find_all_transitions(keep_idx_compos, stability_vs_time, time_ranges, v, x, y, z):
-    ''' Find and count transitions for compositions of indices keep_idx_compos, using parameters v, x, y ,z '''
-    num_comp_with_trans = 0
-    num_trans = 0
-    num_comp = 0
-
-    for i in keep_idx_compos:
-        num_comp += 1
-        transitions = comp.find_transitions(time_ranges, stability_vs_time[i][0], v, x, y ,z)
-        if len(transitions[0]) > 0:
-            num_comp_with_trans += 1
-            num_trans += len(transitions[0])
-
-    #print('average number of transitions per composition =', num_trans / num_comp)
-    #print('fraction of compositions showing a transition =', num_comp_with_trans / num_comp)
-    return(num_trans / num_comp, num_comp_with_trans / num_comp)
-
-def transition_reference_image(canpart, 
-                               time_ranges, stability_vs_time,
+def transition_and_reference_image(canpart, 
+                               time_ranges, 
+                               instability_vs_time,
                                save_images,
-                               cutoff=0.88,
-                               cutoff_stable=0.985,
+                               averaging_period=3600, # 1 hour
+                               cutoff=7e-3,
+                               cutoff_stable=1.5e-3,
                                len_stable_intervals=3,
                                dist_stableregion_transition=3
                                ):
     ''' Finds transitions for a given canvas part, 
-    and returns the images containing the most stable pixels for the stable periods before and after the transition, and during the transition.
-    stability_vs_time input must be the one corresponding to the input canvas_part.'''
+    and returns the images containing the most stable pixels for 
+    the stable periods before and after the transition, and during the transition.
+    [instability_vs_time] input must be the one corresponding to the input canvas_part.
+    [averaging_period] is the time over which the reference images before and after the transition are computed.
+    '''
     
-    transitions = comp.find_transitions(time_ranges, stability_vs_time[0], 
-                                      cutoff, cutoff_stable, len_stable_intervals, dist_stableregion_transition)
-
+    transitions = find_transitions(time_ranges, instability_vs_time, 
+                                   cutoff, cutoff_stable, len_stable_intervals, dist_stableregion_transition)
     avimage_pre = []
     avimage_trans = []
     avimage_post = []
-    frac_differing_pixels = []
-    trans_times_mod = []
+    num_differing_pixels = []
 
     for j in range(0, len(transitions[0])):
-        print(transitions[0][j])
-        print(transitions[1][j])
         trans_times2 = np.hstack((0, transitions[1][j]))
-        print(trans_times2)
-        # number of time intervals used for averaging the pre- and post-transition stable periods
-        averaging_period = 1 #len_stable
-        trans_times2[1] = trans_times2[2] - averaging_period * (time_ranges[-3] - time_ranges[-4]) # calculate the (pre)stable image in only the latest stable time interval 
-        trans_times2[6] = trans_times2[5] + averaging_period * (time_ranges[-3] - time_ranges[-4]) # calculate the (post)stable image in only the earliest stable time interval 
-        print(trans_times2)
-        trans_times_mod.append(trans_times2)
-        _, stablepixels1, stablepixels2, stablepixels3 = comp.stability(canpart, trans_times2, True, save_images, False, False)
+        trans_times2[1] = trans_times2[2] - averaging_period # calculate the (pre)stable image in only the latest stable time interval 
+        trans_times2[6] = trans_times2[5] + averaging_period # calculate the (post)stable image in only the earliest stable time interval 
+        _, stablepixels1, _, _ = comp.stability(canpart, trans_times2, True,  False, False, False, False)
         avimage_pre.append(stablepixels1[1])
         avimage_trans.append(stablepixels1[3])
         avimage_post.append(stablepixels1[5])
+        if save_images:
+            util.pixels_to_image(avimage_pre[j], canpart.out_name(), 'MostStableColor_referenceimage_pre_transition'+str(j) + '.png')
+            util.pixels_to_image(avimage_trans[j], canpart.out_name(), 'MostStableColor_referenceimage_during_transition'+str(j) + '.png')
+            util.pixels_to_image(avimage_post[j], canpart.out_name(), 'MostStableColor_referenceimage_post_transition'+str(j) + '.png')
 
-        #'pixels' are filled only for the canpart.coords, white otherwise. So the differences will show only for the canpart.coords
-        num_differing_pixels = comp.count_image_differences(avimage_post[j], avimage_pre[j], canpart)
-        frac_differing_pixels.append( num_differing_pixels / len(canpart.coords[0]) )
-        print(num_differing_pixels, frac_differing_pixels)
+        num_differing_pixels.append( comp.count_image_differences(avimage_post[j], avimage_pre[j], canpart) )
 
-    #print('average number of transitions per composition =', num_trans / num_comp)
-    #print('fraction of compositions showing a transition =', num_comp_with_trans / num_comp)
-    return (avimage_pre, avimage_trans, avimage_post, transitions[1], trans_times_mod)
+    return (avimage_pre, avimage_trans, avimage_post, 
+            num_differing_pixels, transitions[0], transitions[1])
