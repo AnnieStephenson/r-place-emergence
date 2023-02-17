@@ -225,7 +225,9 @@ def stability(cpart,
                 util.pixels_to_image( pixels3[t_step], os.path.join(cpart.out_name(), 'VsTimeStab'), 'ThirdMostStableColor_' + timerange_str + '.png')
     
     t_interval = np.diff(t_lims)
-    instab_vs_time_norm = (1-stability_vs_time)*t_unit/t_interval
+    with np.errstate(divide='ignore', invalid='ignore'):
+        instab_vs_time_norm = (1-stability_vs_time)*t_unit/t_interval
+    instab_vs_time_norm[np.where(t_interval == 0)] = 0
 
     if print_progress:
         print('                              ', end='\r')

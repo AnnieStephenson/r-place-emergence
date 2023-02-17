@@ -12,28 +12,170 @@ class CanvasPartStatistics(object):
     
     attributes
     ----------
+    GENERAL
     id : str
         Corresponds to the out_name() of the CanvasPart. 
         Is unique for compositions (where it is = cpart.id) and for rectangles (cpart.is_rectangle == True)
         Can designate different canvas parts in other cases.
+            Set in __init__()
+    compute_vars: dictionary (string to int)
+        says what level of information to compute and store for each variable.
+        The keys for the computed variables are:
+            'stability', 'mean_stability', 'entropy', 'transitions', 'attackdefense' 
+        The levels mean:
+            0: not computed
+            1: basic variable is computed
+            2: images are created and stored in the form of 2d numpy arrays of pixels containing color indices
+            3: these pixel arrays are transformed to images and stored. Also makes a movie from stored images.
+            4: more extensive info is stored in the class and in a pickle file.
+        Set in __init__()
+    verbose : boolean
+        Saying if output is printed during running member functions
+            Set in __init__()
+
+    AREA
     area : int
-        number of pixels of the canvas part
+        number of pixels (any pixels that are active at some time point) of the canvas part
+            Set in __init__()
+    area_rectangle : int
+        size (in pixels) of the smallest rectangle encompassing the whole composition.
+        Equals area when the composition is such a rectangle at some time point.
+            Set in __init__()
+    area_vst : 1d array of ints of length n_t_bins
+        Number of active pixels at each time step.
+            Needs compute_vars['attackdefense'] > 0
+            Set in comp.num_changes_and_users(), in count_attack_defense_events().
+
+    TIME BINS
     n_t_bins: int
         number of time intervals
+            Set in __init__()
     t_interval: float
         width of time interval
-    t_ranges:
-        1d array of size n_t_bins+1
-    t_unit:
+            Set in __init__()
+    t_ranges : 1d array of size n_t_bins+1
+        limits of the time bins in which all variables are computed
+           Set in __init__()
+    t_unit : float
         time unit used for normalizing some variables.
-    tmin, tmax:
+            Set in __init__()
+    t_norm : float
+        time normalisation (t_interval / t_unit).
+            Set in __init__()
+    tmin, tmax: floats
         time range on which to compute the variables. As for now, cannot accept tmin > 0.
-    refimage_averaging_period:
+            Set in __init__()
+    
+    TRANSITIONS
+    transition_param : list of floats
+        cutoff parameters for the trans.find_transitions() function; 
+        Beware, the last two arguments are in seconds and not in time intervals   
+    refimage_averaging_period : float
         time over which the reference (most stable) images before and after the transition are computed.
+    
+    VARIABLES
+        STABILITY
     stability: float
         stability averaged over time and over all pixels of the CanvasPart.
-    stability_vst: 1d numpy array
-        stability averaged over all pixels of the CanvasPart, for all time intervals.
+            Needs compute_vars['mean_stability'] > 0
+            Set in comp.stability(), in compute_mean_stability()
+    stability_vst: 1d numpy array of floats
+        stability averaged over all pixels of the CanvasPart, for each time bin.
+            Needs compute_vars['stability'] > 0
+            Set in comp.stability(), in compute_stability_vst()
+    instability_vst_norm : 1d numpy array of floats
+        Time-normalised instability: (1 - stability_vst) / t_norm
+            Needs compute_vars['stability'] > 0
+            Set in __init__()
+    stable_image, second_stable_image, third_stable_image : pixels image info (2d numpy array containing color indices)
+        Most stable image (and second and third most stable images) over the full active time range of the canvas part.
+            Needs compute_vars['mean_stability'] > 1
+            Set in comp.stability(), in compute_mean_stability()
+    stable_image_vst, second_stable_image_vst, third_stable_image_vst :
+        Same as stable_image, but as a 1d array of pixel images, of size n_t_bins
+            Needs compute_vars['stability'] > 1
+            Set in comp.stability(), in compute_stability_vst()
+        
+        ENTROPY -- all need compute_vars['entropy'] > 0
+    bmpsize : 1d numpy array of size n_t_bins
+        Size of the bmp image (of the canvas part) file at each time step
+            Needs compute_vars['entropy'] > 0
+            Set in comp.save_part_over_time(), in compute_entropy()
+    entropy_vst_bpmnorm : 1d numpy array of size n_t_bins
+        Ratio of sizes of the png and bmp image files at each time step
+            Needs compute_vars['entropy'] > 0
+            Set in compute_entropy()
+    entropy_vst : 1d numpy array of size n_t_bins
+        Ratio of size of the png image file, to the number of active pixels, at each time step
+            Set in compute_entropy()
+    true_image_vst: list of size n_t_bins, of 2d numpy arrays. 
+        Each element is a pixels image info (2d numpy array containing color indices)
+        True image of the canvas part at the center of the time interval
+            Needs compute_vars['entropy'] > 1
+            Set in comp.save_part_over_time(), in compute_entropy()
+        
+        TRANSITIONS -- all need compute_vars['transitions'] > 0
+    refimage_pretrans, refimage_intrans, refimage_posttrans : array of size min(1, number of transitions), of 2d numpy arrays. 
+        Each element is a pixels image info (2d numpy array containing color indices)
+        Reference stable image for the stable period (of duration refimage_averaging_period) 
+        before and after the transition, and at the time of the transition.
+        If there is no detected transition, refimage_pretrans is set to self.stable_image
+            Needs compute_vars['transitions'] > 1
+            Set in trans.transition_and_reference_image(), in search_transitions()
+    frac_diff_pixels_pre_vs_post_trans : 1d array of length (number of transitions)
+        Fraction of the active pixels that differ between the pre- and post-transition stable images
+            Set in search_transitions()
+    num_transitions : int
+        Number of found transitions
+            Set in search_transitions()
+    transition_times, transition_timeinds: 2d arrays, shape (number of transitions, 6)
+        Delimiting times (or indices of time bins) for each transition.
+        For each transition, is of the form 
+        [beg, end of pre stable period, beg, end of transition period, beg, end of post stable region]
+            Set in trans.transition_and_reference_image(), in search_transitions()
+    
+        ATTACK-DEFENSE -- all need compute_vars['attackdefense'] > 0
+    num_pixchanges : 1d array of length n_t_bins
+        Number of pixel changes in each time bin
+            Set in comp.num_changes_and_users(), in count_attack_defense_events()
+    num_pixchanges_norm : same as num_pixchanges, normalized by t_norm and area_vst
+    ratio_attdef_changes : 1d array of floats of length n_t_bins
+        Ratio of attack pixel changes to the defense ones, in each time bin
+            Set in count_attack_defense_events()
+    frac_diff_pixels : 1d array of floats of length n_t_bins
+        Fraction of the active pixels (area_vst) that differ between the 
+        pre- and post-transition stable images, in each time bin
+            Set in count_attack_defense_events()
+    num_users_total : float
+        total number of user having contributed to the composition between tmin and tmax
+    num_users_vst : 1d array of int of length n_t_bins
+        number of users that changed any pixels in this composition in each time range
+            Set in comp.num_changes_and_users(), in count_attack_defense_events()
+    num_users_norm : same as num_users, normalized by t_norm and area_vst
+    frac_attackonly_users, frac_defenseonly_users, frac_bothattdef_users : 1d array of floats of length n_t_bins
+        fraction of num_users that contributed pixels that are consistent (defenseonly) with
+        refimage_pretrans, or not (attackonly), or fraction of users that did both (bothattdef)
+            Set in count_attack_defense_events()
+    ratio_attdef_changes_images_vst : array of size n_t_bins, of 2d numpy arrays. 
+        Each element is a pixels image info (2d numpy array containing color indices)
+        Image containing, for each pixel, the ratio of attack to defense pixel changes, for each time step
+
+    methods
+    -------
+    private:
+        __init__
+    protected:
+    public:
+        compute_stability_vst()
+            Compute and set time-dependent stability attributes
+        compute_mean_stability()
+            Compute and set mean stability attributes
+        compute_entropy()
+            Compute and set images at each time step, and set related entropy attributes
+        search_transitions()
+            Look for transitions and set associated attributes
+        count_attack_defense_events()
+            Set attributes related to attack or defense changes or users, compared to a reference image
     '''
 
     def __init__(self,
@@ -41,7 +183,7 @@ class CanvasPartStatistics(object):
                  n_tbins=80,
                  tmax=var.TIME_TOTAL,
                  compute_vars={'stability': 3, 'mean_stability': 3, 'entropy' : 3, 'transitions' : 3, 'attackdefense' : 2},
-                 trans_param=[8e-3, 2e-3, 14400, 10800],
+                 trans_param=[1e-2, 2e-3, 14400, 10800],
                  timeunit=300, # 5 minutes
                  refimage_averaging_period=3600, # 1 hour
                  verbose=False,
@@ -49,19 +191,26 @@ class CanvasPartStatistics(object):
                  dont_keep_dir=False
                  ):
         '''
-        compute_vars says what level of information to compute and store for each variable.
-            The keys for the computed variables are:
-                'stability', 'mean_stability', 'entropy', 'transitions', 'attackdefense' 
-            The levels mean:
-                0: not computed
-                1: basic variable is computed
-                2: images are created and stored in the form of 2d numpy arrays of pixels containing color indices
-                3: these pixel arrays are transformed to images and stored. Also makes a movie from stored images.
-                4: more extensive info is stored in the class and in a pickle file.
-        verbose: boolean saying if output is printed during running
-        renew: delete the output directories if they exist, before re-running
-        dont_keep_dir: remove directory after running, if it did not exist before
-        trans_param: parameters for the trans.find_transitions() function, except the last two arguments are in seconds
+        cpart : CanvasPart object 
+            That associated to this CanvasPartStatistics
+        renew : boolean
+            Delete the output directories if they exist, before re-running
+        dont_keep_dir : boolean
+            Remove directory after running, if it did not exist before
+        refimage_averaging_period : 
+            Time period over which the reference image is computed. Check class doc for details.
+        compute_vars : string to int dictionary
+            Gives level of information to compute for each variable. Check class doc for details.
+        verbose: boolean 
+            Is output printed during running. Check class doc for details.
+        trans_param : list of floats
+            Fills transition_param attribute. Check class doc for details. 
+        tmax : float
+            Fills tmax attribute. Check class doc for details. 
+        timeunit: float
+            Fills t_unit attribute. Check class doc for details. 
+        n_tbins : int
+            Fills n_t_bins attribute. Check class doc for details. 
         '''
 
         self.id = cpart.out_name() 
@@ -94,8 +243,6 @@ class CanvasPartStatistics(object):
 
         # stability vs time
         self.compute_stability_vst(cpart, compute_vars['stability'])
-        if compute_vars['stability'] > 0:
-            self.instability_vst_norm = (1 - self.stability_vst) / self.t_norm
 
         # entropy and images versus time. Better if self.area_vst is filled before (in num_changes_and_users)
         self.compute_entropy(cpart, compute_vars['entropy'])
@@ -118,11 +265,11 @@ class CanvasPartStatistics(object):
 
         tmin_all = max(self.tmin, np.min(cpart.border_path_times))
         tmax_all = min(self.tmax, np.max(cpart.border_path_times))
-        res = comp.stability(cpart, np.asarray([0, tmin_all, tmax_all]), level>1, level>2, level>3, True, self.verbose)
+        res = comp.stability(cpart, np.asarray([0, tmin_all, tmax_all]), level>1, level>2, level>3, True, self.verbose, self.t_unit)
         self.stability = res[0][1]
-        self.stable_image = res[1][1] if level > 1 else None
-        self.second_stable_image = res[2][1] if level > 1 else None
-        self.third_stable_image = res[3][1] if level > 1 else None
+        self.stable_image = res[2][1] if level > 1 else None
+        self.second_stable_image = res[3][1] if level > 1 else None
+        self.third_stable_image = res[4][1] if level > 1 else None
 
     def compute_stability_vst(self, cpart, level):
         if level == 0:
@@ -130,11 +277,12 @@ class CanvasPartStatistics(object):
         if self.verbose:
             print('computing stability vs time')
 
-        res = comp.stability(cpart, self.t_ranges, level>1, level>2, level>3, True, self.verbose)
+        res = comp.stability(cpart, self.t_ranges, level>1, level>2, level>3, True, self.verbose, self.t_unit)
         self.stability_vst = res[0]
-        self.stable_image_vst = res[1] if level > 1 else None
-        self.second_stable_image_vst = res[2] if level > 1 else None
-        self.third_stable_image_vst = res[3] if level > 1 else None
+        self.instability_vst_norm = res[1]
+        self.stable_image_vst = res[2] if level > 1 else None
+        self.second_stable_image_vst = res[3] if level > 1 else None
+        self.third_stable_image_vst = res[4] if level > 1 else None
 
         if level>2:
             util.save_movie(os.path.join(var.FIGS_PATH, cpart.out_name(),'VsTimeStab'), 15)
@@ -210,7 +358,7 @@ class CanvasPartStatistics(object):
         self.num_pixchanges_norm = []
         self.ratio_attdef_changes = []
         self.frac_diff_pixels = []
-        self.num_users = []
+        self.num_users_vst = []
         self.num_users_norm = []
         self.frac_attackonly_users = []
         self.frac_defenseonly_users = []
@@ -224,12 +372,13 @@ class CanvasPartStatistics(object):
                 self.area_vst = res[3]
 
             self.num_pixchanges.append(res[0])
-            self.num_users.append(res[8])
+            self.num_users_total = res[8] # same for all transitions
+            self.num_users_vst.append(res[5] + res[6] + res[7])
             with np.errstate(divide='ignore', invalid='ignore'):
                 self.num_pixchanges_norm.append(res[0] / self.t_norm / self.area_vst) # res[3] is the *time-dependent* active area
                 self.ratio_attdef_changes.append(res[2] / res[1])
                 self.frac_diff_pixels.append(res[4] / self.area_vst)
-                self.num_users_norm.append(res[8] / self.t_norm / self.area_vst)
+                self.num_users_norm.append((res[5] + res[6] + res[7]) / self.t_norm / self.area_vst)
                 self.frac_attackonly_users.append(res[5] / res[8])
                 self.frac_defenseonly_users.append(res[6] / res[8])
                 self.frac_bothattdef_users.append(res[7] / res[8])
@@ -250,7 +399,7 @@ class CanvasPartStatistics(object):
         self.num_pixchanges_norm = np.array(self.num_pixchanges_norm)
         self.ratio_attdef_changes = np.array(self.ratio_attdef_changes)
         self.frac_diff_pixels = np.array(self.frac_diff_pixels)
-        self.num_users = np.array(self.num_users)
+        self.num_users_vst = np.array(self.num_users_vst)
         self.num_users_norm = np.array(self.num_users_norm)
         self.frac_attackonly_users = np.array(self.frac_attackonly_users)
         self.frac_defenseonly_users = np.array(self.frac_defenseonly_users)
