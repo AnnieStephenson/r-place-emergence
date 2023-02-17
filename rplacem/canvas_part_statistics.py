@@ -146,8 +146,10 @@ class CanvasPartStatistics(object):
         Fraction of the active pixels (area_vst) that differ between the 
         pre- and post-transition stable images, in each time bin
             Set in count_attack_defense_events()
-    num_users : 1d array of int of length n_t_bins
-        number of users that changed pixels in this composition, vs time
+    num_users_total : float
+        total number of user having contributed to the composition between tmin and tmax
+    num_users_vst : 1d array of int of length n_t_bins
+        number of users that changed any pixels in this composition in each time range
             Set in comp.num_changes_and_users(), in count_attack_defense_events()
     num_users_norm : same as num_users, normalized by t_norm and area_vst
     frac_attackonly_users, frac_defenseonly_users, frac_bothattdef_users : 1d array of floats of length n_t_bins
@@ -356,7 +358,7 @@ class CanvasPartStatistics(object):
         self.num_pixchanges_norm = []
         self.ratio_attdef_changes = []
         self.frac_diff_pixels = []
-        self.num_users = []
+        self.num_users_vst = []
         self.num_users_norm = []
         self.frac_attackonly_users = []
         self.frac_defenseonly_users = []
@@ -370,12 +372,13 @@ class CanvasPartStatistics(object):
                 self.area_vst = res[3]
 
             self.num_pixchanges.append(res[0])
-            self.num_users.append(res[8])
+            self.num_users_total = res[8] # same for all transitions
+            self.num_users_vst.append(res[5] + res[6] + res[7])
             with np.errstate(divide='ignore', invalid='ignore'):
                 self.num_pixchanges_norm.append(res[0] / self.t_norm / self.area_vst) # res[3] is the *time-dependent* active area
                 self.ratio_attdef_changes.append(res[2] / res[1])
                 self.frac_diff_pixels.append(res[4] / self.area_vst)
-                self.num_users_norm.append(res[8] / self.t_norm / self.area_vst)
+                self.num_users_norm.append((res[5] + res[6] + res[7]) / self.t_norm / self.area_vst)
                 self.frac_attackonly_users.append(res[5] / res[8])
                 self.frac_defenseonly_users.append(res[6] / res[8])
                 self.frac_bothattdef_users.append(res[7] / res[8])
@@ -396,7 +399,7 @@ class CanvasPartStatistics(object):
         self.num_pixchanges_norm = np.array(self.num_pixchanges_norm)
         self.ratio_attdef_changes = np.array(self.ratio_attdef_changes)
         self.frac_diff_pixels = np.array(self.frac_diff_pixels)
-        self.num_users = np.array(self.num_users)
+        self.num_users_vst = np.array(self.num_users_vst)
         self.num_users_norm = np.array(self.num_users_norm)
         self.frac_attackonly_users = np.array(self.frac_attackonly_users)
         self.frac_defenseonly_users = np.array(self.frac_defenseonly_users)
