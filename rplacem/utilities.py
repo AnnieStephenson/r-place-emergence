@@ -156,10 +156,15 @@ def load_atlas():
 def make_dir(path, renew=False):
     '''
     Makes directory only if it does not exist yet. 
-    If [renew], removes the directory contents if it exists
+    If [renew], removes the directory contents if it exists.
+    Returns a bool saying if the dir existed beforehand
     '''
     try:
         os.makedirs(path)
+        res = False
     except OSError:  # empty directory if it already exists
         if renew:
             shutil.rmtree(path)
+        res = True
+    
+    return res

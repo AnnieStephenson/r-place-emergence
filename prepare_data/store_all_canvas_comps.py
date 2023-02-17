@@ -25,8 +25,7 @@ def store_compos(beg, end):
     #pr.enable()
 
     for i in range(int(beg),int(end)):
-        print(i)
-        print(atlas[i]['id'])
+        print(i, atlas[i]['id'])
         canvas_comps.append( cp.CanvasPart(id=atlas[i]['id'], pixel_changes_all=pixel_changes_all, atlas=atlas) )
 
     #pr.disable()

@@ -43,8 +43,9 @@ class CanvasPart(object):
     xmin, xmax, ymin, ymax : integers
         limits of the smallest rectangle encompassing all pixels in boundary. 
             Set in __init__()
-    description : string
-        description of the composition from the atlas.json. Empty in general for non-compositions. 
+    description, atlasname, links : string
+        description, name, list of website and subreddit links, of the composition, from the atlas.json. 
+        Empty in general for non-compositions. 
             Set in _get_atlas_border()
     quarter1_coordinds, quarter2_coordinds, quarter34_coordinds:
         the indices (referring to the self.coords array) that point to coordinates
@@ -247,6 +248,8 @@ class CanvasPart(object):
         self.border_path = np.array(vals, dtype=np.int16)
         self.border_path_times = np.array(times, dtype=np.float64)
         self.description = atlas[id_index]['description']
+        self.atlasname = atlas[id_index]['name']
+        self.links = atlas[id_index]['links']
 
         # sort paths and times by increasing time ranges
         sort_idx = self.border_path_times[:,0].argsort() # sort according to first column
