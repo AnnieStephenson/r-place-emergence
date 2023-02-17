@@ -31,6 +31,7 @@ else: # getting the composition from the stored ones
 
 '''
 
+
 # only quick check here
 pixel_changes_all = util.get_all_pixel_changes()
 atlas, _ = util.load_atlas()
@@ -91,18 +92,19 @@ plt.xlabel('# active pixels')
 plt.xscale('log')
 plt.xlim(1,max(npix)*1.3)
 plt.savefig(os.path.join(var.FIGS_PATH, 'bmpfilesize_over_npix_onlyrectangles.png'), bbox_inches='tight')
-'''
 
-'''
+
+
 canpart = cp.CanvasPart(
-                        #border_path=[[[0, 0], [0, 100], [100, 100], [100, 0]]],
-                        id='000006', 
-                        pixel_changes_all=pixel_changes_all,
+                        border_path=[[[0, 0], [0, 1999], [1999, 1999], [1999, 0]]],
+                        #id='000006', 
+                        pixel_changes_all=None,
                         verbose=True, save=True)
-'''
 
+
+'''
 ntrans = 0
-for i in range(0,200):
+for i in range(0,20):
     canpart = canvas_comps[i]
     print(i, canpart.id)
     cpstat = stat.CanvasPartStatistics(canpart, n_tbins=100, 
