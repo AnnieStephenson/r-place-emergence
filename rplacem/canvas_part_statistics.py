@@ -65,6 +65,9 @@ class CanvasPartStatistics(object):
     tmin, tmax: floats
         time range on which to compute the variables. As for now, cannot accept tmin > 0.
             Set in __init__()
+    n_t_bins_trans, t_interval_trans, t_ranges_trans : float
+        parameters for time intervals, used exclusively in search_transitions()
+            Set in __init__()
     
     TRANSITIONS
     transition_param : list of floats
@@ -87,6 +90,7 @@ class CanvasPartStatistics(object):
         Time-normalised instability: (1 - stability_vst) / t_norm
             Needs compute_vars['stability'] > 0
             Set in __init__()
+    instability_for_trans : same as instability_vst_norm, but only to find transitions
     stable_image, second_stable_image, third_stable_image : pixels image info (2d numpy array containing color indices)
         Most stable image (and second and third most stable images) over the full active time range of the canvas part.
             Needs compute_vars['mean_stability'] > 1
@@ -124,12 +128,13 @@ class CanvasPartStatistics(object):
             Set in trans.transition_and_reference_image(), in search_transitions()
     frac_diff_pixels_pre_vs_post_trans : 1d array of length (number of transitions)
         Fraction of the active pixels that differ between the pre- and post-transition stable images
+            Needs compute_vars['transitions'] > 1
             Set in search_transitions()
     num_transitions : int
         Number of found transitions
             Set in search_transitions()
-    transition_times, transition_timeinds: 2d arrays, shape (number of transitions, 6)
-        Delimiting times (or indices of time bins) for each transition.
+    transition_times: 2d array, shape (number of transitions, 6)
+        Delimiting times for each transition.
         For each transition, is of the form 
         [beg, end of pre stable period, beg, end of transition period, beg, end of post stable region]
             Set in trans.transition_and_reference_image(), in search_transitions()
@@ -184,6 +189,7 @@ class CanvasPartStatistics(object):
                  tmax=var.TIME_TOTAL,
                  compute_vars={'stability': 3, 'mean_stability': 3, 'entropy' : 3, 'transitions' : 3, 'attackdefense' : 2},
                  trans_param=[1e-2, 2e-3, 14400, 10800],
+                 n_tbins_trans=150,
                  timeunit=300, # 5 minutes
                  refimage_averaging_period=3600, # 1 hour
                  verbose=False,
@@ -211,6 +217,8 @@ class CanvasPartStatistics(object):
             Fills t_unit attribute. Check class doc for details. 
         n_tbins : int
             Fills n_t_bins attribute. Check class doc for details. 
+        n_t_bins_trans : float
+            Fills n_t_bins_trans attribute. Check class doc for details.
         '''
 
         self.id = cpart.out_name() 
@@ -227,13 +235,19 @@ class CanvasPartStatistics(object):
         self.tmin = 0 # not functioning yet for tmin > 0
         self.tmax = tmax
         self.n_t_bins = n_tbins
-        self.t_interval = tmax / n_tbins # seconds
+        self.t_interval = (self.tmax - self.tmin) / n_tbins # seconds
         self.t_unit = timeunit
         self.t_norm = self.t_interval / self.t_unit
         self.t_ranges = np.arange(self.tmin, tmax + self.t_interval - 1e-4, self.t_interval) 
+
+        self.n_t_bins_trans = n_tbins_trans
+        self.t_interval_trans = (self.tmax - self.tmin) / n_tbins_trans # seconds
+        self.t_ranges_trans = np.arange(self.tmin, tmax + self.t_interval_trans - 1e-4, self.t_interval_trans) 
+
         self.refimage_averaging_period = refimage_averaging_period
 
         self.instability_vst_norm = None
+        self.instability_for_trans = None
         self.transition_param = trans_param
         self.refimage_pretrans = None
         self.area_vst = None
@@ -318,26 +332,29 @@ class CanvasPartStatistics(object):
         if self.verbose:
             print('Searching transitions')
         
-        # need instability_vst_norm
-        if self.instability_vst_norm is None:
-            self.compute_stability_vst(cpart, 1)
+        # need instability vs time for the timeranges specific to transitions
+        if self.instability_for_trans is None:
+            if (not (self.instability_vst_norm is None) and self.n_t_bins == self.n_t_bins_trans):
+                self.instability_for_trans = self.instability_vst_norm
+            else:
+                res = comp.stability(cpart, self.t_ranges_trans, False, False, False, True, self.verbose, self.t_unit)
+                self.instability_for_trans = res[1]
 
         par = self.transition_param
-        res = trans.transition_and_reference_image(cpart, self.t_ranges, self.instability_vst_norm, 
-                                                   level>2,
+        res = trans.transition_and_reference_image(cpart, self.t_ranges_trans, self.instability_for_trans, 
+                                                   level>1, level>2,
                                                    averaging_period=self.refimage_averaging_period,
                                                    cutoff=par[0],
                                                    cutoff_stable=par[1],
-                                                   len_stable_intervals=int(par[2] / self.t_interval) + 1,
-                                                   dist_stableregion_transition=int(par[3] / self.t_interval) + 1)
+                                                   len_stable_intervals=int(par[2] / self.t_interval_trans) + 1,
+                                                   dist_stableregion_transition=int(par[3] / self.t_interval_trans) + 1)
 
         self.refimage_pretrans = np.array(res[0]) if (level>1 or self.compute_vars['attackdefense'] > 0) else None
         self.refimage_intrans = np.array(res[1]) if level>1 else None
         self.refimage_posttrans = np.array(res[2]) if level>1 else None
         self.frac_diff_pixels_pre_vs_post_trans = np.array(res[3]) / self.area
-        self.transition_timeinds = res[4]
         self.transition_times = res[5]
-        self.num_transitions = len(self.refimage_pretrans)
+        self.num_transitions = self.transition_times.shape[0]
 
     def count_attack_defense_events(self, cpart, level):
         if level == 0:

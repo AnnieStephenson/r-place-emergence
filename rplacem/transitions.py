@@ -148,6 +148,7 @@ def find_transitions(t_lims,
 def transition_and_reference_image(canpart, 
                                time_ranges, 
                                instability_vs_time,
+                               create_refimages,
                                save_images,
                                averaging_period=3600, # 1 hour
                                cutoff=7e-3,
@@ -169,20 +170,21 @@ def transition_and_reference_image(canpart,
     avimage_post = []
     num_differing_pixels = []
 
-    for j in range(0, len(transitions[0])):
-        trans_times2 = np.hstack((0, transitions[1][j]))
-        trans_times2[1] = trans_times2[2] - averaging_period # calculate the (pre)stable image in only the latest stable time interval 
-        trans_times2[6] = trans_times2[5] + averaging_period # calculate the (post)stable image in only the earliest stable time interval 
-        _, _, stablepixels1, _, _ = comp.stability(canpart, trans_times2, True,  False, False, False, False)
-        avimage_pre.append(stablepixels1[1])
-        avimage_trans.append(stablepixels1[3])
-        avimage_post.append(stablepixels1[5])
-        if save_images:
-            util.pixels_to_image(avimage_pre[j], canpart.out_name(), 'MostStableColor_referenceimage_pre_transition'+str(j) + '.png')
-            util.pixels_to_image(avimage_trans[j], canpart.out_name(), 'MostStableColor_referenceimage_during_transition'+str(j) + '.png')
-            util.pixels_to_image(avimage_post[j], canpart.out_name(), 'MostStableColor_referenceimage_post_transition'+str(j) + '.png')
+    if create_refimages:
+        for j in range(0, len(transitions[0])):
+            trans_times2 = np.hstack((0, transitions[1][j]))
+            trans_times2[1] = trans_times2[2] - averaging_period # calculate the (pre)stable image in only the latest stable time interval 
+            trans_times2[6] = trans_times2[5] + averaging_period # calculate the (post)stable image in only the earliest stable time interval 
+            _, _, stablepixels1, _, _ = comp.stability(canpart, trans_times2, True,  False, False, False, False)
+            avimage_pre.append(stablepixels1[1])
+            avimage_trans.append(stablepixels1[3])
+            avimage_post.append(stablepixels1[5])
+            if save_images:
+                util.pixels_to_image(avimage_pre[j], canpart.out_name(), 'MostStableColor_referenceimage_pre_transition'+str(j) + '.png')
+                util.pixels_to_image(avimage_trans[j], canpart.out_name(), 'MostStableColor_referenceimage_during_transition'+str(j) + '.png')
+                util.pixels_to_image(avimage_post[j], canpart.out_name(), 'MostStableColor_referenceimage_post_transition'+str(j) + '.png')
 
-        num_differing_pixels.append( comp.count_image_differences(avimage_post[j], avimage_pre[j], canpart) )
+            num_differing_pixels.append( comp.count_image_differences(avimage_post[j], avimage_pre[j], canpart) )
 
     return (avimage_pre, avimage_trans, avimage_post, 
             num_differing_pixels, transitions[0], transitions[1])
