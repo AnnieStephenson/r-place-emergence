@@ -7,6 +7,8 @@ import rplacem.transitions as tr
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
+import rplacem.compute_variables as comp
+import rplacem.variables_rplace2022 as var
 
 # get time-dependent stability for all compos
 file_path_stab = os.path.join(var.DATA_PATH, 'stability_all_canvas_compositions.pickle')

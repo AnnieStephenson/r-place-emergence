@@ -81,7 +81,7 @@ def stability(cpart,
               save_pickle=False,
               compute_average=True,
               print_progress=True,
-              t_unit = 300
+              t_unit=300
               ):
     '''
     makes map of stability in some time range.
