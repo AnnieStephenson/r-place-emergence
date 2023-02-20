@@ -338,7 +338,10 @@ class CanvasPart(object):
 
         # switch back to numpy array if enough timeranges were removed
         if self.coords_timerange.dtype == object and max(len(v) for v in self.coords_timerange) == 1:
-            self.coords_timerange = np.array(self.coords_timerange, dtype = np.float64)
+            res = np.zeros((len(self.coords_timerange), 1, 2), dtype=np.float64)
+            for i in range(0,len(self.coords_timerange)):
+                res[i] = np.array(self.coords_timerange[i], dtype=np.float64)
+            self.coords_timerange = res
 
 
     def _find_pixel_changes_in_boundary(self, pixel_changes_all, verbose):
@@ -434,7 +437,7 @@ class CanvasPart(object):
         '''
         # sorting vs user index, then the time ordering should be conserved at 2nd level
         sorting = self.pixel_changes.argsort(order=['user']) 
-        self.pixch_sortuser = sorting
+        self.pixch_sortuser = np.array(sorting, dtype = np.uint16 if len(sorting) < 65530 else np.uint32)
         
         # exclude moderator events
         pix_change_cheat = np.zeros(len(self.pixel_changes))
@@ -461,7 +464,7 @@ class CanvasPart(object):
         '''
         # order pixel changes versus the coordinates (then the time ordering should be conserved at second level)
         sorting = np.argsort(self.pixel_changes, order = ['coord_index'])
-        self.pixch_sortcoord = sorting
+        self.pixch_sortcoord = np.array(sorting, dtype = np.uint16 if len(sorting) < 65530 else np.uint32)
         color = self.pixel_changes['color'][sorting]
         coord = self.pixel_changes['coord_index'][sorting]
         user = self.pixel_changes['user'][sorting]

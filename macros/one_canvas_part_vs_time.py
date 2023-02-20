@@ -34,12 +34,14 @@ else: # getting the composition from the stored ones
 
 # only quick check here
 pixel_changes_all = util.get_all_pixel_changes()
-atlas, _ = util.load_atlas()
+atlas, num = util.load_atlas()
 
+'''
 canvas_comps = []
 file_path = os.path.join(var.DATA_PATH, 'CanvasParts_test.pickle')
 with open(file_path, 'rb') as f:
     canvas_comps = pickle.load(f)
+'''
 
 '''
 n = 300
@@ -94,14 +96,18 @@ plt.xlim(1,max(npix)*1.3)
 plt.savefig(os.path.join(var.FIGS_PATH, 'bmpfilesize_over_npix_onlyrectangles.png'), bbox_inches='tight')
 
 
-
+'''
 canpart = cp.CanvasPart(
-                        border_path=[[[0, 0], [0, 1999], [1999, 1999], [1999, 0]]],
-                        #id='000006', 
-                        pixel_changes_all=None,
+                        #border_path=[[[0, 0], [0, 1999], [1999, 1999], [1999, 0]]],
+                        id='000006', 
+                        pixel_changes_all=pixel_changes_all,
                         verbose=True, save=True)
 
+cpstat = stat.CanvasPartStatistics(canpart, n_tbins=400, n_tbins_trans=100,
+                                    compute_vars={'stability': 1, 'mean_stability': 0, 'entropy' : 0, 'transitions' : 3, 'attackdefense' : 0},
+                                    verbose=True, dont_keep_dir=False)
 
+print(cpstat.transition_times, cpstat.instability_vst_norm)
 '''
 ntrans = 0
 for i in range(0,20):
@@ -116,7 +122,7 @@ for i in range(0,20):
 
 print('frac of compos with a trans = ',ntrans/200)
 
-'''
+
 plt.figure()
 plt.plot(cpstat.t_ranges[1:] - cpstat.t_interval / 2, cpstat.instability_vst_norm, label='instability ')
 plt.plot(cpstat100.t_ranges[1:] - cpstat100.t_interval / 2, cpstat100.instability_vst_norm, label='instability (100 time bins)')
