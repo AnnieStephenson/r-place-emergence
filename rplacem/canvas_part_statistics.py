@@ -354,17 +354,18 @@ class CanvasPartStatistics(object):
                 self.compute_mean_stability(cpart, 2)
             self.refimage_pretrans = np.expand_dims(self.stable_image, axis=0)
         
-        self.num_pixchanges = np.zeros((self.num_transitions, self.n_t_bins))
-        self.num_pixchanges_norm = np.zeros((self.num_transitions, self.n_t_bins))
-        self.ratio_attdef_changes = np.zeros((self.num_transitions, self.n_t_bins))
-        self.frac_diff_pixels = np.zeros((self.num_transitions, self.n_t_bins))
-        self.num_users_vst = np.zeros((self.num_transitions, self.n_t_bins))
-        self.num_users_norm = np.zeros((self.num_transitions, self.n_t_bins))
-        self.frac_attackonly_users = np.zeros((self.num_transitions, self.n_t_bins))
-        self.frac_defenseonly_users = np.zeros((self.num_transitions, self.n_t_bins))
-        self.frac_bothattdef_users = np.zeros((self.num_transitions, self.n_t_bins))
+        num_trans_nonzero = np.max([self.num_transitions,1])
+        self.num_pixchanges = np.zeros((num_trans_nonzero, self.n_t_bins))
+        self.num_pixchanges_norm = np.zeros((num_trans_nonzero, self.n_t_bins))
+        self.ratio_attdef_changes = np.zeros((num_trans_nonzero, self.n_t_bins))
+        self.frac_diff_pixels = np.zeros((num_trans_nonzero, self.n_t_bins))
+        self.num_users_vst = np.zeros((num_trans_nonzero, self.n_t_bins))
+        self.num_users_norm = np.zeros((num_trans_nonzero, self.n_t_bins))
+        self.frac_attackonly_users = np.zeros((num_trans_nonzero, self.n_t_bins))
+        self.frac_defenseonly_users = np.zeros((num_trans_nonzero, self.n_t_bins))
+        self.frac_bothattdef_users = np.zeros((num_trans_nonzero, self.n_t_bins))
         if level>1:
-            self.ratio_attdef_changes_images_vst = np.zeros((self.num_transitions, self.n_t_bins, 
+            self.ratio_attdef_changes_images_vst = np.zeros((num_trans_nonzero, self.n_t_bins, 
                                                              self.refimage_pretrans[0].shape[0], self.refimage_pretrans[0].shape[1]))
 
         for i in range(len(self.refimage_pretrans)):

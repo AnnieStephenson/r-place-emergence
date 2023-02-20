@@ -42,12 +42,22 @@ def calc_ews(canvas_part_stat, time_window, state_vars = None):
         state_vars = [canvas_part_stat.entropy_vst,
                       canvas_part_stat.entropy_vst_bpmnorm,
                       canvas_part_stat.stability_vst,
-                      canvas_part_stat.num_pixchanges]
+                      canvas_part_stat.instability_vst_norm,
+                      canvas_part_stat.num_pixchanges,
+                      canvas_part_stat.num_pixchanges_norm,
+                      canvas_part_stat.ratio_attdef_changes,
+                      canvas_part_stat.frac_diff_pixels,
+                      canvas_part_stat.num_users_vst,
+                      canvas_part_stat.num_users_norm,
+                      canvas_part_stat.frac_attackonly_users, 
+                      canvas_part_stat.frac_defenseonly_users, 
+                      canvas_part_stat.frac_bothattdef_users]
     
-    ews = np.zeros((3, canvas_part_stat.num_transitions, len(state_vars),  canvas_part_stat.n_t_bins))
+    num_trans_nonzero = np.max([1, canvas_part_stat.num_transitions])
+    ews = np.zeros((3, num_trans_nonzero, len(state_vars),  canvas_part_stat.n_t_bins))
     
     for i in range(len(state_vars)):
-        for j in range(canvas_part_stat.num_transitions):
+        for j in range(num_trans_nonzero):
             if len(state_vars[i].shape)==2:
                 x = state_vars[i][j]
             else: 
@@ -56,4 +66,4 @@ def calc_ews(canvas_part_stat, time_window, state_vars = None):
             ews[1,j,i,:] = calc_skewness(x, time_window)
             ews[2,j,i,:] = calc_autocorrelation(x, time_window)
     
-    return ews  
+    return ews, state_vars  
