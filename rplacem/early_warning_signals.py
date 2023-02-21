@@ -52,6 +52,7 @@ def calc_ews(canvas_part_stat, time_window, state_vars = None):
                       canvas_part_stat.frac_attackonly_users, 
                       canvas_part_stat.frac_defenseonly_users, 
                       canvas_part_stat.frac_bothattdef_users]
+        
     
     num_trans_nonzero = np.max([1, canvas_part_stat.num_transitions])
     ews = np.zeros((3, num_trans_nonzero, len(state_vars),  canvas_part_stat.n_t_bins))
