@@ -275,11 +275,14 @@ def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_pixels, save_rati
         util.make_dir(os.path.join(var.FIGS_PATH, cpart.out_name()), renew=False)
         util.make_dir(os.path.join(var.FIGS_PATH, cpart.out_name(), 'attack_defense_ratio'), renew=True)
 
-    color = cpart.pixel_changes['color']
-    user = cpart.pixel_changes['user']
+    sortcoor = cpart.pixch_sortcoord # sort pixel changes by pixel coordinate
+    color = cpart.pixel_changes['color'][sortcoor]
+    user = cpart.pixel_changes['user'][sortcoor]
+    coordidx = cpart.pixel_changes['coord_index'][sortcoor]
+    time = cpart.pixel_changes['seconds'][sortcoor]
     pixchanges_coor_offset = cpart.pixchanges_coords_offset()
-    xcoords = pixchanges_coor_offset[0]
-    ycoords = pixchanges_coor_offset[1]
+    xcoords = pixchanges_coor_offset[0][sortcoor]
+    ycoords = pixchanges_coor_offset[1][sortcoor]
 
     num_changes = np.zeros(len(t_lims)-1)
     num_defense_changes = np.zeros(len(t_lims)-1)
@@ -293,20 +296,61 @@ def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_pixels, save_rati
     else:
         pixels = None
 
+
+    # should be of form [pixel 1 att(False), def(True), att, att, ..., pixel 2 def,def,att,def,att,...]
+    agreeing_changes = np.array( ref_image[ycoords, xcoords] == color, np.bool_) 
+    disagree_changes = np.invert(agreeing_changes)
+    # does the pixel change correspond to a new pixel?
+    coord_changed = np.hstack(( True, (np.diff(coordidx) > 0) ))
+    coord_change_ind = np.where(coord_changed)[0]
+    # is this pixel change the beginning of an attack or defense sequence? 
+    newly_attacked_or_restored = np.hstack((True, np.diff(agreeing_changes)))
+    newly_attacked_or_restored[coord_changed & disagree_changes] = True # consider that it is newly attacked when looking at another pixel
+    newly_attacked_or_restored[coord_changed & agreeing_changes] = False # defense changes at the start of a new pixel are ignored
+
+    beg_att_seq_ind = np.where(disagree_changes & newly_attacked_or_restored)[0]
+    beg_def_seq_ind = np.where(agreeing_changes & newly_attacked_or_restored)[0]
+    returntime = []
+    time_attackflip = []
+    for i in range(0, len(coord_change_ind) - 1):
+        thispix = np.arange(coord_change_ind[i], coord_change_ind[i+1])
+        new_att = np.intersect1d(beg_att_seq_ind, thispix, assume_unique=True)
+        new_def = np.intersect1d(beg_def_seq_ind, thispix, assume_unique=True)
+        if len(new_att) == len(new_def) + 1:
+            unrestored_att_ind = new_att[-1]
+            new_att = new_att[:-1]
+            returntime += [var.TIME_TOTAL]
+            time_attackflip += [time[unrestored_att_ind]]
+
+        returntime += list(time[new_def] - time[new_att]) 
+        
+        returntimeneg = np.where(np.array(time[new_def] - time[new_att]) < 0)[0]
+        if len(returntimeneg) > 0 and coordidx[coord_change_ind[i]] < 100:
+            print(coordidx[coord_change_ind[i]], coordidx[coord_change_ind[i+1]], (time[new_def] - time[new_att])[returntimeneg], time[new_def][returntimeneg], time[new_att][returntimeneg])
+            print(new_att, new_def)
+            print(time[new_att], time[new_def])
+            print(coordidx[new_att], coordidx[new_def])
+            print(coordidx[thispix-1])
+
+        time_attackflip += list(time[new_att])
+    returntime = np.array(returntime)
+    time_attackflip = np.array(time_attackflip)
+            
+
     current_image = cpart.white_image(2)
     for t_step in range(0, len(t_lims)-1):
         # get indices of all pixel changes that happen in the step (and that are part of the composition timerange for this pixel)
-        t_inds = cpart.intimerange_pixchanges_inds(t_lims[t_step], t_lims[t_step+1])
-        t_inds_active = cpart.select_active_pixchanges_inds(t_inds)
+        t_inds = cpart.intimerange_pixchanges_inds(t_lims[t_step], t_lims[t_step+1], sortcoor)
+        t_inds_active = cpart.select_active_pixchanges_inds(t_inds, sortcoor)
         num_changes[t_step] = len(t_inds_active)
 
         # test if the color of this pixel change agrees with the reference image (ie is it of the same color)
-        agreeing_changes = np.array( ref_image[ycoords[t_inds_active], xcoords[t_inds_active]] == color[t_inds_active] , np.bool_)
-        num_defense_changes[t_step] = np.count_nonzero(agreeing_changes)
-
-        # count users making defense or attack moves
-        agree_indinds = np.where(agreeing_changes)[0]
-        disagree_indinds = np.where(np.invert(agreeing_changes))[0]
+        agreeing_changes_now = agreeing_changes[t_inds_active]
+        num_defense_changes[t_step] = np.count_nonzero(agreeing_changes_now)
+        agree_indinds = np.where(agreeing_changes_now)[0]
+        disagree_indinds = np.where(disagree_changes[t_inds_active])[0]
+        
+        # count users making defense or attack moves        
         defense_users = np.unique( user[t_inds_active[agree_indinds]] )
         attack_users = np.unique( user[t_inds_active[disagree_indinds]] )
         attackdefense_users = np.intersect1d(attack_users, defense_users)
@@ -320,9 +364,9 @@ def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_pixels, save_rati
         if save_ratio_pixels:
             att = np.zeros((cpart.width(1), cpart.width(0)), dtype=np.float16)
             defe = np.zeros((cpart.width(1), cpart.width(0)), dtype=np.float16)
-            for t in np.where(agreeing_changes)[0]:
+            for t in agree_indinds:
                 defe[ycoords[t_inds_active[t]], xcoords[t_inds_active[t]]] += 1
-            for t in np.where(np.invert(agreeing_changes))[0]:
+            for t in disagree_indinds:
                 att[ycoords[t_inds_active[t]], xcoords[t_inds_active[t]]] += 1
             with np.errstate(divide='ignore', invalid='ignore'):
                 pixels[t_step] = att / defe
@@ -356,7 +400,8 @@ def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_pixels, save_rati
             num_active_pix, 
             num_differing_pixels, 
             num_attackonly_users, num_defenseonly_users, num_attackdefense_users, num_users_total,
-            pixels)
+            pixels,
+            returntime, time_attackflip)
 
 def save_part_over_time(cpart,
                         times, # in seconds
