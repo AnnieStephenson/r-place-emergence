@@ -24,8 +24,9 @@ class CanvasPartStatistics(object):
             'stability', 'mean_stability', 'entropy', 'transitions', 'attackdefense' 
         The levels mean:
             0: not computed
-            1: basic variable is computed
-            2: images are created and stored in the form of 2d numpy arrays of pixels containing color indices
+            1: basic variables are computed
+            2: images are created and stored in the form of 2d numpy arrays of pixels containing color indices. 
+                Variables based on these images are also computed
             3: these pixel arrays are transformed to images and stored. Also makes a movie from stored images.
             4: more extensive info is stored in the class and in a pickle file.
         Set in __init__()
@@ -144,7 +145,7 @@ class CanvasPartStatistics(object):
         Number of pixel changes in each time bin
             Set in comp.num_changes_and_users(), in count_attack_defense_events()
     num_pixchanges_norm : same as num_pixchanges, normalized by t_norm and area_vst
-    ratio_attdef_changes : 1d array of floats of length n_t_bins
+    ratio_attdef_changes : 2d array of floats, shape (# transitions, n_t_bins)
         Ratio of attack pixel changes to the defense ones, in each time bin
             Set in count_attack_defense_events()
     frac_diff_pixels : 1d array of floats of length n_t_bins
@@ -164,6 +165,10 @@ class CanvasPartStatistics(object):
     ratio_attdef_changes_images_vst : array of size n_t_bins, of 2d numpy arrays. 
         Each element is a pixels image info (2d numpy array containing color indices)
         Image containing, for each pixel, the ratio of attack to defense pixel changes, for each time step
+    returntime_tbinned : 2d array of lists, shape (# transitions, n_t_bins)
+        For each time bin, contains list of times for each freshly attacked pixel to recover to the ref image, thanks to a defense pixel change
+    returntime_mean, returntime_median_overln2 : 2d array of shape (# transitions, n_t_bins)
+        mean and median of returntime_tbinned in each time bin
 
     methods
     -------
@@ -188,7 +193,7 @@ class CanvasPartStatistics(object):
                  n_tbins=80,
                  tmax=var.TIME_TOTAL,
                  compute_vars={'stability': 3, 'mean_stability': 3, 'entropy' : 3, 'transitions' : 3, 'attackdefense' : 2},
-                 trans_param=[1e-2, 2e-3, 14400, 10800],
+                 trans_param=[1e-2, 1.5e-3, 14400, 10800],
                  n_tbins_trans=150,
                  timeunit=300, # 5 minutes
                  refimage_averaging_period=3600, # 1 hour
@@ -380,6 +385,10 @@ class CanvasPartStatistics(object):
         self.frac_attackonly_users = np.zeros((self.num_transitions, self.n_t_bins))
         self.frac_defenseonly_users = np.zeros((self.num_transitions, self.n_t_bins))
         self.frac_bothattdef_users = np.zeros((self.num_transitions, self.n_t_bins))
+        self.returntime_tbinned = np.empty((self.num_transitions, self.n_t_bins), dtype=object)
+        self.returntime_mean = np.zeros((self.num_transitions, self.n_t_bins))
+        self.returntime_median_overln2 = np.zeros((self.num_transitions, self.n_t_bins))
+
         if level>1:
             self.ratio_attdef_changes_images_vst = np.zeros((self.num_transitions, self.n_t_bins, 
                                                              self.refimage_pretrans[0].shape[0], self.refimage_pretrans[0].shape[1]))
@@ -414,8 +423,19 @@ class CanvasPartStatistics(object):
             if level>1:
                 self.ratio_attdef_changes_images_vst[i,:,:,:] = res[9]
 
-        #if level>1:
-        #    self.ratio_attdef_changes_images_vst = np.array(self.ratio_attdef_changes_images_vst)
+            returnt = res[10]
+            time_newattack = res[11]
+            timebin_ind = np.digitize(time_newattack, self.t_ranges)
+            for j in range(0, self.n_t_bins): # initialize with empty lists           
+                self.returntime_tbinned[i][j] = []
+            for j in range(0, len(returnt)): # fill the histogram-like array using the result from np.digitize
+                self.returntime_tbinned[i][timebin_ind[j]].append(returnt[j])
+            for j in range(0, self.n_t_bins): # cannot use more clever numpy because the lists in axis #3 are of different sizes
+                self.returntime_mean[i,j] = np.mean(np.array(self.returntime_tbinned[i,j]))
+                self.returntime_median_overln2[i,j] = np.median(np.array(self.returntime_tbinned[i,j]))
+            
+        self.returntime_median_overln2 /= np.log(2)
+
 
         if level>2:
             util.save_movie(os.path.join(var.FIGS_PATH, cpart.out_name(), 'attack_defense_ratio'), 15)

@@ -44,7 +44,7 @@ def calc_ews(canvas_part_stat, time_window, state_vars = None):
                       canvas_part_stat.stability_vst,
                       canvas_part_stat.num_pixchanges]
     
-    ews = np.zeros((3, canvas_part_stat.num_transitions, len(state_vars),  canvas_part_stat.n_t_bins))
+    ews = np.zeros((num_ews, canvas_part_stat.num_transitions, len(state_vars),  canvas_part_stat.n_t_bins))
     
     for i in range(len(state_vars)):
         for j in range(canvas_part_stat.num_transitions):
@@ -56,4 +56,4 @@ def calc_ews(canvas_part_stat, time_window, state_vars = None):
             ews[1,j,i,:] = calc_skewness(x, time_window)
             ews[2,j,i,:] = calc_autocorrelation(x, time_window)
     
-    return ews  
+    return ews

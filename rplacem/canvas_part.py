@@ -546,15 +546,23 @@ class CanvasPart(object):
 
         return inds_active
 
-    def intimerange_pixchanges_inds(self, t0, t1):
-        ''' Indices in self.pixel_changes whose time is in the range [t0, t1['''
-        seconds = np.array(self.pixel_changes['seconds'])
+    def intimerange_pixchanges_inds(self, t0, t1, transform_inds=None):
+        ''' Indices in self.pixel_changes whose time is in the range [t0, t1[.
+        [transform_inds] can modified (eg sort) the pixel changes array'''
+        if transform_inds is None:
+            seconds = np.array(self.pixel_changes['seconds'])
+        else:
+            seconds = np.array(self.pixel_changes['seconds'][transform_inds])
         return np.where((seconds >= t0) & (seconds < t1))[0]
 
-    def select_active_pixchanges_inds(self, input_inds):
+    def select_active_pixchanges_inds(self, input_inds, transform_inds=None):
         ''' Returns the part of the input_inds indices (referring to self.pixel_changes)
-        that point to an active pixel change (meaning its time is within border_path_times)'''
-        active = np.array(self.pixel_changes['active'])
+        that point to an active pixel change (meaning its time is within border_path_times).
+        [transform_inds] can modified (eg sort) the pixel changes array'''
+        if transform_inds is None:
+            active = np.array(self.pixel_changes['active'])
+        else:
+            active = np.array(self.pixel_changes['active'][transform_inds])
         return input_inds[ np.where(active[input_inds])[0] ]
 
     def out_name(self):
