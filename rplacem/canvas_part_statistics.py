@@ -24,6 +24,7 @@ class CanvasPartStatistics(object):
             'stability', 'mean_stability', 'entropy', 'transitions', 'attackdefense' 
         The levels mean:
             0: not computed
+            0.5: only for count_attack_defense_events(), only computes variables unrelated to transitions
             1: basic variables are computed
             2: images are created and stored in the form of 2d numpy arrays of pixels containing color indices. 
                 Variables based on these images are also computed
@@ -100,7 +101,14 @@ class CanvasPartStatistics(object):
         Same as stable_image, but as a 1d array of pixel images, of size n_t_bins
             Needs compute_vars['stability'] > 1
             Set in comp.stability(), in compute_stability_vst()
-        
+    diff_stable_pixels_vst, diff_stable_pixels_vst_norm : 1d numpy array of length n_t_bins
+        Number of different pixels between the stable image over that time step 
+        and the stable image over the previous time step.
+        diff_stable_pixels_vst_norm is normalized by the active area and t_norm
+            Set in comp.stability(), in compute_stability_vst()
+    diff_pixels_vst, diff_pixels_vst_norm : 1d numpy array of length n_t_bins
+        same as above, but for the direct images at the end of the time step
+
         ENTROPY -- all need compute_vars['entropy'] > 0
     bmpsize : 1d numpy array of size n_t_bins
         Size of the bmp image (of the canvas part) file at each time step
@@ -229,7 +237,7 @@ class CanvasPartStatistics(object):
         self.id = cpart.out_name() 
         if compute_vars['stability'] < 3 and compute_vars['mean_stability'] < 3 and compute_vars['entropy'] < 3:
             renew = False
-        dirpath = os.path.join(var.FIGS_PATH, cpart.out_name())
+        dirpath = os.path.join(var.FIGS_PATH, str(cpart.out_name()))
         dir_exists = util.make_dir(dirpath, renew)
 
         self.compute_vars = compute_vars
@@ -255,6 +263,7 @@ class CanvasPartStatistics(object):
         self.instability_for_trans = None
         self.transition_param = trans_param
         self.refimage_pretrans = None
+        self.num_transitions = None
         self.area_vst = None
 
         # mean stability
@@ -268,7 +277,6 @@ class CanvasPartStatistics(object):
 
         # find transitions. Needs that stability_vst is filled
         self.search_transitions(cpart, compute_vars['transitions'])
-
         # counting attack and defense users and pixel changes. Needs that refimage_pretrans is filled
         self.count_attack_defense_events(cpart, compute_vars['attackdefense'])
 
@@ -302,6 +310,7 @@ class CanvasPartStatistics(object):
         self.stable_image_vst = res[2] if level > 1 else None
         self.second_stable_image_vst = res[3] if level > 1 else None
         self.third_stable_image_vst = res[4] if level > 1 else None
+        self.diff_stable_pixels_vst = res[5]
 
         if level>2:
             util.save_movie(os.path.join(var.FIGS_PATH, cpart.out_name(),'VsTimeStab'), 15)
@@ -315,13 +324,14 @@ class CanvasPartStatistics(object):
 
         times = self.t_ranges - self.t_interval / 2
         times[0] = 0
-        res = comp.save_part_over_time(cpart, times, level>1, True, level<3, False, self.verbose)
+        res = comp.save_part_over_time(cpart, times, level>1, True, level<3, False, self.verbose, True)
         size_bmp = res[0]
         size_png = res[1]
         num_active_pix = res[3]
         self.bmpsize = size_bmp[1:]
         self.true_image_vst = res[2] if level > 1 else None
-        
+        self.diff_pixels_vst = res[4][1:]
+
         self.entropy_vst_bpmnorm = size_png[1:] / size_bmp[1:]
         with np.errstate(divide='ignore', invalid='ignore'):
             self.entropy_vst = size_png[1:] / num_active_pix[1:]        
@@ -368,75 +378,84 @@ class CanvasPartStatistics(object):
             print('counting attack and defense users and pixel changes')
 
         # need reference image
-        if self.refimage_pretrans is None:
+        if self.refimage_pretrans is None and level>0.9:
             self.search_transitions(cpart, 1)
-        # if no transition is detected, take the most stable image over the whole active time as reference
-        if len(self.refimage_pretrans) == 0: 
+        # if no transition is detected (or level=0.5), take the most stable image over the whole active time as reference
+        if level<0.9 or len(self.refimage_pretrans) == 0: 
             if self.compute_vars['mean_stability'] < 2:
                 self.compute_mean_stability(cpart, 2)
             self.refimage_pretrans = np.expand_dims(self.stable_image, axis=0)
-        
-        num_trans_nonzero = np.max([self.num_transitions,1])
-        self.num_pixchanges = np.zeros((self.num_transitions, self.n_t_bins))
-        self.num_pixchanges_norm = np.zeros((self.num_transitions, self.n_t_bins))
-        self.ratio_attdef_changes = np.zeros((self.num_transitions, self.n_t_bins))
-        self.frac_diff_pixels = np.zeros((self.num_transitions, self.n_t_bins))
-        self.num_users_vst = np.zeros((self.num_transitions, self.n_t_bins))
-        self.num_users_norm = np.zeros((self.num_transitions, self.n_t_bins))
-        self.frac_attackonly_users = np.zeros((self.num_transitions, self.n_t_bins))
-        self.frac_defenseonly_users = np.zeros((self.num_transitions, self.n_t_bins))
-        self.frac_bothattdef_users = np.zeros((self.num_transitions, self.n_t_bins))
-        self.returntime_tbinned = np.empty((self.num_transitions, self.n_t_bins), dtype=object)
-        self.returntime_mean = np.zeros((self.num_transitions, self.n_t_bins))
-        self.returntime_median_overln2 = np.zeros((self.num_transitions, self.n_t_bins))
+
+        num_trans_nonzero = 1 if level<1 else np.max([self.num_transitions,1])
+
+        self.num_pixchanges = np.zeros((num_trans_nonzero, self.n_t_bins))
+        self.num_pixchanges_norm = np.zeros((num_trans_nonzero, self.n_t_bins))
+        self.num_users_vst = np.zeros((num_trans_nonzero, self.n_t_bins))
+        self.num_users_norm = np.zeros((num_trans_nonzero, self.n_t_bins))
+        if level>0.9:
+            self.ratio_attdef_changes = np.zeros((num_trans_nonzero, self.n_t_bins))
+            self.frac_diff_pixels = np.zeros((num_trans_nonzero, self.n_t_bins))
+            self.frac_attackonly_users = np.zeros((num_trans_nonzero, self.n_t_bins))
+            self.frac_defenseonly_users = np.zeros((num_trans_nonzero, self.n_t_bins))
+            self.frac_bothattdef_users = np.zeros((num_trans_nonzero, self.n_t_bins))
+            self.returntime_tbinned = np.empty((num_trans_nonzero, self.n_t_bins), dtype=object)
+            self.returntime_mean = np.zeros((num_trans_nonzero, self.n_t_bins))
+            self.returntime_median_overln2 = np.zeros((num_trans_nonzero, self.n_t_bins))
 
         if level>1:
             self.ratio_attdef_changes_images_vst = np.zeros((num_trans_nonzero, self.n_t_bins, 
                                                              self.refimage_pretrans[0].shape[0], self.refimage_pretrans[0].shape[1]))
-
-        for i in range(len(self.refimage_pretrans)):
+        
+        if self.verbose:
+            print('run comp.num_changes_and_users in loop over transitions')
+        for i in range(num_trans_nonzero):
             refimage = self.refimage_pretrans[i]
-            res = comp.num_changes_and_users(cpart, self.t_ranges, refimage, level>1, level>2)
-            if self.area_vst is None:
-                self.area_vst = res[3]
-            
+            res = comp.num_changes_and_users(cpart, self.t_ranges, refimage, level>1.5, level>2.5, level<=0.9)
             self.num_pixchanges[i,:] = res[0]
-            self.num_users_total = res[8] # same for all transitions
-            self.num_users_vst[i,:] = res[5] + res[6] + res[7]
+            self.num_users_total = res[9] # same for all transitions
+            self.area_vst = res[3]
+            self.num_users_vst[i,:] = res[8]
+
+            if level>1.5:
+                self.ratio_attdef_changes_images_vst[i,:,:,:] = res[10]
+
             with np.errstate(divide='ignore', invalid='ignore'):
                 self.num_pixchanges_norm[i,:] = res[0] / self.t_norm / self.area_vst # res[3] is the *time-dependent* active area
-                self.ratio_attdef_changes[i,:] = res[2] / res[1]
-                self.frac_diff_pixels[i,:] = res[4] / self.area_vst
-                self.num_users_norm[i,:] = (res[5] + res[6] + res[7]) / self.t_norm / self.area_vst
-                self.frac_attackonly_users[i,:] = res[5] / res[8]
-                self.frac_defenseonly_users[i,:] = res[6] / res[8]
-                self.frac_bothattdef_users[i,:] = res[7] / res[8]
+                self.num_users_norm[i,:] = res[8] / self.t_norm / self.area_vst
+                self.diff_stable_pixels_vst_norm = self.diff_stable_pixels_vst / self.t_norm / self.area_vst
+                self.diff_pixels_vst_norm = self.diff_pixels_vst / self.t_norm / self.area_vst
+                if level>0.9:
+                    self.ratio_attdef_changes[i,:] = res[2] / res[1]
+                    self.frac_diff_pixels[i,:] = res[4] / self.area_vst
+                    self.frac_attackonly_users[i,:] = res[5] / res[9]
+                    self.frac_defenseonly_users[i,:] = res[6] / res[9]
+                    self.frac_bothattdef_users[i,:] = res[7] / res[9]
 
             self.num_pixchanges_norm[-1][np.where(self.area_vst == 0)] = 0.
-            self.ratio_attdef_changes[-1][np.where((res[1] == 0) & (res[2] > 0))] = 100.
-            self.ratio_attdef_changes[-1][np.where((res[1] == 0) & (res[2] == 0))] = 1.
-            self.frac_diff_pixels[-1][np.where(self.area_vst == 0)] = 0.
             self.num_users_norm[-1][np.where(self.area_vst == 0)] = 0.
-            self.frac_attackonly_users[-1][np.where(res[8] == 0)] = 0.5
-            self.frac_defenseonly_users[-1][np.where(res[8] == 0)] = 0.5
-            self.frac_bothattdef_users[-1][np.where(res[8] == 0)] = 0.
+            if level>0.9:
+                self.ratio_attdef_changes[-1][np.where((res[1] == 0) & (res[2] > 0))] = 100.
+                self.ratio_attdef_changes[-1][np.where((res[1] == 0) & (res[2] == 0))] = 1.
+                self.frac_diff_pixels[-1][np.where(self.area_vst == 0)] = 0.
+                self.diff_stable_pixels_vst_norm[np.where(self.area_vst == 0)] = 0.
+                self.diff_pixels_vst_norm[np.where(self.area_vst == 0)] = 0.
+                self.frac_attackonly_users[-1][np.where(res[9] == 0)] = 0.5
+                self.frac_defenseonly_users[-1][np.where(res[9] == 0)] = 0.5
+                self.frac_bothattdef_users[-1][np.where(res[9] == 0)] = 0.
+                
+                returnt = res[11]
+                time_newattack = res[12]
+                timebin_ind = np.digitize(time_newattack, self.t_ranges) - 1
+                for j in range(0, self.n_t_bins): # initialize with empty lists           
+                    self.returntime_tbinned[i][j] = []
+                for j in range(0, len(returnt)): # fill the histogram-like array using the result from np.digitize
+                    self.returntime_tbinned[i][timebin_ind[j]].append(returnt[j])
+                for j in range(0, self.n_t_bins): # cannot use more clever numpy because the lists in axis #3 are of different sizes
+                    self.returntime_mean[i,j] = np.mean(np.array(self.returntime_tbinned[i,j]))
+                    self.returntime_median_overln2[i,j] = np.median(np.array(self.returntime_tbinned[i,j]))
 
-            if level>1:
-                self.ratio_attdef_changes_images_vst[i,:,:,:] = res[9]
-
-            returnt = res[10]
-            time_newattack = res[11]
-            timebin_ind = np.digitize(time_newattack, self.t_ranges)
-            for j in range(0, self.n_t_bins): # initialize with empty lists           
-                self.returntime_tbinned[i][j] = []
-            for j in range(0, len(returnt)): # fill the histogram-like array using the result from np.digitize
-                self.returntime_tbinned[i][timebin_ind[j]].append(returnt[j])
-            for j in range(0, self.n_t_bins): # cannot use more clever numpy because the lists in axis #3 are of different sizes
-                self.returntime_mean[i,j] = np.mean(np.array(self.returntime_tbinned[i,j]))
-                self.returntime_median_overln2[i,j] = np.median(np.array(self.returntime_tbinned[i,j]))
-            
-        self.returntime_median_overln2 /= np.log(2)
-
+        if level>0.9:
+            self.returntime_median_overln2 /= np.log(2)
 
         if level>2:
             util.save_movie(os.path.join(var.FIGS_PATH, cpart.out_name(), 'attack_defense_ratio'), 15)

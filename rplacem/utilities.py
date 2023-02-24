@@ -168,3 +168,13 @@ def make_dir(path, renew=False):
         res = True
     
     return res
+
+def merge_pickles(file_list, file_out):
+    out = []
+    for file in file_list:
+        with open(file, 'rb') as f:
+            out += pickle.load(f)
+    
+    with open(os.path.join(var.DATA_PATH, file_out), 'wb') as handle:
+        pickle.dump(out, handle, protocol=pickle.HIGHEST_PROTOCOL)
+

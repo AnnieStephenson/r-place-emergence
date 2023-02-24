@@ -25,15 +25,6 @@ def store_compos(beg, end):
                     handle,
                     protocol=pickle.HIGHEST_PROTOCOL)
 
-def merge_pickles(file_list):
-    out = []
-    for file in file_list:
-        with open(file, 'rb') as f:
-            out += pickle.load(f)
-    
-    with open(os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle'), 'wb') as handle:
-        pickle.dump(out, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
 # MAIN
 import argparse
 parser = argparse.ArgumentParser()
@@ -43,8 +34,7 @@ args = parser.parse_args()
 
 store_compos(args.beginning, args.end)
 
-
-merge_pickles([ 'data/canvas_compositions_files0to1299.pickle',
+util.merge_pickles([ 'data/canvas_compositions_files0to1299.pickle',
                 'data/canvas_compositions_files1300to2599.pickle',
                 'data/canvas_compositions_files2600to3899.pickle',
                 'data/canvas_compositions_files3900to5199.pickle',
@@ -52,4 +42,5 @@ merge_pickles([ 'data/canvas_compositions_files0to1299.pickle',
                 'data/canvas_compositions_files6500to7199.pickle',
                 'data/canvas_compositions_files7200to8399.pickle',
                 'data/canvas_compositions_files8400to9957.pickle',
-                ])
+                ],
+                'canvas_compositions_all.pickle')
