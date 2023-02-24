@@ -3,6 +3,7 @@ import os
 import rplacem.canvas_part as cp
 import rplacem.canvas_part_statistics as stat
 import rplacem.compute_variables as comp
+import matplotlib.colors as pltcolors
 import rplacem.utilities as util
 import rplacem.variables_rplace2022 as var
 import pickle
@@ -99,15 +100,84 @@ plt.savefig(os.path.join(var.FIGS_PATH, 'bmpfilesize_over_npix_onlyrectangles.pn
 '''
 canpart = cp.CanvasPart(
                         #border_path=[[[0, 0], [0, 1999], [1999, 1999], [1999, 0]]],
-                        id='000006', 
+                        id='twt65q', 
                         pixel_changes_all=pixel_changes_all,
                         verbose=True, save=True)
 
-cpstat = stat.CanvasPartStatistics(canpart, n_tbins=400, n_tbins_trans=100,
-                                    compute_vars={'stability': 1, 'mean_stability': 0, 'entropy' : 0, 'transitions' : 3, 'attackdefense' : 0},
+
+cpstat = stat.CanvasPartStatistics(canpart, n_tbins=400, n_tbins_trans=150,
+                                    compute_vars={'stability': 2, 'mean_stability': 2, 'entropy' : 2, 'transitions' : 2, 'attackdefense' : 2},
                                     verbose=True, dont_keep_dir=False)
 
-print(cpstat.transition_times, cpstat.instability_vst_norm)
+'''
+plt.figure()
+plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.diff_pixels_vst_norm)
+sns.despine()
+plt.ylabel('# of pixels different from previous time step / area / 5 min')
+plt.xlabel('Time [s]')
+plt.ylim([0, 1.1*max(cpstat.diff_pixels_vst_norm)])
+plt.xlim([0, var.TIME_TOTAL])
+plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'Number_of_differing_pixels_vst.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.diff_stable_pixels_vst_norm)
+sns.despine()
+plt.ylabel('# of pixels different from previous stable image / area / 5 min')
+plt.xlabel('Time [s]')
+plt.ylim([0, 1.1*max(cpstat.diff_stable_pixels_vst_norm)])
+plt.xlim([0, var.TIME_TOTAL])
+plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'Number_of_differing_stable_pixels_vst.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.ratio_attdef_changes[0])
+sns.despine()
+plt.ylabel('attack changes / defense changes')
+plt.xlabel('Time [s]')
+plt.ylim([0,4])
+plt.xlim([0, var.TIME_TOTAL])
+plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'attack_defense_pixelchanges_ratio.png'))
+
+fig, ax = plt.subplots()
+nbinsret = 100
+tmaxret = 10000
+returnt_bins = np.arange(0,tmaxret+tmaxret/nbinsret, tmaxret/nbinsret)
+matrix = np.zeros((cpstat.n_t_bins, nbinsret))
+for i in range(0,cpstat.n_t_bins):
+    rettime = np.array(cpstat.returntime_tbinned[0][i])
+    matrix[i] = np.histogram(rettime, returnt_bins)[0] if len(rettime) > 0 else np.zeros(nbinsret)
+plt.pcolormesh( cpstat.t_ranges[:-1]+cpstat.t_interval/2, 
+                returnt_bins[:-1]+tmaxret/nbinsret/2, 
+                np.transpose(matrix), 
+                cmap=plt.cm.jet, norm=pltcolors.LogNorm(vmin=0.95, vmax=700))
+plt.xlabel('time [s]')
+plt.ylabel('time to recover from fresh attack to ref image [s]')
+plt.ticklabel_format(style='scientific')
+plt.colorbar(label='# fresh attacks')
+plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'returntime_vs_time_hist2d.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.returntime_median_overln2[0])
+sns.despine()
+plt.ylabel('median time for pixels to recover from fresh attack [s] / ln(2)')
+plt.xlabel('Time [s]')
+plt.yscale('log')
+plt.ylim([8,3000])
+plt.xlim([0000, 300000])
+plt.vlines(x = [cpstat.transition_times[0][0], cpstat.transition_times[0][1], cpstat.transition_times[0][2], cpstat.transition_times[0][3]], ymin=0, ymax=1600, colors = 'black', linestyle='dashed')
+plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'median_pixel_recovery_time.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.returntime_mean[0])
+sns.despine()
+plt.ylabel('mean time for pixels to recover from fresh attack [s] / ln(2)')
+plt.xlabel('Time [s]')
+plt.yscale('log')
+plt.ylim([8,3000])
+plt.xlim([0000, 300000])
+plt.vlines(x = [cpstat.transition_times[0][0], cpstat.transition_times[0][1], cpstat.transition_times[0][2], cpstat.transition_times[0][3]], ymin=0, ymax=1600, colors = 'black', linestyle='dashed')
+plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'mean_pixel_recovery_time.png'))
+'''
+
 '''
 ntrans = 0
 for i in range(0,20):

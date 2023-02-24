@@ -173,6 +173,7 @@ def calc_ews_shift(canvas_comp_stat_list, early_warn_signals_list,
     
     Currently only uses the first transition for a given composition
     '''
+
     # set some variables assuming all are the same in list
     n_tbins = canvas_comp_stat_list[0].n_t_bins 
     trans_ind = early_warn_signals_list[0].trans_ind
@@ -309,5 +310,3 @@ def plot_ews_offset_types(ews_offset,
         plt.ylabel(labels[ews_var_ind])
         plt.xlabel('Time bin')
         plt.title('type 3')
-
-
