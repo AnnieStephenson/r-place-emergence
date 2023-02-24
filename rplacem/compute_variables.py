@@ -119,6 +119,7 @@ def stability(cpart,
     current_color = cpart.white_image(1)
     stability_vs_time = np.zeros(len(t_lims)-1)
     instab_vs_time_norm = np.zeros(len(t_lims)-1)
+    diff_pixels_vst = np.zeros(len(t_lims)-1)
     if create_images:
         util.make_dir(os.path.join(var.FIGS_PATH, cpart.out_name()))
         util.make_dir(os.path.join(var.FIGS_PATH, cpart.out_name(), 'VsTimeStab'))
@@ -133,6 +134,7 @@ def stability(cpart,
             Coordinates at given indices in [start] must be replaced by the content of [target]'''
             start[step, coor_offset[1,indices], coor_offset[0,indices]] = target[step, coor_offset[1,indices], coor_offset[0,indices]]
       
+    previous_stable_colors = cpart.white_image(1) # remember stable image from previous t_step
     i_fraction_print = 0  # only for output of a message when some fraction of the steps are ran
 
     for t_step in range(0, len(t_lims)-1):
@@ -205,6 +207,9 @@ def stability(cpart,
                             handle,
                             protocol=pickle.HIGHEST_PROTOCOL)
 
+        diff_pixels_vst[t_step] = np.count_nonzero(stable_colors[:,0] - previous_stable_colors[:])
+        previous_stable_colors = stable_colors[:,0]
+
         # create images containing the (sub)dominant color only
         if create_images:
             pixels1[t_step, coor_offset[1], coor_offset[0]] = stable_colors[:,0]
@@ -236,9 +241,9 @@ def stability(cpart,
     if not create_images:
         (pixels1, pixels2, pixels3) = (np.array([]), np.array([]), np.array([]))
 
-    return [stability_vs_time, instab_vs_time_norm, pixels1, pixels2, pixels3]
+    return [stability_vs_time, instab_vs_time_norm, pixels1, pixels2, pixels3, diff_pixels_vst]
 
-def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_pixels, save_ratio_images):
+def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_pixels, save_ratio_images, simple_notrans=False):
     '''
     Returnes multiple variables dealing with the number of pixel changes and users
     and their relation to the provided reference (stable) image
@@ -255,6 +260,8 @@ def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_pixels, save_rati
         save the pixel arrays of the pixel-by-pixel attack/defense ratio
     save_ratio_images: bool
         save the images of the pixel-by-pixel attack/defense ratio
+    simple_notrans: bool
+        only calculate number of pix changes and users, without notions of attack and defense
 
     returns
     -------
@@ -276,73 +283,72 @@ def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_pixels, save_rati
         util.make_dir(os.path.join(var.FIGS_PATH, cpart.out_name(), 'attack_defense_ratio'), renew=True)
 
     sortcoor = cpart.pixch_sortcoord # sort pixel changes by pixel coordinate
-    color = cpart.pixel_changes['color'][sortcoor]
     user = cpart.pixel_changes['user'][sortcoor]
-    coordidx = cpart.pixel_changes['coord_index'][sortcoor]
-    time = cpart.pixel_changes['seconds'][sortcoor]
-    pixchanges_coor_offset = cpart.pixchanges_coords_offset()
-    xcoords = pixchanges_coor_offset[0][sortcoor]
-    ycoords = pixchanges_coor_offset[1][sortcoor]
+    if not simple_notrans:
+        color = cpart.pixel_changes['color'][sortcoor]
+        coordidx = cpart.pixel_changes['coord_index'][sortcoor]
+        time = cpart.pixel_changes['seconds'][sortcoor]
+        pixchanges_coor_offset = cpart.pixchanges_coords_offset()
+        xcoords = pixchanges_coor_offset[0][sortcoor]
+        ycoords = pixchanges_coor_offset[1][sortcoor]
 
     num_changes = np.zeros(len(t_lims)-1)
-    num_defense_changes = np.zeros(len(t_lims)-1)
+    num_users = np.zeros(len(t_lims)-1)
     num_active_pix = np.zeros(len(t_lims)-1)
-    num_differing_pixels = np.zeros(len(t_lims)-1)
-    num_attackdefense_users = np.zeros(len(t_lims)-1)
-    num_attackonly_users = np.zeros(len(t_lims)-1)
-    num_defenseonly_users = np.zeros(len(t_lims)-1)
+    if not simple_notrans:
+        num_defense_changes = np.zeros(len(t_lims)-1)
+        num_differing_pixels = np.zeros(len(t_lims)-1)
+        num_attackdefense_users = np.zeros(len(t_lims)-1)
+        num_attackonly_users = np.zeros(len(t_lims)-1)
+        num_defenseonly_users = np.zeros(len(t_lims)-1)
+        returntime = []
+        time_attackflip = []
     if save_ratio_pixels:
-        pixels = np.zeros((len(t_lims)-1, cpart.width(1), cpart.width(0)))
+        pixels = np.zeros((len(t_lims)-1, cpart.width(1), cpart.width(0)), dtype=np.float16)
     else:
         pixels = None
 
+    if not simple_notrans:
+        # should be of form [pixel 1 att(False), def(True), att, att, ..., pixel 2 def,def,att,def,att,...]
+        agreeing_changes = np.array( ref_image[ycoords, xcoords] == color, np.bool_) 
+        disagree_changes = np.invert(agreeing_changes)
+        # does the pixel change correspond to a new pixel?
+        coord_changed = np.hstack(( True, (np.diff(coordidx) > 0) ))
+        coord_change_ind = np.where(coord_changed)[0]
+        # is this pixel change the beginning of an attack or defense sequence? 
+        newly_attacked_or_restored = np.hstack((True, np.diff(agreeing_changes)))
+        newly_attacked_or_restored[coord_changed & disagree_changes] = True # consider that it is newly attacked when looking at another pixel
+        newly_attacked_or_restored[coord_changed & agreeing_changes] = False # defense changes at the start of a new pixel are ignored
 
-    # should be of form [pixel 1 att(False), def(True), att, att, ..., pixel 2 def,def,att,def,att,...]
-    agreeing_changes = np.array( ref_image[ycoords, xcoords] == color, np.bool_) 
-    disagree_changes = np.invert(agreeing_changes)
-    # does the pixel change correspond to a new pixel?
-    coord_changed = np.hstack(( True, (np.diff(coordidx) > 0) ))
-    coord_change_ind = np.where(coord_changed)[0]
-    # is this pixel change the beginning of an attack or defense sequence? 
-    newly_attacked_or_restored = np.hstack((True, np.diff(agreeing_changes)))
-    newly_attacked_or_restored[coord_changed & disagree_changes] = True # consider that it is newly attacked when looking at another pixel
-    newly_attacked_or_restored[coord_changed & agreeing_changes] = False # defense changes at the start of a new pixel are ignored
-
-    beg_att_seq_ind = np.where(disagree_changes & newly_attacked_or_restored)[0]
-    beg_def_seq_ind = np.where(agreeing_changes & newly_attacked_or_restored)[0]
-    returntime = []
-    time_attackflip = []
-    for i in range(0, len(coord_change_ind) - 1):
-        thispix = np.arange(coord_change_ind[i], coord_change_ind[i+1])
-        new_att = np.intersect1d(beg_att_seq_ind, thispix, assume_unique=True)
-        new_def = np.intersect1d(beg_def_seq_ind, thispix, assume_unique=True)
-        if len(new_att) == len(new_def) + 1:
-            unrestored_att_ind = new_att[-1]
-            new_att = new_att[:-1]
-            returntime += [var.TIME_TOTAL]
-            time_attackflip += [time[unrestored_att_ind]]
-
-        returntime += list(time[new_def] - time[new_att]) 
-        
-        returntimeneg = np.where(np.array(time[new_def] - time[new_att]) < 0)[0]
-        if len(returntimeneg) > 0 and coordidx[coord_change_ind[i]] < 100:
-            print(coordidx[coord_change_ind[i]], coordidx[coord_change_ind[i+1]], (time[new_def] - time[new_att])[returntimeneg], time[new_def][returntimeneg], time[new_att][returntimeneg])
-            print(new_att, new_def)
-            print(time[new_att], time[new_def])
-            print(coordidx[new_att], coordidx[new_def])
-            print(coordidx[thispix-1])
-
-        time_attackflip += list(time[new_att])
-    returntime = np.array(returntime)
-    time_attackflip = np.array(time_attackflip)
+        beg_att_seq_ind = np.where(disagree_changes & newly_attacked_or_restored)[0]
+        beg_def_seq_ind = np.where(agreeing_changes & newly_attacked_or_restored)[0]
+        for i in range(0, len(coord_change_ind) - 1):
+            thispix = np.arange(coord_change_ind[i], coord_change_ind[i+1])
+            new_att = np.intersect1d(beg_att_seq_ind, thispix, assume_unique=True)
+            new_def = np.intersect1d(beg_def_seq_ind, thispix, assume_unique=True)
+            if len(new_att) == len(new_def) + 1:
+                unrestored_att_ind = new_att[-1]
+                new_att = new_att[:-1]
+                returntime += [var.TIME_TOTAL]
+                time_attackflip += [time[unrestored_att_ind]]
+            returntime += list(time[new_def] - time[new_att]) 
+            time_attackflip += list(time[new_att])
+        returntime = np.array(returntime)
+        time_attackflip = np.array(time_attackflip)
             
-
     current_image = cpart.white_image(2)
     for t_step in range(0, len(t_lims)-1):
         # get indices of all pixel changes that happen in the step (and that are part of the composition timerange for this pixel)
         t_inds = cpart.intimerange_pixchanges_inds(t_lims[t_step], t_lims[t_step+1], sortcoor)
         t_inds_active = cpart.select_active_pixchanges_inds(t_inds, sortcoor)
         num_changes[t_step] = len(t_inds_active)
+        num_users[t_step] = len(np.unique(user[t_inds_active]))
+
+        # count active (ie in timerange) coordinates and the differences with the ref_image at these coordinates
+        active_coor_inds = cpart.active_coord_inds(t_lims[t_step], t_lims[t_step+1])
+        num_active_pix[t_step] = len(active_coor_inds)
+
+        if simple_notrans: continue
 
         # test if the color of this pixel change agrees with the reference image (ie is it of the same color)
         agreeing_changes_now = agreeing_changes[t_inds_active]
@@ -388,20 +394,24 @@ def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_pixels, save_rati
         # Update current_image with the pixel changes in this time interval.
         util.update_image(current_image, xcoords, ycoords, color, t_inds)
 
-        # count active (ie in timerange) coordinates and the differences with the ref_image at these coordinates
-        active_coor_inds = cpart.active_coord_inds(t_lims[t_step], t_lims[t_step+1])
-        num_active_pix[t_step] = len(active_coor_inds)
         num_differing_pixels[t_step] = count_image_differences(current_image, ref_image, cpart, active_coor_inds) if num_active_pix[t_step] != 0 else 0
 
-    num_attack_changes = num_changes - num_defense_changes
+    if not simple_notrans:
+        num_attack_changes = num_changes - num_defense_changes
     num_users_total = len(np.unique(user))
 
-    return (num_changes, num_defense_changes, num_attack_changes, 
+    return (num_changes, 
+            num_defense_changes if not simple_notrans else None, 
+            num_attack_changes if not simple_notrans else None, 
             num_active_pix, 
-            num_differing_pixels, 
-            num_attackonly_users, num_defenseonly_users, num_attackdefense_users, num_users_total,
-            pixels,
-            returntime, time_attackflip)
+            num_differing_pixels if not simple_notrans else None, 
+            num_attackonly_users if not simple_notrans else None, 
+            num_defenseonly_users if not simple_notrans else None, 
+            num_attackdefense_users if not simple_notrans else None, 
+            num_users, num_users_total,
+            pixels if not simple_notrans else None, 
+            returntime if not simple_notrans else None,
+            time_attackflip if not simple_notrans else None)
 
 def save_part_over_time(cpart,
                         times, # in seconds
@@ -438,6 +448,7 @@ def save_part_over_time(cpart,
 
     if cpart.is_rectangle and remove_inactive:
         remove_inactive = False # no need of removing inactive (vs time) pixels in this case
+        act_coor_inds = np.arange(cpart.num_pix())
 
     pixchanges_coor_offset = cpart.pixchanges_coords_offset()
     xcoords = pixchanges_coor_offset[0]
@@ -448,6 +459,7 @@ def save_part_over_time(cpart,
     file_size_bmp = np.zeros(num_time_steps+1)
     file_size_png = np.zeros(num_time_steps+1)
     num_active_pix = np.zeros(num_time_steps+1)
+    num_differing_pixels = np.zeros(num_time_steps+1)
 
     if record_pixels:
         # 2d numpy arrays containing color indices for each pixel of the composition, at each time step
@@ -455,8 +467,8 @@ def save_part_over_time(cpart,
     else:
         pixels_vst = None
 
+    pixels_previous = cpart.white_image(2)
     pixels = cpart.white_image(2) # fill as white first # the pixels must be [y,x,rgb]
-        
     out_path = os.path.join(var.FIGS_PATH, cpart.out_name())
     out_path_time = os.path.join(out_path, 'VsTime')
     util.make_dir(out_path)
@@ -472,45 +484,49 @@ def save_part_over_time(cpart,
 
     i_fraction_print = 0  # only for output of a message when some fraction of the steps are ran
 
-    for t_step_idx in range(0, num_time_steps+1):  # fixed this: want a blank image at t=0
+    for t_step in range(0, num_time_steps+1):  # fixed this: want a blank image at t=0
         if print_progress:
-            if t_step_idx/num_time_steps > i_fraction_print/10:
+            if t_step/num_time_steps > i_fraction_print/10:
                 i_fraction_print += 1
-                print('Ran {:.2f}% of the steps'.format(100*t_step_idx/num_time_steps), end='\r')
+                print('Ran {:.2f}% of the steps'.format(100*t_step/num_time_steps), end='\r')
 
         # get the indices of the times within the interval
-        t_inds = cpart.intimerange_pixchanges_inds(times[t_step_idx - 1], times[t_step_idx]) # does NOT exclude inactive pixels
+        t_inds = cpart.intimerange_pixchanges_inds(times[t_step - 1], times[t_step]) # does NOT exclude inactive pixels
         t_inds_list.append(t_inds) # still needed?
         util.update_image(pixels, xcoords, ycoords, color, t_inds)
 
         # save image and file sizes
         if record_pixels:
-            pixels_vst[t_step_idx] = pixels
+            pixels_vst[t_step] = pixels
         if remove_inactive: # here, pixels are removed when they become inactive
-            act_coor_inds = cpart.active_coord_inds(times[t_step_idx-1], times[t_step_idx])
-            num_active_pix[t_step_idx] = len(act_coor_inds)
+            act_coor_inds = cpart.active_coord_inds(times[t_step-1], times[t_step])
+            num_active_pix[t_step] = len(act_coor_inds)
             pixels_out = cpart.white_image(2)
             coords = cpart.coords_offset()[:, act_coor_inds]
             pixels_out[coords[1], coords[0]] = pixels[coords[1], coords[0]]
         else:
-            num_active_pix[t_step_idx] = cpart.coords.shape[1]
+            num_active_pix[t_step] = cpart.coords.shape[1]
             pixels_out = pixels
-        namecore = 'canvaspart_time{:06d}'.format(int(times[t_step_idx]))
+        
+        num_differing_pixels[t_step] = count_image_differences(pixels, pixels_previous, cpart, act_coor_inds) if (num_active_pix[t_step] != 0 or cpart.is_rectangle) else 0
+        pixels_previous = np.copy(pixels)
+
+        namecore = 'canvaspart_time{:06d}'.format(int(times[t_step]))
         _, impath_png, impath_bmp = util.pixels_to_image(pixels_out, out_path_time, namecore + '.png', namecore + '.bmp')
         
-        file_size_png[t_step_idx] = util.get_file_size(impath_png)
-        file_size_bmp[t_step_idx] = util.get_file_size(impath_bmp)
+        file_size_png[t_step] = util.get_file_size(impath_png)
+        file_size_bmp[t_step] = util.get_file_size(impath_bmp)
         if delete_bmp:
             os.remove(impath_bmp)
         if delete_png:
             os.remove(impath_png)
 
         if show_plot:
-            if t_step_idx>-1:
+            if t_step>-1:
                 if len(ax.shape) == 2:
                     ax_single = ax[rowcount, colcount]
                 else:
-                    ax_single = ax[t_step_idx]
+                    ax_single = ax[t_step]
                 ax_single.axis('off')
                 plot.show_canvas_part(util.get_rgb(pixels), ax=ax_single)
 
@@ -522,5 +538,5 @@ def save_part_over_time(cpart,
 
     if print_progress:
         print('          produced', num_time_steps, 'images vs time ')
-    return [file_size_bmp, file_size_png, pixels_vst, num_active_pix, t_inds_list # do we still need t_inds_list?
+    return [file_size_bmp, file_size_png, pixels_vst, num_active_pix, num_differing_pixels, t_inds_list # do we still need t_inds_list?
     ]
