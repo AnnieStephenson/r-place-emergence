@@ -569,7 +569,7 @@ class CanvasPart(object):
         ''' Returns standard name used to identify the composition (used in output paths).
         Is unique, except for user-defined border_path areas that are not rectangles.'''
         if self.id != '':
-            return self.id
+            return str(self.id)
         elif self.is_rectangle:
             return 'rectangle_'+str(self.xmin)+'.'+str(self.ymin)+'_to_'+str(self.xmax)+'.'+str(self.ymax)
         else:

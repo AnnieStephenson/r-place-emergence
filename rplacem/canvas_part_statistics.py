@@ -445,7 +445,7 @@ class CanvasPartStatistics(object):
                 
                 returnt = res[11]
                 time_newattack = res[12]
-                timebin_ind = np.digitize(time_newattack, self.t_ranges)
+                timebin_ind = np.digitize(time_newattack, self.t_ranges) - 1
                 for j in range(0, self.n_t_bins): # initialize with empty lists           
                     self.returntime_tbinned[i][j] = []
                 for j in range(0, len(returnt)): # fill the histogram-like array using the result from np.digitize

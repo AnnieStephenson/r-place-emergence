@@ -100,14 +100,16 @@ plt.savefig(os.path.join(var.FIGS_PATH, 'bmpfilesize_over_npix_onlyrectangles.pn
 '''
 canpart = cp.CanvasPart(
                         #border_path=[[[0, 0], [0, 1999], [1999, 1999], [1999, 0]]],
-                        id='000006', 
+                        id='twt65q', 
                         pixel_changes_all=pixel_changes_all,
                         verbose=True, save=True)
+
 
 cpstat = stat.CanvasPartStatistics(canpart, n_tbins=400, n_tbins_trans=150,
                                     compute_vars={'stability': 2, 'mean_stability': 2, 'entropy' : 2, 'transitions' : 2, 'attackdefense' : 2},
                                     verbose=True, dont_keep_dir=False)
 
+'''
 plt.figure()
 plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.diff_pixels_vst_norm)
 sns.despine()
@@ -174,7 +176,7 @@ plt.ylim([8,3000])
 plt.xlim([0000, 300000])
 plt.vlines(x = [cpstat.transition_times[0][0], cpstat.transition_times[0][1], cpstat.transition_times[0][2], cpstat.transition_times[0][3]], ymin=0, ymax=1600, colors = 'black', linestyle='dashed')
 plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'mean_pixel_recovery_time.png'))
-
+'''
 
 '''
 ntrans = 0
