@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import rplacem.canvas_part as cp
+import rplacem.transitions as trans
 import rplacem.canvas_part_statistics as stat
 import rplacem.compute_variables as comp
 import matplotlib.colors as pltcolors
@@ -98,6 +99,8 @@ plt.savefig(os.path.join(var.FIGS_PATH, 'bmpfilesize_over_npix_onlyrectangles.pn
 
 
 '''
+
+'''
 canpart = cp.CanvasPart(
                         #border_path=[[[0, 0], [0, 1999], [1999, 1999], [1999, 0]]],
                         id='twt65q', 
@@ -108,6 +111,15 @@ canpart = cp.CanvasPart(
 cpstat = stat.CanvasPartStatistics(canpart, n_tbins=400, n_tbins_trans=150,
                                     compute_vars={'stability': 2, 'mean_stability': 2, 'entropy' : 2, 'transitions' : 2, 'attackdefense' : 2},
                                     verbose=True, dont_keep_dir=False)
+'''
+
+file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all.pickle') 
+with open(file_path, 'rb') as f:
+    cpstats = pickle.load(f)
+cpstat = cpstats[5]
+print(cpstat)
+
+trans.transition_start_time(cpstat, 0)
 
 '''
 plt.figure()

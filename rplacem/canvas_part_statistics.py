@@ -165,7 +165,7 @@ class CanvasPartStatistics(object):
     num_users_vst : 1d array of int of length n_t_bins
         number of users that changed any pixels in this composition in each time range
             Set in comp.num_changes_and_users(), in count_attack_defense_events()
-    num_users_norm : same as num_users, normalized by t_norm and area_vst
+    num_users_norm : same as num_users_vst, normalized by t_norm and area_vst
     frac_attackonly_users, frac_defenseonly_users, frac_bothattdef_users : 1d array of floats of length n_t_bins
         fraction of num_users that contributed pixels that are consistent (defenseonly) with
         refimage_pretrans, or not (attackonly), or fraction of users that did both (bothattdef)
