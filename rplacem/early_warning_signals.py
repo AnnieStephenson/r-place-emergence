@@ -6,6 +6,7 @@ import rplacem.variables_rplace2022 as var
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import math
 
 class EarlyWarnSignals(object):
     '''
@@ -161,6 +162,7 @@ class EarlyWarnSignals(object):
         ews_type3 = np.logical_and(ews_type1, ews_type2).astype(int)
         
         return ews_type1, ews_type2, ews_type3 
+    
 
 ####### OUTSIDE CLASS #############
 
@@ -310,3 +312,32 @@ def plot_ews_offset_types(ews_offset,
         plt.ylabel(labels[ews_var_ind])
         plt.xlabel('Time bin')
         plt.title('type 3')
+
+def ratio_to_slidingmean(ewsvar, tint, slidingrange=36000):
+    sliding_indrange = math.ceil(slidingrange / tint)
+    # mean over sliding window
+    mean_slided = np.array( pd.Series(ewsvar).rolling(window=sliding_indrange).mean() )
+    # average over existing points when t<slidingrange
+    for i in range(1, sliding_indrange):
+        mean_slided[i] = np.mean(ewsvar[:i+1])
+    # want to look at the past only, so offset of 1 time index
+    mean_slided = np.roll(mean_slided, 1)
+    mean_slided[0] = ewsvar[0] # ratio =1 for first value
+
+    # protection against zero mean
+    with np.errstate(divide='ignore', invalid='ignore'):
+        res = ewsvar / mean_slided
+    res[mean_slided == 0] = 1
+
+    return res
+
+def firing_times(ewsvar, earlyness, thres, tint, slidingrange=36000, excludetime_beg = 18000):
+    exclude_beg = np.arange(0, math.ceil(excludetime_beg / tint)) #exclude first 5 hours
+
+    ratio_to_mean = ratio_to_slidingmean(ewsvar, tint, slidingrange)
+    if thres > 1:
+        fire_timeind = np.where(ratio_to_mean > thres)
+    else:
+        fire_timeind = np.where(ratio_to_mean < thres)
+    
+    
