@@ -48,7 +48,6 @@ def store_comp_stats(beg, end):
             compute_v = {'stability': 1, 'mean_stability': 2, 'entropy' : 1, 'transitions' : 0, 'attackdefense' : 0.5}
 
         #print('mid1:  RAM memory % used:', psutil.virtual_memory()[2],   '   ',psutil.virtual_memory()[3]/1000000000)
-
         canvas_comp_stat = stat.CanvasPartStatistics(canvas_compositions_all[i],
                                                     n_tbins=750,
                                                     n_tbins_trans=150,
@@ -60,7 +59,7 @@ def store_comp_stats(beg, end):
                                                     verbose=False,
                                                     renew=True,
                                                     dont_keep_dir=True)
-        
+
         if canvas_comp_stat.compute_vars['transitions'] == 0:                                        
             canvas_comp_stat.num_transitions == 0                               
 
@@ -72,7 +71,8 @@ def store_comp_stats(beg, end):
         periodsave = 100
         if (((beg+i) % periodsave) == periodsave-1) or (i == len(canvas_compositions_all)-1):
             print('save')
-            file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_%sto%s.pickle' %(str(beg+i-(periodsave-1)), str(beg+i))) #str(int(end)-1)))
+            begstr = str(beg+i-(periodsave-1)) if atlas_num - beg - i >= periodsave else str(atlas_num - ((beg+i+1) % periodsave))
+            file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_%sto%s.pickle' %(begstr, str(beg+i))) #str(int(end)-1)))
             with open(file_path, 'wb') as handle:
                 pickle.dump(canvas_comp_stat_list,
                             handle,
@@ -91,4 +91,11 @@ parser.add_argument("-b", "--beginning", default=0)
 parser.add_argument("-e", "--end", default=1e6)
 args = parser.parse_args()
 
-store_comp_stats(args.beginning, args.end)
+#store_comp_stats(args.beginning, args.end)
+
+beg = np.array([i*100 for i in range(0,100)]) #until 9900
+end = beg+99
+end[-1] = atlas_num - 1
+filelist = [ os.path.join(var.DATA_PATH, 'canvas_composition_statistics_%sto%s.pickle' %(b, e)) for b,e in zip(list(beg),list(end))]
+print(filelist)
+util.merge_pickles(filelist, os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all.pickle' ))

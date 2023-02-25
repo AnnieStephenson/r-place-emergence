@@ -7,6 +7,7 @@ import rplacem.variables_rplace2022 as var
 import json
 import shutil
 from PIL import Image
+import pickle
 
 def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
     '''
