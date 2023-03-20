@@ -81,6 +81,8 @@ def stability(cpart,
               save_pickle=False,
               compute_average=True,
               print_progress=True,
+              sliding_window_time=None,
+              prev_stab_col=None,
               t_unit=300
               ):
     '''
@@ -120,6 +122,7 @@ def stability(cpart,
     stability_vs_time = np.zeros(len(t_lims)-1)
     instab_vs_time_norm = np.zeros(len(t_lims)-1)
     diff_pixels_vst = np.zeros(len(t_lims)-1)
+    coor_offset = cpart.coords_offset()
     if create_images:
         util.make_dir(os.path.join(var.FIGS_PATH, cpart.out_name()))
         util.make_dir(os.path.join(var.FIGS_PATH, cpart.out_name(), 'VsTimeStab'))
@@ -128,7 +131,6 @@ def stability(cpart,
         pixels1 = cpart.white_image(3, images_number=len(t_lims)-1)
         pixels2 = cpart.white_image(3, images_number=len(t_lims)-1)
         pixels3 = cpart.white_image(3, images_number=len(t_lims)-1)
-        coor_offset = cpart.coords_offset()
         def modify_some_pixels(start, target, step, indices):
             ''' start and target are 1d arrays of 2d images. 
             Coordinates at given indices in [start] must be replaced by the content of [target]'''
@@ -144,7 +146,20 @@ def stability(cpart,
                 print('Ran {:.2f}% of the steps'.format(100*t_step/len(t_lims)), end='\r')
 
         # get indices of all pixel changes that happen in the step
-        t_inds = cpart.intimerange_pixchanges_inds(t_lims[t_step], t_lims[t_step+1])
+        # t_inds = cpart.intimerange_pixchanges_inds(t_lims[t_step], t_lims[t_step+1])
+        if sliding_window_time is not None:
+            t_int_start = t_lims[t_step]
+            if t_int_start<1:
+                 t_int_start=0
+            t_int_end = t_lims[t_step]+sliding_window_time
+            if t_int_end>t_lims[-1]:
+                t_int_end=t_lims[-1]
+        else:
+            print('here')
+            t_int_start = t_lims[t_step] # need to shift for loop
+            t_int_end =t_lims[t_step+1] 
+        #print(t_int_end)
+        t_inds = cpart.intimerange_pixchanges_inds(t_int_start, t_int_end)
 
         # time spent for each pixel in each of the 32 colors
         time_spent_in_color = np.zeros((cpart.num_pix(), var.NUM_COLORS), dtype='float64')
@@ -170,7 +185,7 @@ def stability(cpart,
             current_color[coor_idx] = c
 
         # add the time spent in the final color (from the last pixel change to the end-time)
-        time_spent_in_color[coord_range, current_color] += np.maximum(t_lims[t_step+1] - last_time_changed, 0)
+        time_spent_in_color[coord_range, current_color] += np.maximum(t_int_end - last_time_changed, 0)
 
         # get the color where pixels spent the most time
         stable_colors = np.flip(np.argsort(time_spent_in_color, axis=1), axis=1)
@@ -200,7 +215,7 @@ def stability(cpart,
 
         # save full result to pickle file
         if save_pickle:
-            file_path = os.path.join(var.DATA_PATH, 'stability_' + cpart.out_name() + '_time{:06d}to{:06d}.pickle'.format(int(t_lims[t_step]), int(t_lims[t_step+1])))
+            file_path = os.path.join(var.DATA_PATH, 'stability_' + cpart.out_name() + '_time{:06d}to{:06d}.pickle'.format(int(t_int_start), int(t_int_end)))
             with open(file_path, 'wb') as handle:
                 pickle.dump([stable_timefraction,
                             stable_colors],
@@ -208,7 +223,12 @@ def stability(cpart,
                             protocol=pickle.HIGHEST_PROTOCOL)
 
         diff_pixels_vst[t_step] = np.count_nonzero(stable_colors[:,0] - previous_stable_colors[:])
-        previous_stable_colors = stable_colors[:,0]
+        #previous_stable_colors = stable_colors[:,0]
+        if prev_stab_col is not None:
+             previous_stable_colors = prev_stab_col[t_step-1, coor_offset[1], coor_offset[0]]
+        else:
+             previous_stable_colors = stable_colors[:,0] 
+        #previous_stable_colors = stable_colors[:,0]
 
         # create images containing the (sub)dominant color only
         if create_images:
@@ -224,7 +244,7 @@ def stability(cpart,
 
             # save images
             if save_images:
-                timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_lims[t_step]), int(t_lims[t_step+1]))
+                timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_int_start), int(t_int_end))
                 util.pixels_to_image( pixels1[t_step], os.path.join(cpart.out_name(), 'VsTimeStab'), 'MostStableColor_' + timerange_str + '.png')
                 util.pixels_to_image( pixels2[t_step], os.path.join(cpart.out_name(), 'VsTimeStab'), 'SecondMostStableColor_' + timerange_str + '.png')
                 util.pixels_to_image( pixels3[t_step], os.path.join(cpart.out_name(), 'VsTimeStab'), 'ThirdMostStableColor_' + timerange_str + '.png')
@@ -448,7 +468,7 @@ def save_part_over_time(cpart,
 
     if cpart.is_rectangle and remove_inactive:
         remove_inactive = False # no need of removing inactive (vs time) pixels in this case
-        act_coor_inds = np.arange(cpart.num_pix())
+    act_coor_inds = np.arange(cpart.num_pix())
 
     pixchanges_coor_offset = cpart.pixchanges_coords_offset()
     xcoords = pixchanges_coor_offset[0]
@@ -513,6 +533,7 @@ def save_part_over_time(cpart,
 
         namecore = 'canvaspart_time{:06d}'.format(int(times[t_step]))
         _, impath_png, impath_bmp = util.pixels_to_image(pixels_out, out_path_time, namecore + '.png', namecore + '.bmp')
+        print(impath_png)
         
         file_size_png[t_step] = util.get_file_size(impath_png)
         file_size_bmp[t_step] = util.get_file_size(impath_bmp)
