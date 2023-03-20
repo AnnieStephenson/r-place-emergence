@@ -189,35 +189,42 @@ def transition_and_reference_image(canpart,
     return (avimage_pre, avimage_trans, avimage_post, 
             num_differing_pixels, transitions[0], transitions[1])
 
-def transition_start_time(cpstat, numtrans=0):
+def transition_start_time(cpstat):
 
-    vars = [cpstat.num_pixchanges_norm[numtrans],
-                cpstat.ratio_attdef_changes[numtrans] - 1,
-                cpstat.num_users_norm[numtrans],
-                cpstat.returntime_median_overln2[numtrans],
-                cpstat.instability_vst_norm,
-                cpstat.diff_stable_pixels_vst_norm,
-                cpstat.frac_attackonly_users[numtrans] - 1,
-                cpstat.entropy_vst,
-                ]
-    
-    tranges = cpstat.t_ranges
-    # give indices of the transition times
-    trans_tind = np.digitize(cpstat.transition_times[numtrans] , tranges) 
+    numtrans = cpstat.num_transitions
+    mean_halfmaxtime = np.empty(numtrans)
+    median_halfmaxtime = np.empty(numtrans)
+    rms_halfmaxtime = np.empty(numtrans)
 
-    halfmax_tind = np.zeros(len(vars), np.int32)
-    for i in range(len(vars)):
-        # max of vars over transition time range
-        maxi = np.max(vars[i][trans_tind[2] - 1 : trans_tind[3]])
-        # look for the time at which vars reaches halfmax value, starting search from end of pre-trans stable period
-        halfmax_tind[i] = trans_tind[1] + np.argmax(vars[i][ trans_tind[1]:trans_tind[3] ] > maxi / 2) # argmax will stop at the first True that is found
-        #print(maxi/2, halfmax_tind[i] , vars[i][halfmax_tind[i]-1], vars[i][halfmax_tind[i]], vars[i][halfmax_tind[i]+1])
+    for tr in np.arange(0, numtrans):
+        vars = [cpstat.num_pixchanges_norm[tr],
+                    cpstat.ratio_attdef_changes[tr] - 1,
+                    cpstat.num_users_norm[tr],
+                    cpstat.returntime_median_overln2[tr],
+                    cpstat.instability_vst_norm,
+                    cpstat.diff_stable_pixels_vst_norm,
+                    cpstat.frac_attackonly_users[tr] - 1,
+                    cpstat.entropy_vst,
+                    ]
+        if tr == 0:
+            halfmax_tind = np.empty((numtrans, len(vars)), np.int32)
+            
+        tranges = cpstat.t_ranges
+        # give indices of the transition times
+        trans_tind = np.digitize(cpstat.transition_times[tr] , tranges) 
 
-    mean_halfmaxtime = np.mean(tranges[halfmax_tind])
-    median_halfmaxtime = np.median(tranges[halfmax_tind])
-    rms_halfmaxtime = np.std(tranges[halfmax_tind])
-    #print(tranges[halfmax_tind], mean_halfmaxtime, rms_halfmaxtime, median_halfmaxtime)
-    #print(cpstat.transition_times[numtrans][2:4])
+        for i in range(len(vars)):
+            # max of vars over transition time range
+            maxi = np.max(vars[i][trans_tind[2] - 1 : trans_tind[3]])
+            # look for the time at which vars reaches halfmax value, starting search from end of pre-trans stable period
+            halfmax_tind[tr][i] = trans_tind[1] + np.argmax(vars[i][ trans_tind[1]:trans_tind[3] ] > maxi / 2) # argmax will stop at the first True that is found
+            #print(maxi/2, halfmax_tind[tr][i] , vars[i][halfmax_tind[tr][i]-1], vars[i][halfmax_tind[tr][i]], vars[i][halfmax_tind[tr][i]+1])
+
+        mean_halfmaxtime[tr] = np.mean(tranges[halfmax_tind[tr]])
+        median_halfmaxtime[tr] = np.median(tranges[halfmax_tind[tr]])
+        rms_halfmaxtime[tr] = np.std(tranges[halfmax_tind[tr]])
+        #print(tranges[halfmax_tind[tr]], mean_halfmaxtime, rms_halfmaxtime, median_halfmaxtime)
+        #print(cpstat.transition_times[tr][2:4])
 
     return halfmax_tind, mean_halfmaxtime, median_halfmaxtime, rms_halfmaxtime
         

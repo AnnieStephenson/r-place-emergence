@@ -3,6 +3,7 @@ import os
 import rplacem.canvas_part as cp
 import rplacem.transitions as trans
 import rplacem.canvas_part_statistics as stat
+import rplacem.early_warning_signals as ews
 import rplacem.compute_variables as comp
 import matplotlib.colors as pltcolors
 import rplacem.utilities as util
@@ -103,13 +104,13 @@ plt.savefig(os.path.join(var.FIGS_PATH, 'bmpfilesize_over_npix_onlyrectangles.pn
 '''
 canpart = cp.CanvasPart(
                         #border_path=[[[0, 0], [0, 1999], [1999, 1999], [1999, 0]]],
-                        id='twt65q', 
+                        id='000006', 
                         pixel_changes_all=pixel_changes_all,
                         verbose=True, save=True)
 
 
-cpstat = stat.CanvasPartStatistics(canpart, n_tbins=400, n_tbins_trans=150,
-                                    compute_vars={'stability': 2, 'mean_stability': 2, 'entropy' : 2, 'transitions' : 2, 'attackdefense' : 2},
+cpstat = stat.CanvasPartStatistics(canpart, n_tbins=2000, n_tbins_trans=150,
+                                    compute_vars={'stability': 1, 'mean_stability': 2, 'entropy' : 3, 'transitions' : 2, 'attackdefense' : 1},
                                     verbose=True, dont_keep_dir=False)
 '''
 
@@ -117,11 +118,29 @@ file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all.pickl
 with open(file_path, 'rb') as f:
     cpstats = pickle.load(f)
 cpstat = cpstats[5]
-print(cpstat)
 
-trans.transition_start_time(cpstat, 0)
+#trans.transition_start_time(cpstat)
+
+#varchange = ews.ratio_to_slidingmean(cpstat.diff_stable_pixels_vst, cpstat.t_interval, slidingrange=21600)
+
+#ews.ews_2Dsignificance_1comp(cpstat, cpstat.diff_stable_pixels_vst, 'differing_stable_pixels')
+ews.ews_2Dsignificance_allcomp(cpstats, warning_cooldown = 14400, ews_slidingwindow=4000)
+
+#print(ews.firing_times(cpstat, cpstat.diff_stable_pixels_vst, 300, 27))
 
 '''
+plt.figure()
+plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, varchange)
+sns.despine()
+plt.ylabel('diff_stable_pixels_vst ratio to preceding 10h-average')
+plt.xlabel('Time [s]')
+plt.yscale('log')
+plt.ylim([5e-3, 1.1*max(varchange)])
+plt.yscale('log')
+plt.xlim([0, var.TIME_TOTAL])
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Number_of_differing_pixels_vst__ratio_to_6haverage.png'))
+
+
 plt.figure()
 plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.diff_pixels_vst_norm)
 sns.despine()
@@ -129,7 +148,7 @@ plt.ylabel('# of pixels different from previous time step / area / 5 min')
 plt.xlabel('Time [s]')
 plt.ylim([0, 1.1*max(cpstat.diff_pixels_vst_norm)])
 plt.xlim([0, var.TIME_TOTAL])
-plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'Number_of_differing_pixels_vst.png'))
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Number_of_differing_pixels_vst.png'))
 
 plt.figure()
 plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.diff_stable_pixels_vst_norm)
@@ -138,7 +157,7 @@ plt.ylabel('# of pixels different from previous stable image / area / 5 min')
 plt.xlabel('Time [s]')
 plt.ylim([0, 1.1*max(cpstat.diff_stable_pixels_vst_norm)])
 plt.xlim([0, var.TIME_TOTAL])
-plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'Number_of_differing_stable_pixels_vst.png'))
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Number_of_differing_stable_pixels_vst.png'))
 
 plt.figure()
 plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.ratio_attdef_changes[0])
@@ -147,8 +166,10 @@ plt.ylabel('attack changes / defense changes')
 plt.xlabel('Time [s]')
 plt.ylim([0,4])
 plt.xlim([0, var.TIME_TOTAL])
-plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'attack_defense_pixelchanges_ratio.png'))
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'attack_defense_pixelchanges_ratio.png'))
+'''
 
+'''
 fig, ax = plt.subplots()
 nbinsret = 100
 tmaxret = 10000

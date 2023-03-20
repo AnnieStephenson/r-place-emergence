@@ -1,11 +1,15 @@
 import numpy as np
+import os
 import rplacem.canvas_part as cp
 import rplacem.utilities as util
 import rplacem.canvas_part_statistics as stat
 import rplacem.variables_rplace2022 as var
+import rplacem.transitions as trans
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import math
+import matplotlib.colors as pltcolors
 
 class EarlyWarnSignals(object):
     '''
@@ -58,30 +62,6 @@ class EarlyWarnSignals(object):
         self.ews_type3 = ews_type3
 
 
-    def calc_variance(self, x, time_window):
-        '''
-        calculates the variance vs time of the state variable
-        '''
-        x = pd.Series(x)
-        variance = x.rolling(window=time_window).var()
-        return np.array(variance)
-        
-    def calc_skewness(self, x, time_window):
-        '''
-        calculates the skewness vs time of the state variable
-        '''
-        x = pd.Series(x)
-        skewness = x.rolling(window=time_window).skew()
-        return np.array(skewness)
-
-    def calc_autocorrelation(self, x, time_window):
-        '''
-        calculates the skewness vs time of the state variable
-        '''
-        x = pd.Series(x)
-        autocorrelation = x.rolling(window=time_window).apply(lambda y: y.autocorr())
-        return np.array(autocorrelation)
-
     def calc_ews(self, canvas_part_stat, state_vars = None):
         '''    
         calculates all the EWS vs time for all the state variables 
@@ -115,9 +95,9 @@ class EarlyWarnSignals(object):
                     x = state_vars[i][j]
                 else: 
                     x = state_vars[i]
-                ews[0,j,i,:] = self.calc_variance(x, self.time_window)
-                ews[1,j,i,:] = self.calc_skewness(x, self.time_window)
-                ews[2,j,i,:] = self.calc_autocorrelation(x, self.time_window)
+                ews[0,j,i,:] = calc_variance(x, self.time_window)
+                ews[1,j,i,:] = calc_skewness(x, self.time_window)
+                ews[2,j,i,:] = calc_autocorrelation(x, self.time_window)
         
         return ews, state_vars  
 
@@ -161,8 +141,33 @@ class EarlyWarnSignals(object):
         ews_type3 = np.logical_and(ews_type1, ews_type2).astype(int)
         
         return ews_type1, ews_type2, ews_type3 
+    
 
 ####### OUTSIDE CLASS #############
+
+def calc_variance(x, time_window):
+    '''
+    calculates the variance vs time of the state variable
+    '''
+    x = pd.Series(x)
+    variance = x.rolling(window=time_window).var()
+    return np.array(variance)
+    
+def calc_skewness(x, time_window):
+    '''
+    calculates the skewness vs time of the state variable
+    '''
+    x = pd.Series(x)
+    skewness = x.rolling(window=time_window).skew()
+    return np.array(skewness)
+
+def calc_autocorrelation(x, time_window):
+    '''
+    calculates the skewness vs time of the state variable
+    '''
+    x = pd.Series(x)
+    autocorrelation = x.rolling(window=time_window).apply(lambda y: y.autocorr())
+    return np.array(autocorrelation)
 
 def calc_ews_shift(canvas_comp_stat_list, early_warn_signals_list,
                    time_padding=20):
@@ -310,3 +315,198 @@ def plot_ews_offset_types(ews_offset,
         plt.ylabel(labels[ews_var_ind])
         plt.xlabel('Time bin')
         plt.title('type 3')
+
+def ratio_to_slidingmean(ewsvar, tint, slidingrange=36000):
+    '''Ratio of value of [ewsvar] at time t to the average of [ewsvar] over the range [t, t-slidingrange] '''
+    sliding_indrange = math.ceil(slidingrange / tint)
+    # mean over sliding window
+    mean_slided = np.array( pd.Series(ewsvar).rolling(window=sliding_indrange).mean() )
+    # average over existing points when t<slidingrange
+    for i in range(1, sliding_indrange):
+        mean_slided[i] = np.mean(ewsvar[:i+1])
+    # want to look at the past only, so offset of 1 time index
+    mean_slided = np.roll(mean_slided, 1)
+    mean_slided[0] = ewsvar[0] # ratio =1 for first value
+
+    # protection against zero mean
+    with np.errstate(divide='ignore', invalid='ignore'):
+        res = ewsvar / mean_slided
+    res[mean_slided == 0] = 1
+
+    return res
+
+def firing_times(cpstat, ewsvar, earlyness, thres, slidingrange=21600, warning_cooldown=14400):
+    '''Computes the times at which a given ews is firing.
+    Returns the times of good firings and of all firings (including false positives), 
+    and the ratio of their number.
+    
+    ewsvar, cpstat: ews variable and CanvasPartStatistics object to be tested
+    earlyness: how far away from the beginning of the transition must the warning be
+    thres: threshold on the ratio of the input variable [ewsvar] to its preceding sliding average
+        to fire a warning
+    slidingrange: range on which ewsvar is averaged before the current value
+    warning_cooldown: both the min distance between two warnings, 
+        and the max distance between a good warning and transition_time
+    '''
+
+    tint = cpstat.t_interval
+    numtrans = cpstat.num_transitions
+    slidingrange_ind = math.ceil(slidingrange / tint)
+    # exclude first slidingrange hours
+    exclude_beg = np.arange(0, slidingrange_ind)
+    # exclude times with no active pixels, plus a safe slidingrange time afterwards
+    exclude_inactive = np.where(cpstat.area_vst == 0)[0]
+    if len(exclude_inactive) == 0:
+        exclude_afterinactive = np.array([])
+    else:  
+        last_inactive = np.max(exclude_inactive)
+        exclude_afterinactive = last_inactive + 1 + exclude_beg
+        exclude_afterinactive = np.minimum(exclude_afterinactive, cpstat.n_t_bins - 1) # cap values at length of t_ranges
+    # exclude white only times
+    exclude_end = np.arange(math.floor((var.TIME_WHITEONLY - earlyness) / tint), math.ceil(var.TIME_TOTAL / tint))
+    # exclude time within [earlyness] time before transition, and [slidingrange] time after transition
+    _, mean_trans_starttime, median_trans_starttime, _ = trans.transition_start_time(cpstat)
+    exclude_trans = []
+    for tr in range(0, numtrans):
+        exclude_trans.append( np.arange(math.floor((median_trans_starttime[tr] - earlyness) / tint), 
+                                        math.ceil((cpstat.transition_times[tr][3] + slidingrange) / tint)) )
+    # gather all excluded indices
+    exclude_all_trans = np.concatenate(exclude_trans)
+    exclude_inds = np.unique(np.concatenate((exclude_beg, exclude_end, exclude_inactive, exclude_afterinactive, exclude_all_trans)))
+    mask_inds = np.full((len(ewsvar)), True, dtype=np.bool_)
+    mask_inds[np.array(exclude_inds, dtype=int)] = False
+
+    # get time indices at which the threshold is exceeded 
+    ratio_to_mean = ratio_to_slidingmean(ewsvar, tint, slidingrange)
+    if thres > 1:
+        fire_timeind = np.where((ratio_to_mean > thres) & mask_inds)[0]
+    else:
+        fire_timeind = np.where((ratio_to_mean < thres) & mask_inds)[0]
+    fire_timeind = np.sort(fire_timeind)
+    # count how many ranges of size [warning_cooldown] contain at least 1 firing, followed or not by a transition
+    prev_warns = []
+    prev_goodwarns = []
+    for t in fire_timeind:
+        fire_t = cpstat.t_ranges[t]
+        # reject firings that are too close to a previous warning
+        iswarn = (len(prev_warns) == 0) or (fire_t >= prev_warns[-1] + warning_cooldown)
+        if iswarn:
+            prev_warns.append(fire_t) 
+
+            # is this a good warning? accept times between transt-cooldown and transt-earlyness
+            for trans_t in median_trans_starttime:
+                if trans_t - warning_cooldown < fire_t and fire_t <= trans_t - earlyness:
+                    prev_goodwarns.append(fire_t) 
+                    break
+            
+    ratio_out = len(prev_goodwarns) / len(prev_warns) if len(prev_warns) > 0 else 0
+    return ratio_out, prev_warns, prev_goodwarns
+
+def ews_2Dsignificance_1comp(cpstat, ewsvar, val_thres, val_earlyness, warning_cooldown, vname=''):
+
+    num_val_earlyness = len(val_earlyness)
+    num_val_thres = len(val_thres)
+    signif = np.zeros((num_val_thres, num_val_earlyness))
+    for thres_ind in np.arange(0, num_val_thres):
+        for earlyn_ind in np.arange(0, num_val_earlyness):
+            thres = val_thres[thres_ind]
+            earlyn = val_earlyness[earlyn_ind]
+            signif[thres_ind, earlyn_ind] = firing_times(cpstat, ewsvar, earlyn, thres, slidingrange=21600, warning_cooldown=warning_cooldown)[0]
+            #print(thres, earlyn, signif[thres_ind, earlyn_ind])
+
+    if vname != '':
+        # plot 2d significance
+        plt.pcolormesh( val_earlyness, val_thres, signif, 
+                        cmap=plt.cm.jet)#, norm=pltcolors.LogNorm(vmin=0.95, vmax=700))
+        plt.ylabel('threshold on ratio to preceding sliding mean')
+        plt.xlabel('earlyness [s]')
+        plt.yscale('log')
+        plt.xscale('log')
+        #plt.ticklabel_format(style='scientific')
+        plt.colorbar(label='# good warnings / # total warnings')
+        plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'EWS_significance_'+vname+'.png'))
+
+    return signif
+
+def ews_2Dsignificance_allcomp(cpstats, warning_cooldown = 14400, ews_slidingwindow=4000):
+    
+    tint = cpstats[0].t_interval # time rnages should be the same for all compos
+    sliding_window = math.ceil(ews_slidingwindow / tint)
+
+    # define threshold and earlyness ranges of values
+    num_val_thres = 20
+    val_thres1 = np.logspace(-2, 0, int(num_val_thres/2)) # log binning from 1e-2 to 1e3
+    val_thres2 = np.logspace(0, 2.5, int(num_val_thres/2) + 1)[1:]
+    val_thres = np.concatenate((val_thres1, val_thres2))
+    val_earlyness = np.hstack((np.array([tint / 2]),
+                               np.arange(tint, 5*tint, tint),
+                               np.arange(5*tint, 7200, 2*tint),
+                               np.arange(7200, warning_cooldown, 1800)))
+
+    varnames = [
+                'number_pixelchanges',
+                'number_pixelchanges_variance',
+                'number_pixelchanges_skewness',
+                'number_pixelchanges_autocorrelation',
+                'ratio_attacktodefense_pixelchanges',
+                'number_user',
+                'number_user_variance',
+                'number_user_skewness',
+                'number_user_autocorrelation',
+                'fraction_users_onlyattacking',
+                'median_returntime',
+                'instability',
+                'number_pixels_differing_from_previoustime',
+                'entropy'
+                ]
+    numvar = len(varnames)
+    
+    # 2D significance averaged over all compos, for each variable
+    signif = np.zeros((numvar, len(val_thres), len(val_earlyness)))
+
+    # Loop on CanvasPartStatistics objects
+    num_cpstat = 0
+    for cpstat in cpstats:
+        if cpstat.num_transitions == 0 or cpstat.num_transitions is None or cpstat.area < 200:
+            continue
+        num_cpstat += 1
+        print(num_cpstat, cpstat.id)
+        # TODO: should think about how to take into account these variables using another transition than the first
+        tr = 0
+        vars = [cpstat.num_pixchanges_norm[tr],
+                calc_variance(cpstat.num_pixchanges_norm[tr], sliding_window),
+                calc_skewness(cpstat.num_pixchanges_norm[tr], sliding_window),
+                calc_autocorrelation(cpstat.num_pixchanges_norm[tr], sliding_window),
+                cpstat.ratio_attdef_changes[tr],
+                cpstat.num_users_norm[tr],
+                calc_variance(cpstat.num_users_norm[tr], sliding_window),
+                calc_skewness(cpstat.num_users_norm[tr], sliding_window),
+                calc_autocorrelation(cpstat.num_users_norm[tr], sliding_window),
+                cpstat.frac_attackonly_users[tr],
+                cpstat.returntime_median_overln2[tr],
+                cpstat.instability_vst_norm,
+                cpstat.diff_stable_pixels_vst_norm,
+                cpstat.entropy_vst
+                ]
+        for iv in range(0, numvar):
+            v = vars[iv]
+            #print(varnames[iv])
+            signif[iv] += ews_2Dsignificance_1comp(cpstat, v, val_thres, val_earlyness, warning_cooldown)
+    
+    signif /= num_cpstat
+
+    for iv in range(0, numvar):
+        vname = varnames[iv]
+        # plot 2d significance
+        plt.clf()
+        plt.pcolormesh( val_earlyness, val_thres, signif[iv], 
+                        cmap=plt.cm.jet)#, norm=pltcolors.LogNorm(vmin=0.95, vmax=700))
+        plt.ylabel('threshold on ratio to preceding sliding mean')
+        plt.xlabel('earlyness [s]')
+        plt.yscale('log')
+        plt.xscale('log')
+        #plt.ticklabel_format(style='scientific')
+        plt.colorbar(label='average_all_compos( # good warnings / # total warnings )')
+        plt.savefig(os.path.join(var.FIGS_PATH, 'EWS_significance_'+vname+'.png'))
+
+    return signif, varnames
