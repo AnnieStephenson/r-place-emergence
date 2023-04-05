@@ -9,6 +9,7 @@ import shutil
 from PIL import Image
 import pickle
 
+
 def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
     '''
     load all the pixel change data and put it in a numpy array for easy access
@@ -42,15 +43,18 @@ def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
 
     return pixel_changes_all
 
+
 def get_rgb(col_idx):
     ''' Returns the (r,g,b) triplet corresponding to the input color index '''
     return var.COLIDX_TO_RGB[col_idx]
+
 
 def get_file_size(path):
     ''' Gets the length of a file in bytes'''
     f = open(path, "rb").read()
     byte_array = bytearray(f)
     return len(byte_array)
+
 
 def check_time(statement, sort = 'cumtime'):
     '''
@@ -61,12 +65,14 @@ def check_time(statement, sort = 'cumtime'):
     '''
     cProfile.run(statement, sort=sort)
 
+
 def equalize_list_sublengths(l):
     ''' Fill out each sublist-member of the list up to the length of the longest member, with redundant values (so that it can be a np.array)'''
     maxlen = max(len(v) for v in l)  
     for i in range(0,len(l)):
         l[i] += [l[i][0]] * max(maxlen - len(l[i]), 0)
     return l
+
 
 def pixels_to_image(pix, dir='', save_name='', save_name2=''):
     ''' Transform the 2d array of color indices into an image object, and saves it if (save_name!='') '''
@@ -84,6 +90,7 @@ def pixels_to_image(pix, dir='', save_name='', save_name2=''):
             im.save(impath2)
 
     return im, impath1, impath2
+
 
 def save_movie(image_path,
                fps=1,
@@ -127,6 +134,7 @@ def save_movie(image_path,
         # frames may not be in order
         os.system('ffmpeg -framerate ' + str(fps) + '-pattern_type glob -i *.png' + codec + ' -y ' + movie_file)
 
+
 def update_image(image, xcoords, ycoords, color, t_inds=None):
     '''Update the pixels of the [image] using the 1d arrays [xcoords], [ycoords], [color]. 
     These latter arrays are taken at indices [t_inds].
@@ -143,6 +151,7 @@ def update_image(image, xcoords, ycoords, color, t_inds=None):
     xyidx_unique, idx_first = np.unique(xycoords_inv, return_index=True, axis=0) # keeping the index of the first occurence in the reverse-order array
     image[xyidx_unique[:,1] , xyidx_unique[:,0]] = color_inv[idx_first]
 
+
 def load_atlas():
     '''
     Load the composition atlas and return the atlas and the number of entries in the atlas
@@ -153,6 +162,7 @@ def load_atlas():
 
     atlas_size = len(list(atlas))
     return atlas, atlas_size
+
 
 def make_dir(path, renew=False):
     '''
@@ -169,6 +179,7 @@ def make_dir(path, renew=False):
         res = True
     
     return res
+
 
 def merge_pickles(file_list, file_out):
     out = []
