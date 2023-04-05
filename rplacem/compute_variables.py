@@ -148,7 +148,7 @@ def stability(cpart,
             start[step, coor_offset[1, indices], coor_offset[0, indices]] = target[step, coor_offset[1, indices], coor_offset[0, indices]]
 
     i_fraction_print = 0
-    for i in range(len(t_lims) - 1):
+    for i in range(1, len(t_lims)):
         # Print output message to show fraction of the steps that have run.
         if print_progress:
             if i/len(t_lims) > i_fraction_print / 10:
@@ -157,17 +157,22 @@ def stability(cpart,
 
         # Get indices of all pixel changes that happen in the step.
         if sliding_window_time is not None:
-            # this is currently a forward-looking time bin.
-            # in the future, we want this to be backward-looking
-            t_win_start = t_lims[i]
-            if t_win_start < 1:
-                t_win_start = 0
-            t_win_end = t_lims[i] + sliding_window_time
-            if t_win_end > t_lims[-1]:
-                t_win_end = t_lims[-1]
+            if t_lims[i] < sliding_window_time:
+                t_win_start = t_lims[0]
+            else:
+                t_win_start = t_lims[i] - sliding_window_time
+            t_win_end = t_lims[i]
+            if i < len(t_lims) - 1:
+                t_win_start_next = t_lims[i + 1] - sliding_window_time
+            else:
+                t_win_start_next = np.inf
         else:
-            t_win_start = t_lims[i]  # need to shift for loop
-            t_win_end = t_lims[i+1]
+            t_win_start = t_lims[i-1]
+            t_win_end = t_lims[i]
+            if i < len(t_lims) - 1:
+                t_win_start_next = t_lims[i + 1]
+            else:
+                t_win_start_next = np.inf
         t_inds = cpart.intimerange_pixchanges_inds(t_win_start, t_win_end)
 
         # Time spent for each pixel in each of the 32 colors
@@ -205,7 +210,7 @@ def stability(cpart,
             # If the pixel change is past the start time of the next window
             # then set step_start_color to current_color, to use as the
             # initial current_color at the start of the next window.
-            if s > (t_lims[i + 1]) and not time_flag:
+            if (s > t_win_start_next) and not time_flag:
                 step_start_color = current_color.copy()
                 time_flag = True
 
@@ -229,10 +234,10 @@ def stability(cpart,
         stable_timefraction = np.take_along_axis(time_spent_in_color, stable_colors, axis=1)
 
         # Normalize by the total time the canvas quarter was on.
-        if t_lims[i] < t_lims[i + 1]:
-            stable_timefraction[cpart.quarter1_coordinds] /= t_lims[i+1] - t_lims[i]
-            stable_timefraction[cpart.quarter2_coordinds] /= t_lims[i+1] - max(t_lims[i], var.TIME_ENLARGE1)
-            stable_timefraction[cpart.quarter34_coordinds] /= t_lims[i+1] - max(t_lims[i], var.TIME_ENLARGE2)
+        if t_lims[i - 1] < t_lims[i]:  # Makes sure t_lims are increasing.
+            stable_timefraction[cpart.quarter1_coordinds] /= t_lims[i] - t_lims[i - 1]
+            stable_timefraction[cpart.quarter2_coordinds] /= t_lims[i] - max(t_lims[i - 1], var.TIME_ENLARGE1)
+            stable_timefraction[cpart.quarter34_coordinds] /= t_lims[i] - max(t_lims[i - 1], var.TIME_ENLARGE2)
 
         # Calculate the stability averaged over the whole cpart.
         if compute_average:
@@ -240,7 +245,7 @@ def stability(cpart,
             inds_nonzero = np.where(stab_per_pixel > 1e-10)  # Remove indices with stab == 0.
 
             # Get indices of coordinates for which the interval [t_lims[t_step], t_lims[t_step+1]] intersects with the 'active' timerange for the composition.
-            inds_active = cpart.active_coord_inds(t_lims[i], t_lims[i + 1])
+            inds_active = cpart.active_coord_inds(t_lims[i - 1], t_lims[i])
             stab_per_pixel = stab_per_pixel[np.intersect1d(inds_nonzero, inds_active, assume_unique=True).astype(int)]
 
             # Now get stability averaged over active pixels.
@@ -248,7 +253,7 @@ def stability(cpart,
                 stability = np.mean(stab_per_pixel)
             else:
                 stability = 1
-            stability_vs_time[i] = stability
+            stability_vs_time[i - 1] = stability
 
         # Save full result to pickle file.
         if save_pickle:
@@ -259,32 +264,32 @@ def stability(cpart,
                             handle,
                             protocol=pickle.HIGHEST_PROTOCOL)
 
-        diff_pixels_vst[i] = np.count_nonzero(stable_colors[:, 0] - previous_stable_colors[:])
+        diff_pixels_vst[i - 1] = np.count_nonzero(stable_colors[:, 0] - previous_stable_colors[:])
 
         if prev_stab_col is not None:
-            previous_stable_colors = prev_stab_col[i - 1, coor_offset[1], coor_offset[0]]
+            previous_stable_colors = prev_stab_col[i - 1, coor_offset[1], coor_offset[0]] # TODO check i-1 vs i-2?
         else:
             previous_stable_colors = stable_colors[:, 0]
 
         # Create images containing the (sub)dominant color only.
         if create_images:
-            pixels1[i, coor_offset[1], coor_offset[0]] = stable_colors[:, 0]
-            pixels2[i, coor_offset[1], coor_offset[0]] = stable_colors[:, 1]
-            pixels3[i, coor_offset[1], coor_offset[0]] = stable_colors[:, 2]
+            pixels1[i-1, coor_offset[1], coor_offset[0]] = stable_colors[:, 0]
+            pixels2[i-1, coor_offset[1], coor_offset[0]] = stable_colors[:, 1]
+            pixels3[i-1, coor_offset[1], coor_offset[0]] = stable_colors[:, 2]
 
             # If second and/or third most used colors don't exist (time_spent == 0),
             # then use the first or second most used color instead.
             inds_to_change1 = np.where(stable_timefraction[:, 1] < 1e-9)
-            modify_some_pixels(pixels2, pixels1, i, inds_to_change1)
+            modify_some_pixels(pixels2, pixels1, i-1, inds_to_change1)
             inds_to_change2 = np.where(stable_timefraction[:, 2] < 1e-9)
-            modify_some_pixels(pixels3, pixels2, i, inds_to_change2)
+            modify_some_pixels(pixels3, pixels2, i-1, inds_to_change2)
 
             # Save images.
             if save_images:
                 timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_win_start), int(t_win_end))
-                util.pixels_to_image(pixels1[i], os.path.join(cpart.out_name(), 'VsTimeStab'), 'MostStableColor_' + timerange_str + '.png')
-                util.pixels_to_image(pixels2[i], os.path.join(cpart.out_name(), 'VsTimeStab'), 'SecondMostStableColor_' + timerange_str + '.png')
-                util.pixels_to_image(pixels3[i], os.path.join(cpart.out_name(), 'VsTimeStab'), 'ThirdMostStableColor_' + timerange_str + '.png')
+                util.pixels_to_image(pixels1[i-1], os.path.join(cpart.out_name(), 'VsTimeStab'), 'MostStableColor_' + timerange_str + '.png')
+                util.pixels_to_image(pixels2[i-1], os.path.join(cpart.out_name(), 'VsTimeStab'), 'SecondMostStableColor_' + timerange_str + '.png')
+                util.pixels_to_image(pixels3[i-1], os.path.join(cpart.out_name(), 'VsTimeStab'), 'ThirdMostStableColor_' + timerange_str + '.png')
 
     t_interval = np.diff(t_lims)
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -444,7 +449,7 @@ def num_changes_and_users(cpart, t_lims, ref_image, save_ratio_pixels,
                 plt.xlabel('x_pixel')
                 plt.ylabel('y_pixel')
                 plt.colorbar(pcm, label='# attack / # defense changes')
-                plt.clim(0.99,1.01)
+                plt.clim(0.99, 1.01)
                 outpath = os.path.join(var.FIGS_PATH, cpart.out_name(), 'attack_defense_ratio')
                 util.make_dir(outpath)
                 plt.savefig(os.path.join(outpath, 'attack_defense_ratio_perpixel_time{:06d}.png'.format(int(t_lims[t_step+1]))))
