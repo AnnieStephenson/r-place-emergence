@@ -10,3 +10,14 @@ Python package for exploring emergent collective phenomena in the 2022 r/place d
 - 'pixelXpos' and 'pixelYpos' contain the X and Y positions of the pixel change
 - 'moderatorEvent' contains a boolean saying if this pixel change comes from a moderator intervention (changing a whole rectangle into white)
 - The arrays are sorted in terms of the 'seconds', starting at second 0.315.
+
+#### For testing
+install pytest 
+```shell
+pip install pytest
+```
+
+In the terminal, navigate to the rplacem directory and run:
+```shell
+pytest
+```

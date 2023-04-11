@@ -215,46 +215,73 @@ def calc_ews_shift(canvas_comp_stat_list, early_warn_signals_list,
     return ews_offset, state_offset, trans_time_diffs
 
 
-def plot_ews_sing_var_offset(vari, alpha):
+def plot_ews_sing_var_offset(time, vari, alpha, mean_linewidth=2.):
     n_comps = vari.shape[0]
     var_norm = np.zeros(vari.shape)
     for i in range(n_comps):
         var_norm[i,:] = vari[i,:]/np.nanmax(vari[i,:])
-        plt.plot(var_norm[i,:], color=[0,0,0], alpha=alpha)
+        plt.plot(time, var_norm[i,:], color=[0,0,0], alpha=alpha)
     var_mean = np.nanmean(var_norm, axis=0)
-    plt.plot(var_mean/np.nanmax(var_mean))
+    plt.plot(time, var_mean, linewidth=mean_linewidth)
     sns.despine()
 
-def plot_ews_offset(ews_offset, 
+def plot_ews_offset(time,
+                    ews_offset, 
                     state_offset,
                     state_ind,
                     alpha=0.03,
-                    xlim=[0,100]):
+                    xlim=[0,100],
+                    save=False,
+                    mean_linewidth = 2.,
+                    figsize=(8,5),
+                    fontsize=10,
+                    state_var_label='State Variable (normalized)',
+                    xlabel='Time bins'):
  
 
-    plt.figure()
-    plot_ews_sing_var_offset(ews_offset[0,:,state_ind,:], alpha)
+    plt.figure(figsize=figsize)
+    plot_ews_sing_var_offset(time, ews_offset[0,:,state_ind,:], alpha, mean_linewidth=mean_linewidth)
     plt.xlim(xlim)
-    plt.ylabel('Variance (normalized)')
-    plt.xlabel('Time bin')
+    plt.ylabel('Variance', fontsize=fontsize)
+    plt.xlabel(xlabel,fontsize=fontsize)
+    plt.yticks([0, .2, .4, .6, 0.8])
+    plt.ylim([0,1])
+    if save:
+        plt.tight_layout()
+        plt.savefig('variance.png', dpi=600)
 
-    plt.figure()
-    plot_ews_sing_var_offset(ews_offset[1,:,state_ind,:], alpha)
-    plt.ylabel('Skewness (normalized)')
+    plt.figure(figsize=figsize)
+    plot_ews_sing_var_offset(time, ews_offset[1,:,state_ind,:], alpha, mean_linewidth=mean_linewidth)
+    plt.ylabel('Skewness',fontsize=fontsize)
+    plt.yticks([-1, -.5, 0, 0.5])
+    plt.ylim([-1,1])
     plt.xlim(xlim)
-    plt.xlabel('Time bin')
+    plt.xlabel(xlabel, fontsize=fontsize)
+    if save:
+        plt.tight_layout()
+        plt.savefig('skewness.png', dpi=600)
 
-    plt.figure()
-    plot_ews_sing_var_offset(ews_offset[2,:,state_ind,:], alpha)
-    plt.ylabel('Autocorrelation (normalized)')
+    plt.figure(figsize=figsize)
+    plot_ews_sing_var_offset(time, ews_offset[2,:,state_ind,:], alpha, mean_linewidth=mean_linewidth)
+    plt.ylabel('Autocorrelation',fontsize=fontsize)
+    plt.yticks([-1, -0.5, 0, .5])
+    plt.ylim([-1,1])
     plt.xlim(xlim)
-    plt.xlabel('Time bin')
+    plt.xlabel(xlabel,fontsize=fontsize)
+    if save:
+        plt.tight_layout()
+        plt.savefig('autocorr.png', dpi=600)
 
-    plt.figure()
-    plot_ews_sing_var_offset(state_offset[:,state_ind,:], alpha)
-    plt.ylabel('State Variable (normalized)')
+    plt.figure(figsize=figsize)
+    plot_ews_sing_var_offset(time, state_offset[:,state_ind,:], alpha, mean_linewidth=mean_linewidth)
+    plt.ylabel(state_var_label,fontsize=fontsize)
     plt.xlim(xlim)
-    plt.xlabel('Time bin')
+    plt.xlabel(xlabel,fontsize=fontsize)
+    plt.yticks([0, .2, .4, .6, 0.8])
+    plt.ylim([0,1])
+    if save:
+        plt.tight_layout()
+        plt.savefig('state_var.png', dpi=600)
 
 def find_ews_type_list_inds(early_warn_signal_list,
                             var_ind,
