@@ -179,7 +179,7 @@ def stability(cpart,
         time_spent_in_color = np.zeros((cpart.num_pix(), var.NUM_COLORS), dtype='float64')
 
         # Define the last_time_changed, initializing to the start of the time
-        # interval. We negect the time before the supplementary canvas
+        # interval. We neglect the time before the supplementary canvas
         # quarters open by setting last_time_changed for those coordinates
         # to either the interval start time or the time the coordinates
         # become available, whichever happens later.
@@ -219,13 +219,6 @@ def stability(cpart,
 
         # Add the time spent in the final color (from the last pixel change to the end-time).
         time_spent_in_color[coord_range, current_color] += np.maximum(t_win_end - last_time_changed, 0)
-
-        # Find coordinates where there are no pixel changes
-        # and add the entire time to them.
-        no_change_coords = np.where(~time_spent_in_color.any(axis=1))[0]
-        if len(no_change_coords) > 0:
-            no_change_colors = current_color[no_change_coords]
-            time_spent_in_color[no_change_coords, no_change_colors] += (t_win_end - t_win_start)
 
         # Get the color indices in descending order of which color they spent the most time in
         stable_colors = np.flip(np.argsort(time_spent_in_color, axis=1), axis=1)
@@ -577,7 +570,6 @@ def save_part_over_time(cpart,
 
         namecore = 'canvaspart_time{:06d}'.format(int(times[t_step]))
         _, impath_png, impath_bmp = util.pixels_to_image(pixels_out, out_path_time, namecore + '.png', namecore + '.bmp')
-        print(impath_png)
 
         file_size_png[t_step] = util.get_file_size(impath_png)
         file_size_bmp[t_step] = util.get_file_size(impath_bmp)
