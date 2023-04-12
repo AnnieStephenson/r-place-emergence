@@ -10,6 +10,7 @@ import rplacem.variables_rplace2022 as var
 import rplacem.utilities as util
 import rplacem.plot_utilities as plot
 import scipy
+import warnings
 
 
 def calc_num_pixel_changes(cpart,
@@ -198,8 +199,11 @@ def stability(cpart,
             # If this is the first iteration in the loop,
             # then set the current color to the step_start_color.
             # This enables overlapping windows to have correct starting colors.
-            if j == 0:
-                current_color = step_start_color.copy()
+            if sliding_window_time is not None:
+                if j == 0 and sliding_window_time < t_win_start_next - t_win_start:
+                    current_color = step_start_color.copy()
+                else:
+                    warnings.warn('Interval between sliding windows is smaller than the sliding window length. To fix, specify times at a smaller interval')
 
             # Add the time that this pixel spent in the most recent color.
             time_spent_in_color[coor_idx, current_color[coor_idx]] += s - last_time_changed[coor_idx]
@@ -210,7 +214,7 @@ def stability(cpart,
             # If the pixel change is past the start time of the next window
             # then set step_start_color to current_color, to use as the
             # initial current_color at the start of the next window.
-            if (s > t_win_start_next) and not time_flag:
+            if (s >= t_win_start_next) and not time_flag:
                 step_start_color = current_color.copy()
                 time_flag = True
 
