@@ -455,7 +455,7 @@ def ews_2Dsignificance_1comp(cpstat, ewsvar, val_thres, val_earlyness, warning_c
 
     return signif
 
-def ews_2Dsignificance_allcomp(cpstats, warning_cooldown = 14400, ews_slidingwindow=4000):
+def ews_2Dsignificance_allcomp(cpstats, warning_cooldown = 14400, ews_slidingwindow=4000, singlecompsave=False):
     
     tint = cpstats[0].t_interval # time rnages should be the same for all compos
     sliding_window = math.ceil(ews_slidingwindow / tint)
@@ -534,6 +534,11 @@ def ews_2Dsignificance_allcomp(cpstats, warning_cooldown = 14400, ews_slidingwin
         plt.xscale('log')
         #plt.ticklabel_format(style='scientific')
         plt.colorbar(label='average_all_compos( # good warnings / # total warnings )')
-        plt.savefig(os.path.join(var.FIGS_PATH, 'EWS_significance_'+vname+'.png'))
+        if singlecompsave:
+            util.make_dir(os.path.join(var.FIGS_PATH, cpstat.id))
+            path = os.path.join(var.FIGS_PATH, cpstat.id, 'EWS_significance_'+vname+'.png')
+        else:
+            path = os.path.join(var.FIGS_PATH, 'EWS_significance_'+vname+'.png')
+        plt.savefig(path)
 
     return signif, varnames

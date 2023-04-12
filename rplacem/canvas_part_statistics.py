@@ -293,7 +293,7 @@ class CanvasPartStatistics(object):
 
         tmin_all = max(self.tmin, np.min(cpart.border_path_times))
         tmax_all = min(self.tmax, np.max(cpart.border_path_times))
-        res = comp.stability(cpart, np.asarray([0, tmin_all, tmax_all]), level > 1, level > 2, level > 3, True, self.verbose, self.t_unit)
+        res = comp.stability(cpart, np.asarray([0, tmin_all, tmax_all]), level > 1, level > 2, level > 3, True, self.verbose, None, None, self.t_unit)
         self.stability = res[0][1]
         self.stable_image = res[2][1] if level > 1 else None
         self.second_stable_image = res[3][1] if level > 1 else None
@@ -305,7 +305,7 @@ class CanvasPartStatistics(object):
         if self.verbose:
             print('computing stability vs time')
 
-        res = comp.stability(cpart, self.t_ranges, level > 1, level > 2, level > 3, True, self.verbose, self.t_unit)
+        res = comp.stability(cpart, self.t_ranges, level > 1, level > 2, level > 3, True, self.verbose, None, None, self.t_unit)
         self.stability_vst = res[0]
         self.instability_vst_norm = res[1]
         self.stable_image_vst = res[2] if level > 1 else None
