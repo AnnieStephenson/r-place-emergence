@@ -163,17 +163,22 @@ def stability(cpart,
             else:
                 t_win_start = t_lims[i] - sliding_window_time
             t_win_end = t_lims[i]
+
             if i < len(t_lims) - 1:
-                t_win_start_next = t_lims[i + 1] - sliding_window_time
+                if t_lims[i+1] < sliding_window_time:
+                    t_win_start_next = t_lims[0]
+                else:
+                    t_win_start_next = t_lims[i+1] - sliding_window_time
             else:
                 t_win_start_next = np.inf
+
         else:
             t_win_start = t_lims[i-1]
             t_win_end = t_lims[i]
-            if i < len(t_lims) - 1:
-                t_win_start_next = t_lims[i + 1]
-            else:
-                t_win_start_next = np.inf
+            #if i < len(t_lims) - 1: #TODO: t_win_start_next not necessary, because step_start_color is not used in this case?
+            #    t_win_start_next = t_lims[i + 1]
+            #else:
+            #    t_win_start_next = np.inf
         t_inds = cpart.intimerange_pixchanges_inds(t_win_start, t_win_end)
 
         # Time spent for each pixel in each of the 32 colors
@@ -200,10 +205,12 @@ def stability(cpart,
             # then set the current color to the step_start_color.
             # This enables overlapping windows to have correct starting colors.
             if sliding_window_time is not None:
-                if j == 0 and sliding_window_time < t_win_start_next - t_win_start:
-                    current_color = step_start_color.copy()
-                else:
-                    warnings.warn('Interval between sliding windows is smaller than the sliding window length. To fix, specify times at a smaller interval')
+                if j == 0 and i < len(t_lims) - 1:
+                    if sliding_window_time > t_win_start_next - t_win_start:
+                        current_color = step_start_color.copy()
+                    else:
+                        print(j, sliding_window_time, t_win_start_next - t_win_start)
+                        warnings.warn('Interval between sliding windows is smaller than the sliding window length. To fix, specify times at a smaller interval')
 
             # Add the time that this pixel spent in the most recent color.
             time_spent_in_color[coor_idx, current_color[coor_idx]] += s - last_time_changed[coor_idx]
@@ -214,7 +221,7 @@ def stability(cpart,
             # If the pixel change is past the start time of the next window
             # then set step_start_color to current_color, to use as the
             # initial current_color at the start of the next window.
-            if (s >= t_win_start_next) and not time_flag:
+            if (sliding_window_time is not None) and (s >= t_win_start_next) and (not time_flag):
                 step_start_color = current_color.copy()
                 time_flag = True
 
@@ -264,7 +271,7 @@ def stability(cpart,
         diff_pixels_vst[i - 1] = np.count_nonzero(stable_colors[:, 0] - previous_stable_colors[:])
 
         if prev_stab_col is not None:
-            previous_stable_colors = prev_stab_col[i - 1, coor_offset[1], coor_offset[0]] # TODO check i-1 vs i-2?
+            previous_stable_colors = prev_stab_col[i - 1, coor_offset[1], coor_offset[0]]
         else:
             previous_stable_colors = stable_colors[:, 0]
 
