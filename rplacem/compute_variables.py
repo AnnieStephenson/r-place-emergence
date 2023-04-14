@@ -164,17 +164,18 @@ def stability(cpart,
             else:
                 t_win_start = t_lims[i] - sliding_window_time
             t_win_end = t_lims[i]
+
             if i < len(t_lims) - 1:
-                t_win_start_next = t_lims[i + 1] - sliding_window_time
+                if t_lims[i+1] < sliding_window_time:
+                    t_win_start_next = t_lims[0]
+                else:
+                    t_win_start_next = t_lims[i+1] - sliding_window_time
             else:
                 t_win_start_next = np.inf
+
         else:
             t_win_start = t_lims[i-1]
             t_win_end = t_lims[i]
-            if i < len(t_lims) - 1:
-                t_win_start_next = t_lims[i + 1]
-            else:
-                t_win_start_next = np.inf
 
         t_lims_ind_start = np.argmin(np.abs(t_lims-t_win_start))
         t_inds = cpart.intimerange_pixchanges_inds(t_win_start, t_win_end)
@@ -215,7 +216,6 @@ def stability(cpart,
         # Calculate the new reference image
         if sliding_window_time is not None:
             time_spent_in_color_win = np.sum(time_spent_in_color[t_lims_ind_start:i-1, :, :], axis=0)
-            print(time_spent_in_color_win.shape)
             stable_colors_win = np.flip(np.argsort(time_spent_in_color_win, axis=1), axis=1) # todo: add a calc_stable_colors fcn to avoid repeated code
             ref_stable_colors = stable_colors_win[:,0]
         else:
