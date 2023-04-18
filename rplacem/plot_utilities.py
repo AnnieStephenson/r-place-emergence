@@ -102,10 +102,10 @@ def compression_vs_pixel_changes(num_pixel_changes,
             fig_cid_vs_num_touched_pix,
             fig_cid_vs_num_users)
 
-def draw_1dhist(data, xrange=[], bins=[100], 
-                xlab='', ylab='', 
+def draw_1dhist(data, xrange=[], bins=[100],
+                xlab='', ylab='',
                 xlog=False, ylog=False, x0log=0,
-                outfile='', 
+                outfile='',
                 scientific_labels=True, alreadyhist=False):
     '''
     plot the histogram of the given 1d array and saves it
@@ -127,13 +127,13 @@ def draw_1dhist(data, xrange=[], bins=[100],
             res = [np.min(data), np.max(data)]
             spread = res[1] - res[0]
             xrange = [res[0] - spread*2/bins, res[1] + spread*2/bins]
-        
+
         plt.hist(data, bins=bins[0], range=xrange, lw=1, histtype='step', facecolor='b')
     else:
         plt.hist(data, bins=bins, lw=1, histtype='step', facecolor='b')
 
     sns.despine()
-    plt.ticklabel_format(style=('scientific' if scientific_labels else 'plain'), 
+    plt.ticklabel_format(style=('scientific' if scientific_labels else 'plain'),
                          scilimits=([0,0] if scientific_labels else [-10,10]) )
     plt.xticks(fontsize=14)
     plt.yticks(fontsize=14)
@@ -170,7 +170,7 @@ def draw_2dmap(h2d, xedges, yedges,
     '''
     # DO NOT CHANGE THINGS RELATED TO RESOLUTION OR SIZES: everything is adjusted to have perfect resolution for 2000x2000 canvas
     imageres = 2000 #number of pixels of the image to be shown (for perfect resolution)
-    
+
     fig = plt.figure()
     addspace = 0.75
     fig.subplots_adjust(left=0,right=1,bottom=0,top=addspace)
@@ -182,7 +182,7 @@ def draw_2dmap(h2d, xedges, yedges,
         #lin_cmap.set_bad(color='white') # so that the bins with content 0 are not drawn
     map = plt.imshow(h2d, interpolation='none', origin='lower', aspect=1,
                      cmap=('inferno' if logz else 'cividis'), norm=(colors.LogNorm(1,zmax) if logz else colors.Normalize(vmin=0, vmax=zmax)))
-    
+
     plt.axis('off')
     ax = plt.gca()
     axins = insloc.inset_axes(ax, width="80%", height="3.5%", loc="upper center",
@@ -217,7 +217,7 @@ def draw_colorhist(data,
     h,b, patches = plt.hist(colorder_inv[data], bins=list(xpos)+[var.NUM_COLORS], edgecolor='black')
     for i in xpos:
         patches[i].set_facecolor(col[i])
-    
+
     # y axis
     plt.ylabel(ylab, fontsize=17)
     ax.yaxis.offsetText.set_fontsize(14)

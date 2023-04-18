@@ -78,6 +78,65 @@ def count_image_differences(pixels1, pixels2, cpart, indices=None):
     coords = cpart.coords_offset()[:, indices]
     return np.count_nonzero(pixels2[coords[1], coords[0]] - pixels1[coords[1], coords[0]])
 
+def calc_time_spent_in_color(cpart, t_win_start, t_win_end, current_color):
+    # Get variables from canvas_part and set shorter names
+    coord_range = np.arange(0, cpart.num_pix())
+    time_spent_in_color = np.zeros((cpart.num_pix(), var.NUM_COLORS), dtype='float64')
+    seconds = np.array(cpart.pixel_changes['seconds'])
+    color = np.array(cpart.pixel_changes['color'])
+    pixch_coord_inds = np.array(cpart.pixel_changes['coord_index'])  # indices of cpart.coords where to find the (x,y) of a given pixel_change
+    t_inds = cpart.intimerange_pixchanges_inds(t_win_start, t_win_end)
+
+    # Define the last_time_changed, initializing to the start of the time
+    # interval. We neglect the time before the supplementary canvas
+    # quarters open by setting last_time_changed for those coordinates
+    # to either the interval start time or the time the coordinates
+    # become available, whichever happens later.
+    last_time_changed = np.full(cpart.num_pix(), t_win_start, dtype='float64')
+    last_time_changed[cpart.quarter2_coordinds] = max(t_win_start, var.TIME_ENLARGE1)
+    last_time_changed[cpart.quarter34_coordinds] = max(t_win_start, var.TIME_ENLARGE2)
+
+    # Loop through each pixel change in the step, indexing by time.
+    for j, tidx in enumerate(t_inds):
+        s = seconds[tidx]
+        c = color[tidx]
+        coor_idx = pixch_coord_inds[tidx]
+
+        # Add the time that this pixel spent in the most recent color.
+        time_spent_in_color[coor_idx, current_color[coor_idx]] += s - last_time_changed[coor_idx]
+
+        # Update the time of the last pixel change for this pixel.
+        last_time_changed[coor_idx] = s
+
+        # Update the current color.
+        current_color[coor_idx] = c
+
+    # Add the time spent in the final color (from the last pixel change to the end-time).
+    time_spent_in_color[coord_range, current_color] += np.maximum(t_win_end - last_time_changed, 0)
+
+    return time_spent_in_color, current_color
+
+def calc_stability(stable_timefraction, inds_active, compute_average):
+    stab_per_pixel = stable_timefraction[:, 0]  # Get time fraction for most stable pixel.
+    inds_nonzero = np.where(stab_per_pixel > 1e-10)  # Remove indices with stab == 0.
+
+    # Get indices of coordinates for which the interval intersects with the 'active' timerange for the composition.
+    stab_per_pixel = stab_per_pixel[np.intersect1d(inds_nonzero, inds_active, assume_unique=True).astype(int)]
+
+    # Now get stability averaged over active pixels.
+    if compute_average:
+        if len(stab_per_pixel) > 0:
+            stability = np.mean(stab_per_pixel)
+        else:
+            stability = 1
+    else:
+        stability = stab_per_pixel
+
+    return stability
+
+def calc_stable_col(time_spent_in_col):
+    return np.flip(np.argsort(time_spent_in_col, axis=1), axis=1)
+
 
 def stability(cpart,
               t_lims=[0, var.TIME_TOTAL],
@@ -114,24 +173,25 @@ def stability(cpart,
         the most stable color of each pixel during each time interval.
     '''
 
-    if t_lims[0] != 0:
-        print('WARNING: this function \'stability\' is not meant to work from a lower time limit > 0 !!!')
+    t_interval = np.diff(t_lims)
 
-    # Get variables from canvas_part and set shorter names
-    seconds = np.array(cpart.pixel_changes['seconds'])
-    color = np.array(cpart.pixel_changes['color'])
-    pixch_coord_inds = np.array(cpart.pixel_changes['coord_index'])  # indices of cpart.coords where to find the (x,y) of a given pixel_change
-    coord_range = np.arange(0, cpart.num_pix())
+    if t_lims[0] != 0:
+        warnings.warn('stability() t_lims parameter should start with time 0 for standard functioning.')
+    if sliding_window_time is not None and (sliding_window_time/t_interval[1]-np.round(sliding_window_time/t_interval[1])) >= 1e-8:
+        mult = sliding_window_time/t_interval[1]
+        warnings.warn('Sliding window time is %.2f multiplied by the time interval. Using closest integer multiple as sliding window.' % mult)
+
     cpart.set_quarters_coord_inds()
 
-    # Initialize variables for first iteration
+    # Initialize variables for first time iteration
+    n_tbins = len(t_lims)-1
+    ref_stable_colors = cpart.white_image(1)
     current_color = cpart.white_image(1)
-    step_start_color = cpart.white_image(1)
-    previous_stable_colors = cpart.white_image(1)
-    stability_vs_time = np.zeros(len(t_lims)-1)
-    instab_vs_time_norm = np.zeros(len(t_lims)-1)
-    diff_pixels_vst = np.zeros(len(t_lims)-1)
+    stability_vs_time = np.zeros(n_tbins)
+    instab_vs_time_norm = np.zeros(n_tbins)
+    diff_pixels_vst = np.zeros(n_tbins)
     coor_offset = cpart.coords_offset()
+    time_spent_in_color = np.zeros((n_tbins, cpart.num_pix(), var.NUM_COLORS), dtype='float64')
 
     if create_images:
         util.make_dir(os.path.join(var.FIGS_PATH, cpart.out_name()))
@@ -139,9 +199,11 @@ def stability(cpart,
                                    'VsTimeStab'))
 
         # 2d numpy arrays containing color indices (from 0 to 31) for each pixel of the composition
-        pixels1 = cpart.white_image(3, images_number=len(t_lims) - 1)
-        pixels2 = cpart.white_image(3, images_number=len(t_lims) - 1)
-        pixels3 = cpart.white_image(3, images_number=len(t_lims) - 1)
+        pixels1 = cpart.white_image(3, images_number=n_tbins)
+        pixels2 = cpart.white_image(3, images_number=n_tbins)
+        pixels3 = cpart.white_image(3, images_number=n_tbins)
+        if sliding_window_time is not None:
+            pixels1_ref = cpart.white_image(3, images_number=n_tbins)
 
         def modify_some_pixels(start, target, step, indices):
             ''' start and target are 1d arrays of 2d images.
@@ -163,101 +225,42 @@ def stability(cpart,
             else:
                 t_win_start = t_lims[i] - sliding_window_time
             t_win_end = t_lims[i]
-
-            if i < len(t_lims) - 1:
-                if t_lims[i+1] < sliding_window_time:
-                    t_win_start_next = t_lims[0]
-                else:
-                    t_win_start_next = t_lims[i+1] - sliding_window_time
-            else:
-                t_win_start_next = np.inf
-
         else:
             t_win_start = t_lims[i-1]
             t_win_end = t_lims[i]
-            #if i < len(t_lims) - 1: #TODO: t_win_start_next not necessary, because step_start_color is not used in this case?
-            #    t_win_start_next = t_lims[i + 1]
-            #else:
-            #    t_win_start_next = np.inf
-        t_inds = cpart.intimerange_pixchanges_inds(t_win_start, t_win_end)
+        t_lims_ind_start = np.argmin(np.abs(t_lims-t_win_start))
+        inds_active = cpart.active_coord_inds(t_lims[i-1], t_lims[i])
 
-        # Time spent for each pixel in each of the 32 colors
-        time_spent_in_color = np.zeros((cpart.num_pix(), var.NUM_COLORS), dtype='float64')
-
-        # Define the last_time_changed, initializing to the start of the time
-        # interval. We neglect the time before the supplementary canvas
-        # quarters open by setting last_time_changed for those coordinates
-        # to either the interval start time or the time the coordinates
-        # become available, whichever happens later.
-        last_time_changed = np.full(cpart.num_pix(), t_win_start, dtype='float64')
-        last_time_changed[cpart.quarter2_coordinds] = max(t_win_start, var.TIME_ENLARGE1)
-        last_time_changed[cpart.quarter34_coordinds] = max(t_win_start, var.TIME_ENLARGE2)
-
-        time_flag = False  # Flag marks when start time of next window is reached.
-
-        # Loop through each pixel change in the step, indexing by time.
-        for j, tidx in enumerate(t_inds):
-            s = seconds[tidx]
-            c = color[tidx]
-            coor_idx = pixch_coord_inds[tidx]
-
-            # If this is the first iteration in the loop,
-            # then set the current color to the step_start_color.
-            # This enables overlapping windows to have correct starting colors.
-            if sliding_window_time is not None:
-                if j == 0 and i < len(t_lims) - 1:
-                    if sliding_window_time > t_win_start_next - t_win_start:
-                        current_color = step_start_color.copy()
-                    else:
-                        print(j, sliding_window_time, t_win_start_next - t_win_start)
-                        warnings.warn('Interval between sliding windows is smaller than the sliding window length. To fix, specify times at a smaller interval')
-
-            # Add the time that this pixel spent in the most recent color.
-            time_spent_in_color[coor_idx, current_color[coor_idx]] += s - last_time_changed[coor_idx]
-
-            # Update the time of the last pixel change for this pixel.
-            last_time_changed[coor_idx] = s
-
-            # If the pixel change is past the start time of the next window
-            # then set step_start_color to current_color, to use as the
-            # initial current_color at the start of the next window.
-            if (sliding_window_time is not None) and (s >= t_win_start_next) and (not time_flag):
-                step_start_color = current_color.copy()
-                time_flag = True
-
-            # Update the current color.
-            current_color[coor_idx] = c
-
-        # Add the time spent in the final color (from the last pixel change to the end-time).
-        time_spent_in_color[coord_range, current_color] += np.maximum(t_win_end - last_time_changed, 0)
+        # Caculate the time spent in color
+        time_spent_in_color[i-1, :, :], current_color = calc_time_spent_in_color(cpart, t_lims[i-1], t_lims[i], current_color)
 
         # Get the color indices in descending order of which color they spent the most time in
-        stable_colors = np.flip(np.argsort(time_spent_in_color, axis=1), axis=1)
+        stable_colors = np.flip(np.argsort(time_spent_in_color[i-1, :, :], axis=1), axis=1)
+
+        # Calculate the number of stable pixels in the current interval that differ from the reference image
+        diff_pixels_vst[i - 1] = np.count_nonzero(stable_colors[:, 0] - ref_stable_colors[:])
+
+        # Calculate the new reference image
+        if sliding_window_time is not None:
+            time_spent_in_color_win = np.sum(time_spent_in_color[t_lims_ind_start:i-1, :, :], axis=0)
+            stable_colors_win = calc_stable_col(time_spent_in_color_win)
+            stable_colors_win = np.flip(np.argsort(time_spent_in_color_win, axis=1), axis=1) # TODO: add a calc_stable_colors fcn to avoid repeated code
+            ref_stable_colors = stable_colors_win[:,0]
+        else:
+            ref_stable_colors = stable_colors[:, 0] # Reference for next interval is stable pixels of current interval.
 
         # Get the times spent in each color in descending order of time spent.
-        stable_timefraction = np.take_along_axis(time_spent_in_color, stable_colors, axis=1)
+        stable_timefraction = np.take_along_axis(time_spent_in_color[i-1, :, :], stable_colors, axis=1)  # not actually a fraction at this point
 
         # Normalize by the total time the canvas quarter was on.
+        # Since stability is calculated in reference to the interval, and not a sliding window, we don't use t_win_start/end
         if t_lims[i - 1] < t_lims[i]:  # Makes sure t_lims are increasing.
             stable_timefraction[cpart.quarter1_coordinds] /= t_lims[i] - t_lims[i - 1]
             stable_timefraction[cpart.quarter2_coordinds] /= t_lims[i] - max(t_lims[i - 1], var.TIME_ENLARGE1)
             stable_timefraction[cpart.quarter34_coordinds] /= t_lims[i] - max(t_lims[i - 1], var.TIME_ENLARGE2)
 
-        # Calculate the stability averaged over the whole cpart.
-        if compute_average:
-            stab_per_pixel = stable_timefraction[:, 0]  # Get time fraction for most stable pixel.
-            inds_nonzero = np.where(stab_per_pixel > 1e-10)  # Remove indices with stab == 0.
-
-            # Get indices of coordinates for which the interval [t_lims[t_step], t_lims[t_step+1]] intersects with the 'active' timerange for the composition.
-            inds_active = cpart.active_coord_inds(t_lims[i - 1], t_lims[i])
-            stab_per_pixel = stab_per_pixel[np.intersect1d(inds_nonzero, inds_active, assume_unique=True).astype(int)]
-
-            # Now get stability averaged over active pixels.
-            if len(stab_per_pixel) > 0:
-                stability = np.mean(stab_per_pixel)
-            else:
-                stability = 1
-            stability_vs_time[i - 1] = stability
+        # calculate the stability value in the time interval
+        stability_vs_time[i-1] = calc_stability(stable_timefraction, inds_active, compute_average)
 
         # Save full result to pickle file.
         if save_pickle:
@@ -268,18 +271,13 @@ def stability(cpart,
                             handle,
                             protocol=pickle.HIGHEST_PROTOCOL)
 
-        diff_pixels_vst[i - 1] = np.count_nonzero(stable_colors[:, 0] - previous_stable_colors[:])
-
-        if prev_stab_col is not None:
-            previous_stable_colors = prev_stab_col[i - 1, coor_offset[1], coor_offset[0]]
-        else:
-            previous_stable_colors = stable_colors[:, 0]
-
         # Create images containing the (sub)dominant color only.
         if create_images:
             pixels1[i-1, coor_offset[1], coor_offset[0]] = stable_colors[:, 0]
             pixels2[i-1, coor_offset[1], coor_offset[0]] = stable_colors[:, 1]
             pixels3[i-1, coor_offset[1], coor_offset[0]] = stable_colors[:, 2]
+            if sliding_window_time is not None:
+                pixels1_ref[i-1, coor_offset[1], coor_offset[0]] = ref_stable_colors
 
             # If second and/or third most used colors don't exist (time_spent == 0),
             # then use the first or second most used color instead.
@@ -290,12 +288,14 @@ def stability(cpart,
 
             # Save images.
             if save_images:
-                timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_win_start), int(t_win_end))
+                timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_lims[i-1]), int(t_lims[i]))
                 util.pixels_to_image(pixels1[i-1], os.path.join(cpart.out_name(), 'VsTimeStab'), 'MostStableColor_' + timerange_str + '.png')
                 util.pixels_to_image(pixels2[i-1], os.path.join(cpart.out_name(), 'VsTimeStab'), 'SecondMostStableColor_' + timerange_str + '.png')
                 util.pixels_to_image(pixels3[i-1], os.path.join(cpart.out_name(), 'VsTimeStab'), 'ThirdMostStableColor_' + timerange_str + '.png')
+                if sliding_window_time is not None:
+                    timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_win_start), int(t_win_end))
+                    util.pixels_to_image(pixels1[i-1], os.path.join(cpart.out_name(), 'VsTimeStab','RefImg'), 'SlidingRef_' + timerange_str + '.png')
 
-    t_interval = np.diff(t_lims)
     with np.errstate(divide='ignore', invalid='ignore'):
         instab_vs_time_norm = (1 - stability_vs_time) * t_unit / t_interval
     instab_vs_time_norm[np.where(t_interval == 0)] = 0
