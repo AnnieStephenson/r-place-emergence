@@ -548,7 +548,7 @@ class CanvasPart(object):
 
     def intimerange_pixchanges_inds(self, t0, t1, transform_inds=None):
         ''' Indices in self.pixel_changes whose time is in the range [t0, t1[.
-        [transform_inds] can modified (eg sort) the pixel changes array'''
+        [transform_inds] can modify (eg sort) the pixel changes array'''
         if transform_inds is None:
             seconds = np.array(self.pixel_changes['seconds'])
         else:

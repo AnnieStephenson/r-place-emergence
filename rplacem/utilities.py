@@ -190,3 +190,10 @@ def merge_pickles(file_list, file_out):
     with open(os.path.join(var.DATA_PATH, file_out), 'wb') as handle:
         pickle.dump(out, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+def divide_treatzero(a, b, escape=1, escape_posnum=10):
+    with np.errstate(divide='ignore', invalid='ignore'):
+        res = a / b
+    res[np.where((b == 0) & (a == 0))] = escape
+    res[np.where((b == 0) & (a != 0))] = escape_posnum
+
+    return res
