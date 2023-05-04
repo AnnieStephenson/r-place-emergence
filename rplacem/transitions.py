@@ -151,13 +151,13 @@ def find_transitions(t_lims,
 def transition_start_time(cpstat, tr):
 
     vars = [cpstat.n_changes_norm,
-            cpstat.ratio_attdef_changes - 1,
+            cpstat.frac_attack_changes - 0.5,
             cpstat.n_users_norm,
             cpstat.returntime_median_overln2,
             cpstat.instability_norm,
             cpstat.frac_pixdiff_stable_vs_ref,
             cpstat.frac_pixdiff_inst_vs_stable_norm,
-            1 - cpstat.frac_defenseonly_users - cpstat.frac_bothattdef_users, #attackonly
+            1 - cpstat.frac_defenseonly_users - cpstat.frac_bothattdef_users - 0.5, #attackonly - 0.5
             cpstat.cumul_attack_timefrac,
             cpstat.entropy
             ]

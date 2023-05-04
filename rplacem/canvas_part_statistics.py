@@ -168,8 +168,8 @@ class CanvasPartStatistics(object):
     n_changes_norm : 
         same as n_changes, normalized by t_norm and area_vst
             Set in ratios_and_normalizations()
-    ratio_attdef_changes : 2d array of floats, shape (# transitions, n_t_bins)
-        Ratio of attack pixel changes to the defense ones, in each time bin
+    frac_attack_changes : 2d array of floats, shape (# transitions, n_t_bins)
+        Fraction of pixel changes that are attacking (compared to sliding window reference), in each time bin
             Set in ratios_and_normalizations()
     n_users_total : float
         total number of user having contributed to the composition between tmin and tmax
@@ -192,9 +192,9 @@ class CanvasPartStatistics(object):
         Same as above, but without divinging by n_users.
         Kept if compute_vars['attackdefense'] > 3
             Set in comp.main_variables()
-    ratio_attdef_changes_image : array of size n_t_bins, of 2d numpy arrays.
+    frac_attack_changes_image : array of size n_t_bins, of 2d numpy arrays.
         Each element is a pixels image info (2d numpy array containing color indices)
-        Image containing, for each pixel, the ratio of attack to defense pixel changes, for each time step
+        Image containing, for each pixel, the fraction of pixel changes that are attacking, for each time step
         Needs compute_vars['attackdefense'] > 1
     returntime : 2d array of shape (n_t_bins+1, # pixels)
         For each time step, contains the time that each pixel spent in an 'attack' color 
@@ -300,7 +300,7 @@ class CanvasPartStatistics(object):
         self.third_stable_image = None
         self.refimage_sw = None
         self.true_image = None
-        self.ratio_attdef_changes_image = None
+        self.frac_attack_changes_image = None
 
         self.n_changes = None
         self.n_defense_changes = None
@@ -378,7 +378,7 @@ class CanvasPartStatistics(object):
         self.frac_pixdiff_inst_vs_stable_norm = util.divide_treatzero(self.diff_pixels_inst_vs_stable / self.t_norm, self.area_vst, 0, 0)
 
         # attack-defense ratios
-        self.ratio_attdef_changes = util.divide_treatzero(self.n_changes - self.n_defense_changes, self.n_defense_changes, 1, 10)
+        self.frac_attack_changes = util.divide_treatzero(self.n_changes - self.n_defense_changes, self.n_changes, 0.5, 0.5)
         self.frac_defenseonly_users = util.divide_treatzero(self.n_defense_users - self.n_bothattdef_users, self.n_users, 0.5, 0.5)
         self.frac_bothattdef_users = util.divide_treatzero(self.n_bothattdef_users, self.n_users, 0.5, 0.5)
         self.frac_attackonly_users = util.divide_treatzero(self.n_users - self.n_defense_users - self.n_bothattdef_users, self.n_users, 0.5, 0.5)

@@ -11,6 +11,7 @@ import rplacem.utilities as util
 import rplacem.plot_utilities as plot
 import scipy
 import warnings
+import numpy.ma as ma
 
 
 def calc_num_pixel_changes(cpart,
@@ -140,10 +141,14 @@ def cumulative_attack_timefrac(time_spent_in_col, ref_colors, inds_active_pix, s
     computes the sum of the times that every pixel spent in another color than that of ref_colors.
     Normalized by the total time summed over all pixels
     '''
-    time_spent = time_spent_in_col[inds_active_pix, :] 
-    colordiff = time_spent - ref_colors[inds_active_pix, np.newaxis] # need to transform ref_colors in 2D for subtraction to work
-    res = np.sum(time_spent[ np.where(colordiff != 0) ]) 
-    return res / (stepwidth * len(inds_active_pix))
+    time_spent = ma.array(time_spent_in_col[inds_active_pix, :])
+    ref_cols = ref_colors[inds_active_pix]
+    time_spent_in_refcol = time_spent[ np.arange(0, time_spent.shape[0]), ref_cols]
+    if len(inds_active_pix) == 0:
+        res = 0
+    else:
+        res = 1 - np.sum(time_spent_in_refcol) / (stepwidth * len(inds_active_pix))
+    return max(res, 0)
 
 def calc_stability(stable_timefrac, inds_active, compute_average):
     stab_per_pixel = stable_timefrac[:, 0]  # Get time fraction for most stable color.
@@ -243,7 +248,7 @@ def main_variables(cpart,
     last_time_removed_sw = None if attdef == 0 else np.copy(last_time_installed_sw)
 
     # Output
-    cpst.stability = np.full(n_tlims, 1)
+    cpst.stability = np.full(n_tlims, 1., dtype=np.float32)
     cpst.diff_pixels_stable_vs_ref = np.zeros(n_tlims) 
     cpst.diff_pixels_inst_vs_ref = np.zeros(n_tlims) 
     cpst.diff_pixels_inst_vs_inst = np.zeros(n_tlims) 
@@ -255,7 +260,7 @@ def main_variables(cpart,
     cpst.n_users = np.zeros(n_tlims)
     cpst.n_bothattdef_users = np.zeros(n_tlims)
     cpst.n_defense_users = np.zeros(n_tlims)
-    cpst.ratio_attdef_changes_image = np.full((n_tlims, cpart.width(1), cpart.width(0)), 1, dtype=np.float16) if attdef > 1 else None
+    cpst.frac_attack_changes_image = np.full((n_tlims, cpart.width(1), cpart.width(0)), 1, dtype=np.float16) if attdef > 1 else None
     cpst.size_bmp = np.zeros(n_tlims)
     cpst.size_png = np.zeros(n_tlims)
     cpst.cumul_attack_timefrac = np.zeros(n_tlims)
@@ -339,7 +344,6 @@ def main_variables(cpart,
             # stable_timefrac is of shape (n_pixels, n_colors), containing time fractions
             stable_timefrac = calc_stable_timefrac(cpart, i, t_lims,
                                                    time_spent_in_color, stable_colors)
-
             # calculate the stability value in the time interval
             cpst.stability[i] = calc_stability(stable_timefrac, inds_coor_active, True)
 
@@ -354,7 +358,6 @@ def main_variables(cpart,
             # Calculate the (normalized) cumulative attack time over all pixels in this timestep
             cpst.cumul_attack_timefrac[i] = cumulative_attack_timefrac(time_spent_in_color[i], ref_colors, 
                                                                        inds_coor_active, cpst.t_interval)
-
             # Calculate return time, as the time each pixel spent in the non-reference color during the last attack
             mask_attack = np.full(current_color.shape, False)
             mask_attack[ np.where(current_color != ref_colors) ] = True # indices where pixels are in an attack color
@@ -368,7 +371,7 @@ def main_variables(cpart,
                                   t_inds_active, ref_colors, 
                                   cpst.n_changes, cpst.n_defense_changes,
                                   cpst.n_users, cpst.n_bothattdef_users, cpst.n_defense_users,
-                                  cpst.ratio_attdef_changes_image,
+                                  cpst.frac_attack_changes_image,
                                   attdef > 1, attdef > 2)
     
         # INSTANTANEOUS IMAGES
@@ -443,7 +446,7 @@ def num_changes_and_users(cpart, t_step, time_str,
                           t_inds_active, ref_image, 
                           num_changes, num_defense_changes,
                           num_users, num_attackdefense_users, num_defenseonly_users,
-                          pixels_attdefratio,
+                          pixels_fracattack,
                           save_ratio_pixels, save_ratio_images):
     '''
     Returnes multiple variables dealing with the number of pixel changes and users
@@ -499,13 +502,13 @@ def num_changes_and_users(cpart, t_step, time_str,
             else:
                 att[ycoords[t], xcoords[t]] += 1
         with np.errstate(divide='ignore', invalid='ignore'):
-            pixels_attdefratio[t_step] = att / defe
+            pixels_fracattack[t_step] = att / (defe + att)
         inds_nan = np.where((att>0) & (defe==0))
-        pixels_attdefratio[t_step][inds_nan[0], inds_nan[1]] = 100.
+        pixels_fracattack[t_step][inds_nan[0], inds_nan[1]] = 100.
 
         if save_ratio_images:
             plt.figure()
-            pcm = plt.pcolormesh(np.arange(0,cpart.width()[0]), np.arange(cpart.width()[1] - 1, -1, -1), pixels_attdefratio[t_step], shading='nearest')
+            pcm = plt.pcolormesh(np.arange(0,cpart.width()[0]), np.arange(cpart.width()[1] - 1, -1, -1), pixels_fracattack[t_step], shading='nearest')
             plt.xlabel('x_pixel')
             plt.ylabel('y_pixel')
             plt.colorbar(pcm, label='# attack / # defense changes')
