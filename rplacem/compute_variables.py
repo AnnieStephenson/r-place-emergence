@@ -294,7 +294,7 @@ def stability(cpart,
                 util.pixels_to_image(pixels3[i-1], os.path.join(cpart.out_name(), 'VsTimeStab'), 'ThirdMostStableColor_' + timerange_str + '.png')
                 if sliding_window_time is not None:
                     timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_win_start), int(t_win_end))
-                    util.pixels_to_image(pixels1[i-1], os.path.join(cpart.out_name(), 'VsTimeStab','RefImg'), 'SlidingRef_' + timerange_str + '.png')
+                    util.pixels_to_image(pixels1_ref[i-1], os.path.join(cpart.out_name(), 'VsTimeStab','RefImg'), 'SlidingRef_' + timerange_str + '.png')
 
     with np.errstate(divide='ignore', invalid='ignore'):
         instab_vs_time_norm = (1 - stability_vs_time) * t_unit / t_interval
