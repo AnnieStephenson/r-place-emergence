@@ -14,6 +14,9 @@ filedata = filedata.replace('\"T\"', '\"T:0-1\"')
 
 filedata = filedata.replace('Java Discord server. discord.gg/java\", \"links\": {}, \"path\": {\"56-165, T:0-1\": [[1215, 870], [1224, 870], [1224, 879], [1215, 879]]',
                             'Java Discord server. discord.gg/java\", \"links\": {}, \"path\": {\"56-165, T:0-1\": [[1215, 870], [1226, 870], [1226, 880], [1215, 880]]')
+
+filedata = filedata.replace('xQc before being reinstated.", "links": {"website": ["https://en.wikipedia.org/wiki/Star_Wars_(film)"], "subreddit": ["starwars_place"]}, "path": {"1-166, T:0-1": [[570, 698], [671, 698], [671, 844], [570, 844]]}',
+                            'xQc before being reinstated.", "links": {"website": ["https://en.wikipedia.org/wiki/Star_Wars_(film)"], "subreddit": ["starwars_place"]}, "path": {"1-166, T:0-1": [[571, 699], [670, 699], [670, 843], [571, 843]]}')
 # Write the file out again
 with open('../data/atlas.json', 'w') as file:
   file.write(filedata)
