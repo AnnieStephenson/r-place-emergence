@@ -548,7 +548,7 @@ class CanvasPart(object):
 
     def intimerange_pixchanges_inds(self, t0, t1, transform_inds=None):
         ''' Indices in self.pixel_changes whose time is in the range [t0, t1[.
-        [transform_inds] can modified (eg sort) the pixel changes array'''
+        [transform_inds] can modify (eg sort) the pixel changes array'''
         if transform_inds is None:
             seconds = np.array(self.pixel_changes['seconds'])
         else:
@@ -609,7 +609,7 @@ class CanvasPart(object):
         ''' number of pixels of the canvas part that are active at some time '''
         return self.coords.shape[1]
 
-    def white_image(self, dimension=2, images_number=-1):
+    def white_image(self, dimension=2, images_number=1):
         ''' Creates a white image of the size of the canvas part.
         It can be a 1D array of the length of the coordinates;
         or a 2D array being the actual pixels/image of the part;

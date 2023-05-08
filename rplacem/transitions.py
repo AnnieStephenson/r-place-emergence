@@ -1,19 +1,18 @@
 import numpy as np
-import os
 import rplacem.canvas_part as cp
 import rplacem.compute_variables as comp
 import rplacem.utilities as util
 import rplacem.variables_rplace2022 as var
-import pickle
-import matplotlib.pyplot as plt
-import seaborn as sns
+import math
+from scipy import optimize
 
 def find_transitions(t_lims,
-                     instability_vs_time,
-                     cutoff=7e-3, 
-                     cutoff_stable=1.5e-3,
-                     len_stable_intervals=4,
-                     dist_stableregion_transition=3
+                     testvariable,
+                     cutoff=0.2, 
+                     cutoff_stable=0.05,
+                     len_stableregion=2*3600,
+                     distfromtrans_stableregion=3*3600,
+                     sliding_win=0
                      ):
     '''
     identifies transitions in a cpart.
@@ -23,18 +22,21 @@ def find_transitions(t_lims,
     cpart : CanvasPart object
         The CanvasPart object for which we want to calculate the instability
     t_lims : 1d array-like of floats
-        time intervals in which the pixel states are studied. Must be ordered in a crescent way, and start at 0
-    instability_vs_time : 1d array-like of floats
-        instability array averaged over all the pixels and normalized, for each time step
+        time intervals in which the pixel states are studied. Must be ordered in a crescent way, start at 0, and be regularly spaced
+    testvariable : 1d array-like of floats
+        The variable on which cutoffs will be applied to detect transitions
     cutoff : float
         the lower cutoff on instability to define when a transition is happening
     cutoff_stable : float
         the higher cutoff on instability, needs to be not exceeded before and after the potential transition, for a validated transition
-    len_stable_intervals : int
-        the number of consecutive intervals before and after the potential transition, for which cutoff_stable must not be exceeded. 
-        No stable intervals is looked for if len_stable_intervals <= 1 or cutoff_stable == cutoff.
-    dist_stableregion_transition: int
-        maximal distance (in number of indices) between the borders of the stable regions and those of the transition region
+    len_stableregion : float 
+        the duration (in seconds), before and after the potential transition, during which cutoff_stable must not be exceeded. 
+        No stable intervals is looked for if len_stableregion <= 1 or cutoff_stable == cutoff.
+    distfromtrans_stableregion: float
+        maximal distance (in seconds) between the borders of the stable regions and those of the transition region.
+    sliding_win: float
+        The time (in seconds) added to distfromtrans_stableregion for the post-transtion stable period,
+        to take into account the post-transition adaptation of the reference image over the sliding window
 
     returns
     -------
@@ -48,37 +50,38 @@ def find_transitions(t_lims,
         full_transition_times is the same array but with the times corresponding to those indices 
     '''
     # preliminary
+    len_stableregion = math.ceil(len_stableregion / (t_lims[1] - t_lims[0])) # assumes regularly-spaced t_lims
+    distfromtrans_stableregion = math.ceil(distfromtrans_stableregion / (t_lims[1] - t_lims[0])) # assumes regularly-spaced t_lims
     if cutoff < cutoff_stable:
         raise ValueError("ERROR in find_transitions(): instability cutoff for transitions must be higher than that for stable periods")
-    dist_stableregion_transition = max(dist_stableregion_transition, 1)
     
-    #print([(i,instability_vs_time[i]) for i in range(0,len(instability_vs_time))])
-    # removing sequence of "1." at the beginning of instability_vs_time
-    ones_ind = np.where(instability_vs_time == 1.)[0]
+    #print([(i,testvariable[i]) for i in range(0,len(testvariable))])
+    # removing sequence of "1." or 0. at the beginning of testvariable
+    ones_ind = np.where((testvariable == 1.) | (testvariable == 0.))[0]
     end_first_ones_sequence = -1
     if len(ones_ind) > 0:
         interruptions_ones_sequence = np.where( np.diff( ones_ind ) > 1)[0]
         end_first_ones_sequence = interruptions_ones_sequence[0] if len(interruptions_ones_sequence) > 0 else ones_ind[-1]
-        instability_vs_time = instability_vs_time[(end_first_ones_sequence+1):] # remove elements until first sequence of ones is over
+        testvariable = testvariable[(end_first_ones_sequence+1):] # remove elements until first sequence of ones is over
 
-    # indices of instability_vs_time that are stable or in transition
-    trans_ind = np.where(np.array(instability_vs_time) > cutoff)[0]
+    # indices of testvariable that are stable or in transition
+    trans_ind = np.where(np.array(testvariable) > cutoff)[0]
 
-    stable_ind = np.where((np.array(instability_vs_time) < cutoff_stable)
-                       & ((np.array(instability_vs_time) > 0) | (np.roll(instability_vs_time, 1) > 0) | (np.roll(instability_vs_time, 2) > 0)))[0]
+    stable_ind = np.where((np.array(testvariable) < cutoff_stable)
+                       & ((np.array(testvariable) > 0) | (np.roll(testvariable, 1) > 0) | (np.roll(testvariable, 2) > 0)))[0]
 
-    # get the sequences of at least len_stable_intervals consecutive indices in stable_ind
-    if len_stable_intervals < 2:
+    # get the sequences of at least len_stableregion consecutive indices in stable_ind
+    if len_stableregion < 2:
         start_stable_inds = stable_ind
-    elif (len(stable_ind) < len_stable_intervals - 1):
+    elif (len(stable_ind) < len_stableregion - 1):
         start_stable_inds = np.array([])
     else:     
-        stable_ind_to_sum = np.zeros( shape=(len_stable_intervals - 1, len(stable_ind) - len_stable_intervals + 1) , dtype=np.int16)
-        for i in range(0, len_stable_intervals - 1):
-            offset_ind = range(i, len(stable_ind) - len_stable_intervals + 2 + i) # sets of indices with crescent offsets
+        stable_ind_to_sum = np.zeros( shape=(len_stableregion - 1, len(stable_ind) - len_stableregion + 1) , dtype=np.int16)
+        for i in range(0, len_stableregion - 1):
+            offset_ind = range(i, len(stable_ind) - len_stableregion + 2 + i) # sets of indices with crescent offsets
             stable_ind_to_sum[i] = np.diff( stable_ind[offset_ind] ) # difference between elements n and n-1 for these offsetted arrays
 
-        start_stable_inds = stable_ind[ np.where( np.sum( stable_ind_to_sum, axis=0 ) == len_stable_intervals - 1 )[0] ]
+        start_stable_inds = stable_ind[ np.where( np.sum( stable_ind_to_sum, axis=0 ) == len_stableregion - 1 )[0] ]
 
     # only starting elements of uninterrupted sequences
     start_stable_inds_clean = 1 + np.where(np.diff(start_stable_inds) > 1)[0]
@@ -88,7 +91,7 @@ def find_transitions(t_lims,
 
     # end indices of stable periods
     end_stab_inds = np.hstack([(start_stable_inds_clean - 1)[1:], -1]) if len(start_stable_inds) > 0 else np.array([], dtype=np.int16)
-    end_sequence_stable_ind = start_stable_inds[end_stab_inds] + len_stable_intervals - 1
+    end_sequence_stable_ind = start_stable_inds[end_stab_inds] + len_stableregion - 1
 
     # get the start and end indices for transitions
     start_inds = 1 + np.where(np.diff(trans_ind) > 1)[0]
@@ -100,9 +103,9 @@ def find_transitions(t_lims,
     stable_regions_borders = []
     for (s_ind, e_ind) in zip(start_inds, end_inds):
         trans_closeto_stable = np.where(  (end_sequence_stable_ind[:-1] < trans_ind[s_ind]) # exists a stable region before transition starts
-                                        & (end_sequence_stable_ind[:-1] >= trans_ind[s_ind] - dist_stableregion_transition) # at a close enough distance
+                                        & (end_sequence_stable_ind[:-1] >= trans_ind[s_ind] - distfromtrans_stableregion) # at a close enough distance
                                         & (start_sequence_stable_ind[1:] > trans_ind[e_ind]) # stable region after the transition ends
-                                        & (start_sequence_stable_ind[1:] >= trans_ind[e_ind] - dist_stableregion_transition) # close enough
+                                        & (start_sequence_stable_ind[1:] <= trans_ind[e_ind] + distfromtrans_stableregion + sliding_win) # close enough
                                         )[0]
         if len(trans_closeto_stable) > 0:
             start_inds_filtered.append(s_ind)
@@ -145,86 +148,43 @@ def find_transitions(t_lims,
 
     return (full_transition, full_transition_times)
 
-def transition_and_reference_image(canpart, 
-                               time_ranges, 
-                               instability_vs_time,
-                               create_refimages,
-                               save_images,
-                               averaging_period=3600, # 1 hour
-                               cutoff=7e-3,
-                               cutoff_stable=1.5e-3,
-                               len_stable_intervals=3,
-                               dist_stableregion_transition=3
-                               ):
-    ''' Finds transitions for a given canvas part, 
-    and returns the images containing the most stable pixels for 
-    the stable periods before and after the transition, and during the transition.
-    [instability_vs_time] input must be the one corresponding to the input canvas_part.
-    [averaging_period] is the time over which the reference images before and after the transition are computed.
-    '''
+def transition_start_time(cpstat, tr):
+
+    vars = [cpstat.n_changes_norm,
+            cpstat.frac_attack_changes - 0.5,
+            cpstat.n_users_norm,
+            cpstat.returntime_median_overln2,
+            cpstat.instability_norm,
+            cpstat.frac_pixdiff_stable_vs_ref,
+            cpstat.frac_pixdiff_inst_vs_stable_norm,
+            1 - cpstat.frac_defenseonly_users - cpstat.frac_bothattdef_users - 0.5, #attackonly - 0.5
+            cpstat.cumul_attack_timefrac,
+            cpstat.entropy
+            ]
+
+    halfmax_times = np.zeros(len(vars))
+
+    t_lims = cpstat.t_ranges
+    # indices of the transition times
+    trans_tind = cpstat.transition_tinds[tr]
+    ind_st = trans_tind[1] - 1
+    ind_end = trans_tind[3]
+
+    for i in range(len(vars)):
+        # max of vars over transition time range
+        maxi = np.max(vars[i][ind_st : ind_end])
+        # look for the time at which vars reaches halfmax value, starting search from end of pre-trans stable period
+        halfmax_ind = ind_st + np.argmax(vars[i][ ind_st:ind_end ] > maxi/2)
+        # use a linear interpolation of the values of the variable at each time step
+        lin_interpol = lambda x: np.interp(x, t_lims[np.arange(halfmax_ind-1, halfmax_ind+1)], 
+                                              vars[i][ (halfmax_ind-1):(halfmax_ind+1) ]  ) - maxi/2
+        halfmax_times[i] = optimize.fsolve(lin_interpol, [t_lims[halfmax_ind-1]], xtol=5e-4)[0]
+
+    mean_halfmaxtime = np.mean(halfmax_times)
+    median_halfmaxtime = np.median(halfmax_times)
+    rms_halfmaxtime = np.std(halfmax_times)
+    #print(t_lims[halfmax_times], mean_halfmaxtime, rms_halfmaxtime, median_halfmaxtime)
+    #print(cpstat.transition_times[tr][2:4])
+
+    return halfmax_times, mean_halfmaxtime, median_halfmaxtime, rms_halfmaxtime
     
-    transitions = find_transitions(time_ranges, instability_vs_time, 
-                                   cutoff, cutoff_stable, len_stable_intervals, dist_stableregion_transition)
-    avimage_pre = []
-    avimage_trans = []
-    avimage_post = []
-    num_differing_pixels = []
-
-    if create_refimages:
-        for j in range(0, len(transitions[0])):
-            trans_times2 = np.hstack((0, transitions[1][j]))
-            trans_times2[1] = trans_times2[2] - averaging_period # calculate the (pre)stable image in only the latest stable time interval 
-            trans_times2[6] = trans_times2[5] + averaging_period # calculate the (post)stable image in only the earliest stable time interval 
-            _, _, stablepixels1, _, _, _ = comp.stability(canpart, trans_times2, True,  False, False, False, False)
-            avimage_pre.append(stablepixels1[1])
-            avimage_trans.append(stablepixels1[3])
-            avimage_post.append(stablepixels1[5])
-            if save_images:
-                util.pixels_to_image(avimage_pre[j], canpart.out_name(), 'MostStableColor_referenceimage_pre_transition'+str(j) + '.png')
-                util.pixels_to_image(avimage_trans[j], canpart.out_name(), 'MostStableColor_referenceimage_during_transition'+str(j) + '.png')
-                util.pixels_to_image(avimage_post[j], canpart.out_name(), 'MostStableColor_referenceimage_post_transition'+str(j) + '.png')
-
-            num_differing_pixels.append( comp.count_image_differences(avimage_post[j], avimage_pre[j], canpart) )
-
-    return (avimage_pre, avimage_trans, avimage_post, 
-            num_differing_pixels, transitions[0], transitions[1])
-
-def transition_start_time(cpstat):
-
-    numtrans = cpstat.num_transitions
-    mean_halfmaxtime = np.empty(numtrans)
-    median_halfmaxtime = np.empty(numtrans)
-    rms_halfmaxtime = np.empty(numtrans)
-
-    for tr in np.arange(0, numtrans):
-        vars = [cpstat.num_pixchanges_norm[tr],
-                    cpstat.ratio_attdef_changes[tr] - 1,
-                    cpstat.num_users_norm[tr],
-                    cpstat.returntime_median_overln2[tr],
-                    cpstat.instability_vst_norm,
-                    cpstat.diff_stable_pixels_vst_norm,
-                    cpstat.frac_attackonly_users[tr] - 1,
-                    cpstat.entropy_vst,
-                    ]
-        if tr == 0:
-            halfmax_tind = np.empty((numtrans, len(vars)), np.int32)
-            
-        tranges = cpstat.t_ranges
-        # give indices of the transition times
-        trans_tind = np.digitize(cpstat.transition_times[tr] , tranges) 
-
-        for i in range(len(vars)):
-            # max of vars over transition time range
-            maxi = np.max(vars[i][trans_tind[2] - 1 : trans_tind[3]])
-            # look for the time at which vars reaches halfmax value, starting search from end of pre-trans stable period
-            halfmax_tind[tr][i] = trans_tind[1] + np.argmax(vars[i][ trans_tind[1]:trans_tind[3] ] > maxi / 2) # argmax will stop at the first True that is found
-            #print(maxi/2, halfmax_tind[tr][i] , vars[i][halfmax_tind[tr][i]-1], vars[i][halfmax_tind[tr][i]], vars[i][halfmax_tind[tr][i]+1])
-
-        mean_halfmaxtime[tr] = np.mean(tranges[halfmax_tind[tr]])
-        median_halfmaxtime[tr] = np.median(tranges[halfmax_tind[tr]])
-        rms_halfmaxtime[tr] = np.std(tranges[halfmax_tind[tr]])
-        #print(tranges[halfmax_tind[tr]], mean_halfmaxtime, rms_halfmaxtime, median_halfmaxtime)
-        #print(cpstat.transition_times[tr][2:4])
-
-    return halfmax_tind, mean_halfmaxtime, median_halfmaxtime, rms_halfmaxtime
-        

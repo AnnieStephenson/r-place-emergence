@@ -1,5 +1,5 @@
 import numpy as np
-import os
+import os, sys
 import rplacem.canvas_part as cp
 import rplacem.transitions as trans
 import rplacem.canvas_part_statistics as stat
@@ -21,9 +21,9 @@ if icp < 0: # not using the stored compositions
     y1 = 0
     y2 = 1999
 
-    border_path = np.array([[[x1, y1], [x1, y2], [x2, y2], [x2, y1]]])
-    canpart = cp.CanvasPart(border_path=border_path, #id='000021', 
-                                pixel_changes_all=None) 
+    canpart = cp.CanvasPart(border_path=[[[x1, y1], [x1, y2], [x2, y2], [x2, y1]]],
+                            #id='000021', 
+                            pixel_changes_all=None) 
 
 else: # getting the composition from the stored ones
     file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
@@ -99,75 +99,179 @@ plt.xlim(1,max(npix)*1.3)
 plt.savefig(os.path.join(var.FIGS_PATH, 'bmpfilesize_over_npix_onlyrectangles.png'), bbox_inches='tight')
 
 
-'''
-
-'''
-canpart = cp.CanvasPart(
-                        #border_path=[[[0, 0], [0, 1999], [1999, 1999], [1999, 0]]],
-                        id='000006', 
-                        pixel_changes_all=pixel_changes_all,
-                        verbose=True, save=True)
 
 
-cpstat = stat.CanvasPartStatistics(canpart, n_tbins=2000, n_tbins_trans=150,
-                                    compute_vars={'stability': 1, 'mean_stability': 2, 'entropy' : 3, 'transitions' : 2, 'attackdefense' : 1},
-                                    verbose=True, dont_keep_dir=False)
-'''
+tlims = np.arange(var.TIME_ENLARGE2-1, var.TIME_WHITEONLY,100)
+comp.save_part_over_time(canpart, tlims,
+                        record_pixels=False,
+                        delete_bmp=True,
+                        delete_png=False,
+                        show_plot=False,
+                        print_progress=False,
+                        remove_inactive=True
+                        )
+util.save_movie(os.path.join(var.FIGS_PATH, 'twoztm','VsTime'), fps=10)
+
+attdef = comp.num_changes_and_users(canpart,tlims,canpart.white_image(2),False,False)
+print(attdef[11], len(attdef[11]))
+print(attdef[12], len(attdef[12]))
+
+
 
 file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all.pickle') 
 with open(file_path, 'rb') as f:
     cpstats = pickle.load(f)
-cpstat = cpstats[5]
 
-#trans.transition_start_time(cpstat)
+for cps in cpstats:
+    if cps.id != '000006':
+        continue
+    else:
+        cpstatrec = cps
+        break
+
+'''
+
+canpart = cp.CanvasPart(
+                        #border_path=[[[299, 318], [299,450], [507,450], [507, 318]]], #'rectangle_299.318_to_507.45'
+                        id='000006',#'twoztm',#'twwgx2',#'000006' 
+                        pixel_changes_all=pixel_changes_all,
+                        verbose=True, save=True)
+
+cpstat = stat.CanvasPartStatistics(canpart, n_tbins=750, 
+                                    compute_vars={'stability': 2, 'entropy' : 2, 'transitions' : 2, 'attackdefense' : 2},
+                                    sliding_window=14400,
+                                    verbose=False, dont_keep_dir=False)
+
+print(cpstat.__dir__())
 
 #varchange = ews.ratio_to_slidingmean(cpstat.diff_stable_pixels_vst, cpstat.t_interval, slidingrange=21600)
 
 #ews.ews_2Dsignificance_1comp(cpstat, cpstat.diff_stable_pixels_vst, 'differing_stable_pixels')
-ews.ews_2Dsignificance_allcomp(cpstats, warning_cooldown = 14400, ews_slidingwindow=4000)
+#ews.ews_2Dsignificance_allcomp(cpstats, warning_cooldown = 14400, ews_slidingwindow=4000)
+#ews.ews_2Dsignificance_allcomp([cpstat], warning_cooldown = 14400, ews_slidingwindow=4000, singlecompsave=True)
 
 #print(ews.firing_times(cpstat, cpstat.diff_stable_pixels_vst, 300, 27))
 
-'''
 plt.figure()
-plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, varchange)
+plt.plot(cpstat.t_ranges, cpstat.frac_pixdiff_inst_vs_stable_norm)
 sns.despine()
-plt.ylabel('diff_stable_pixels_vst ratio to preceding 10h-average')
+plt.ylabel('fraction of pixels different from previous-step stable image / 5 min')
 plt.xlabel('Time [s]')
-plt.yscale('log')
-plt.ylim([5e-3, 1.1*max(varchange)])
-plt.yscale('log')
+plt.ylim([0, 1.1*max(cpstat.frac_pixdiff_inst_vs_stable_norm)])
 plt.xlim([0, var.TIME_TOTAL])
-plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Number_of_differing_pixels_vst__ratio_to_6haverage.png'))
-
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Fraction_of_differing_pixels_vs_stable_normalized.png'))
 
 plt.figure()
-plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.diff_pixels_vst_norm)
+plt.plot(cpstat.t_ranges, cpstat.frac_pixdiff_inst_vs_inst_norm)
 sns.despine()
-plt.ylabel('# of pixels different from previous time step / area / 5 min')
+plt.ylabel('fraction of pixels different from previous-step image / 5 min')
 plt.xlabel('Time [s]')
-plt.ylim([0, 1.1*max(cpstat.diff_pixels_vst_norm)])
+plt.ylim([0, 1.1*max(cpstat.frac_pixdiff_inst_vs_inst_norm)])
 plt.xlim([0, var.TIME_TOTAL])
-plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Number_of_differing_pixels_vst.png'))
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Fraction_of_differing_pixels_normalized.png'))
 
 plt.figure()
-plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.diff_stable_pixels_vst_norm)
+plt.plot(cpstat.t_ranges, cpstat.frac_pixdiff_inst_vs_ref)
 sns.despine()
-plt.ylabel('# of pixels different from previous stable image / area / 5 min')
+plt.ylabel('fraction of pixels different from (sliding window) reference image')
 plt.xlabel('Time [s]')
-plt.ylim([0, 1.1*max(cpstat.diff_stable_pixels_vst_norm)])
+plt.ylim([0, 1.1*max(cpstat.frac_pixdiff_inst_vs_ref)])
 plt.xlim([0, var.TIME_TOTAL])
-plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Number_of_differing_stable_pixels_vst.png'))
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Fraction_of_differing_pixels_vs_slidingwindowref.png'))
 
 plt.figure()
-plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.ratio_attdef_changes[0])
+plt.plot(cpstat.t_ranges, cpstat.instability_norm)
 sns.despine()
-plt.ylabel('attack changes / defense changes')
+plt.ylabel('instability / 5 min')
 plt.xlabel('Time [s]')
-plt.ylim([0,4])
+plt.ylim([0, 1.1*max(cpstat.instability_norm)])
 plt.xlim([0, var.TIME_TOTAL])
-plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'attack_defense_pixelchanges_ratio.png'))
-'''
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'instability_normalized.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges, cpstat.n_users_norm)
+sns.despine()
+plt.ylabel('# users / area / 5 min')
+plt.xlabel('Time [s]')
+plt.ylim([0, 1.1*max(cpstat.n_users_norm)])
+plt.xlim([0, var.TIME_TOTAL])
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Number_of_users_normalized.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges, cpstat.n_changes_norm)
+sns.despine()
+plt.ylabel('# pixel changes / area / 5 min')
+plt.xlabel('Time [s]')
+plt.ylim([0, 1.1*max(cpstat.n_changes_norm)])
+plt.xlim([0, var.TIME_TOTAL])
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Number_of_pixel_changes_normalized.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges, cpstat.entropy)
+sns.despine()
+plt.ylabel('entropy (computable information density)')
+plt.xlabel('Time [s]')
+plt.ylim([0, 1.1*max(cpstat.entropy)])
+plt.xlim([0, var.TIME_TOTAL])
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'entropy.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges, cpstat.frac_attack_changes)
+sns.despine()
+plt.ylabel('# attack changes / # defense changes')
+plt.xlabel('Time [s]')
+plt.ylim([0,1])
+plt.hlines(y = 0.5, xmin=0, xmax=var.TIME_TOTAL, colors = 'black', linestyle='dashed')
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Fraction_attack_pixelchanges.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges, cpstat.frac_attackonly_users)
+sns.despine()
+plt.ylabel('fraction of users only attacking')
+plt.xlabel('Time [s]')
+plt.ylim([0,1])
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'fraction_of_users_onlyattacking.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges, cpstat.frac_defenseonly_users)
+sns.despine()
+plt.ylabel('fraction of users only defending')
+plt.xlabel('Time [s]')
+plt.ylim([0,1])
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'fraction_of_users_onlydefending.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges, cpstat.frac_bothattdef_users)
+sns.despine()
+plt.ylabel('fraction of users both attacking and defending')
+plt.xlabel('Time [s]')
+plt.ylim([0,1])
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'fraction_of_users_bothattackingdefending.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges, cpstat.returntime_median_overln2)
+sns.despine()
+plt.ylabel('median time for pixels to recover from attack [s] / ln(2)')
+plt.xlabel('Time [s]')
+plt.ylim([0, 1.1*max(cpstat.returntime_median_overln2[1:-2])])
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'median_pixel_recovery_time.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges, cpstat.returntime_mean)
+sns.despine()
+plt.ylabel('mean time for pixels to recover from attack [s] / ln(2)')
+plt.xlabel('Time [s]')
+plt.ylim([0, 1.1*max(cpstat.returntime_mean[1:-2])])
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'mean_pixel_recovery_time.png'))
+
+plt.figure()
+plt.plot(cpstat.t_ranges, cpstat.cumul_attack_timefrac)
+sns.despine()
+plt.ylabel('Fraction of the time that all pixels spent in an attack color [s]')
+plt.xlabel('Time [s]')
+plt.ylim([0, 1.1*max(cpstat.cumul_attack_timefrac[1:])])
+plt.xlim([0, var.TIME_TOTAL])
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'attack_time_fraction_allpixels.png'))
 
 '''
 fig, ax = plt.subplots()
@@ -178,7 +282,7 @@ matrix = np.zeros((cpstat.n_t_bins, nbinsret))
 for i in range(0,cpstat.n_t_bins):
     rettime = np.array(cpstat.returntime_tbinned[0][i])
     matrix[i] = np.histogram(rettime, returnt_bins)[0] if len(rettime) > 0 else np.zeros(nbinsret)
-plt.pcolormesh( cpstat.t_ranges[:-1]+cpstat.t_interval/2, 
+plt.pcolormesh( cpstat.t_ranges, 
                 returnt_bins[:-1]+tmaxret/nbinsret/2, 
                 np.transpose(matrix), 
                 cmap=plt.cm.jet, norm=pltcolors.LogNorm(vmin=0.95, vmax=700))
@@ -188,19 +292,9 @@ plt.ticklabel_format(style='scientific')
 plt.colorbar(label='# fresh attacks')
 plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'returntime_vs_time_hist2d.png'))
 
-plt.figure()
-plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.returntime_median_overln2[0])
-sns.despine()
-plt.ylabel('median time for pixels to recover from fresh attack [s] / ln(2)')
-plt.xlabel('Time [s]')
-plt.yscale('log')
-plt.ylim([8,3000])
-plt.xlim([0000, 300000])
-plt.vlines(x = [cpstat.transition_times[0][0], cpstat.transition_times[0][1], cpstat.transition_times[0][2], cpstat.transition_times[0][3]], ymin=0, ymax=1600, colors = 'black', linestyle='dashed')
-plt.savefig(os.path.join(var.FIGS_PATH, canpart.out_name(), 'median_pixel_recovery_time.png'))
 
 plt.figure()
-plt.plot(cpstat.t_ranges[:-1]+cpstat.t_interval/2, cpstat.returntime_mean[0])
+plt.plot(cpstat.t_ranges, cpstat.returntime_mean[0])
 sns.despine()
 plt.ylabel('mean time for pixels to recover from fresh attack [s] / ln(2)')
 plt.xlabel('Time [s]')
