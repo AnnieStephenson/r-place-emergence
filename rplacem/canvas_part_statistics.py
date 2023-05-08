@@ -9,6 +9,7 @@ import shutil
 import warnings
 import math
 
+
 class CanvasPartStatistics(object):
     ''' Object containing all the important time-dependent variables concerning the input CanvasPart
 
@@ -74,7 +75,7 @@ class CanvasPartStatistics(object):
     TRANSITIONS
     transition_param : list of floats
         cutoff parameters for the tran.find_transitions() function;
-        The last two arguments are in seconds 
+        The last two arguments are in seconds
 
     VARIABLES
     STABILITY
@@ -95,11 +96,11 @@ class CanvasPartStatistics(object):
 
     ENTROPY -- all need compute_vars['entropy'] > 0
     diff_pixels_stable_vs_ref
-    diff_pixels_inst_vs_ref 
-    diff_pixels_inst_vs_inst 
+    diff_pixels_inst_vs_ref
+    diff_pixels_inst_vs_inst
     diff_pixels_inst_vs_stable : 1d numpy array of length n_t_bins+1
-        Number of pixels that differ between images: 
-        stable over the timestep, instantaneous at the end of this or the previous timestep ("inst"), 
+        Number of pixels that differ between images:
+        stable over the timestep, instantaneous at the end of this or the previous timestep ("inst"),
         or the reference image over the sliding window (ref)
             Set in comp.main_variables()
     frac_pixdiff_stable_vs_ref
@@ -122,7 +123,7 @@ class CanvasPartStatistics(object):
             Set in ratios_and_normalizations()
     true_image: 1d array of size n_t_bins, of 2d numpy arrays.
         Each element is a pixels image info (2d numpy array containing color indices)
-        True image of the canvas part at the center of the time interval
+        True image of the canvas part at the end of the time interval
             Needs compute_vars['entropy'] > 1
             Set in comp.main_variables()
 
@@ -145,9 +146,9 @@ class CanvasPartStatistics(object):
     refimage_intrans
     refimage_posttrans : array of size min(1, number of transitions), of 2d numpy arrays.
         Each element is a pixels image info (2d numpy array containing color indices)
-        Reference stable image over the sliding window before the transition (sliding window ending at the end 
-        of the pre-transition stable period) or after the transition (sliding window starting at the beginning 
-        of the post-transition stable period). 
+        Reference stable image over the sliding window before the transition (sliding window ending at the end
+        of the pre-transition stable period) or after the transition (sliding window starting at the beginning
+        of the post-transition stable period).
         refimage_intrans is the true_image at time trans_start_time
             Needs compute_vars['transitions'] > 1
             Set in search_transitions()
@@ -165,7 +166,7 @@ class CanvasPartStatistics(object):
     n_changes : 1d array of length n_t_bins
         Number of pixel changes in each time bin
             Set in comp.main_variables()
-    n_changes_norm : 
+    n_changes_norm :
         same as n_changes, normalized by t_norm and area_vst
             Set in ratios_and_normalizations()
     frac_attack_changes : 2d array of floats, shape (# transitions, n_t_bins)
@@ -177,18 +178,18 @@ class CanvasPartStatistics(object):
     n_users : 1d array of int of length n_t_bins
         number of users that changed any pixels in this composition in each time range
             Set in comp.main_variables()
-    n_users_norm : 
+    n_users_norm :
         same as n_users_vst, normalized by t_norm and area_vst
             Set in ratios_and_normalizations()
     frac_attackonly_users
     frac_defenseonly_users
     frac_bothattdef_users : 1d array of floats of length n_t_bins
-        fraction of n_users that contributed pixels that are consistent refimage_sw, 
+        fraction of n_users that contributed pixels that are consistent refimage_sw,
         or not (attackonly), or fraction of users that did both (bothattdef)
             Set in ratios_and_normalizations()
     n_defense_users
     n_attack_users
-    n_bothattdef_users : 
+    n_bothattdef_users :
         Same as above, but without divinging by n_users.
         Kept if compute_vars['attackdefense'] > 3
             Set in comp.main_variables()
@@ -197,7 +198,7 @@ class CanvasPartStatistics(object):
         Image containing, for each pixel, the fraction of pixel changes that are attacking, for each time step
         Needs compute_vars['attackdefense'] > 1
     returntime : 2d array of shape (n_t_bins+1, # pixels)
-        For each time step, contains the time that each pixel spent in an 'attack' color 
+        For each time step, contains the time that each pixel spent in an 'attack' color
         during its latest or current attack (maxxed at the size of the sliding window)
         Kept if compute_vars['attackdefense'] > 3
             Set in comp.main_variables()
@@ -278,7 +279,7 @@ class CanvasPartStatistics(object):
         self.area = len(cpart.coords[0])
         self.area_rectangle = cpart.width(0) * cpart.width(1)
 
-        self.tmin = 0 # not functioning yet for tmin > 0
+        self.tmin = 0  # not functioning yet for tmin > 0
         self.tmax = tmax
         self.n_t_bins = n_tbins
         self.t_interval = (self.tmax - self.tmin) / n_tbins  # seconds
@@ -288,10 +289,10 @@ class CanvasPartStatistics(object):
         self.sw_width = int(sliding_window/self.t_interval)
 
         # Creating attributes that will be computed in comp.main_variables()
-        self.diff_pixels_stable_vs_ref = None 
-        self.diff_pixels_inst_vs_ref = None 
-        self.diff_pixels_inst_vs_inst = None 
-        self.diff_pixels_inst_vs_stable = None 
+        self.diff_pixels_stable_vs_ref = None
+        self.diff_pixels_inst_vs_ref = None
+        self.diff_pixels_inst_vs_inst = None
+        self.diff_pixels_inst_vs_stable = None
         self.area_vst = None
 
         self.stability = None
@@ -331,24 +332,24 @@ class CanvasPartStatistics(object):
 
         # Make movies
         if self.compute_vars['stability'] > 2:
-            util.save_movie(os.path.join(dirpath, 'VsTimeStab'), 15)
+            util.save_movie(os.path.join(dirpath, 'VsTimeStab'), fps=15)
         if self.compute_vars['entropy'] > 2:
-            util.save_movie(os.path.join(dirpath, 'VsTime'), 15)
+            util.save_movie(os.path.join(dirpath, 'VsTime'), fps=15)
         if self.compute_vars['attackdefense'] > 2:
-            util.save_movie(os.path.join(dirpath, 'attack_defense_ratio'), 15)
+            util.save_movie(os.path.join(dirpath, 'attack_defense_ratio'), fps=15)
 
         # Memory savings here
-        if compute_vars['attackdefense'] < 4: 
-            self.returntime = None 
+        if compute_vars['attackdefense'] < 4:
+            self.returntime = None
             self.n_defense_changes = None
             self.n_defense_users = None
             self.n_bothattdef_users = None
-        if compute_vars['entropy'] < 4: 
+        if compute_vars['entropy'] < 4:
             self.size_png = None
-            self.diff_pixels_stable_vs_ref = None 
-            self.diff_pixels_inst_vs_ref = None 
-            self.diff_pixels_inst_vs_inst = None 
-            self.diff_pixels_inst_vs_stable = None 
+            self.diff_pixels_stable_vs_ref = None
+            self.diff_pixels_inst_vs_ref = None
+            self.diff_pixels_inst_vs_inst = None
+            self.diff_pixels_inst_vs_stable = None
         if compute_vars['attackdefense'] < 2:
             self.refimage_sw = None
 
@@ -361,14 +362,15 @@ class CanvasPartStatistics(object):
             shutil.rmtree(dirpath)
 
     def checks_warnings(self):
-        if np.any( np.diff(self.t_ranges) < 0 ):
+        if np.any(np.diff(self.t_ranges) < 0):
             warnings.warn('The array of time limits t_ranges should contain increasing values. It will be modified to fit this requirement.')
             for i in range(1, self.n_t_bins + 1): # need for loop because it needs to be done in that order
                 if self.t_ranges[i] < self.t_ranges[i-1]:
                     self.t_ranges[i] = self.t_ranges[i-1]
+        if self.sw_width == 0:
+            warnings.warn('The interval size is larger than the sliding window. Choose a smaller interval size or a larger sliding window.')
 
     def ratios_and_normalizations(self):
-
         self.instability_norm = (1 - self.stability) / self.t_norm
         self.n_changes_norm = util.divide_treatzero(self.n_changes / self.t_norm, self.area_vst, 0, 0)
         self.n_users_norm = util.divide_treatzero(self.n_users / self.t_norm, self.area_vst, 0, 0)
@@ -388,31 +390,25 @@ class CanvasPartStatistics(object):
         self.entropy[0] = 0
         self.entropy_bmpnorm[0] = 0
         idx_dividebyzero = np.where(self.area_vst == 0)
-        self.entropy[idx_dividebyzero] = self.entropy_bmpnorm[idx_dividebyzero] * 3.2 # typical factor hard-coded here
-        
-        return 1
+        self.entropy[idx_dividebyzero] = self.entropy_bmpnorm[idx_dividebyzero] * 3.2  # typical factor hard-coded here
 
     def returntime_stats(self, sliding_window, binwidth=100):
-
         returnt_bins = np.arange(0, sliding_window+binwidth, binwidth)
         self.returntime_tbinned = np.zeros((self.n_t_bins+1, math.ceil(sliding_window/binwidth)))
         self.returntime_mean = np.zeros(self.n_t_bins+1)
         self.returntime_median_overln2 = np.zeros(self.n_t_bins+1)
         self.returntime_percentile90_overln2 = np.zeros(self.n_t_bins+1)
         for t in range(1, self.n_t_bins+1):
-            self.returntime_tbinned[t],_ = np.histogram(self.returntime[t], bins=returnt_bins)
+            self.returntime_tbinned[t], _ = np.histogram(self.returntime[t], bins=returnt_bins)
             if np.count_nonzero(self.returntime[t] < 0) > 0:
                 warnings.warn('There are negative return times, this is a problem!')
             self.returntime_mean[t] = np.mean(self.returntime[t])
             self.returntime_median_overln2[t] = np.median(self.returntime[t]) / np.log(2)
             self.returntime_percentile90_overln2[t] = np.percentile(self.returntime[t], 90) / np.log(2)
 
-        return 1
-
     def search_transitions(self, cpart, sliding_window):
-
         par = self.transition_param
-        transitions = tran.find_transitions(self.t_ranges, self.frac_pixdiff_inst_vs_ref, 
+        transitions = tran.find_transitions(self.t_ranges, self.frac_pixdiff_inst_vs_ref,
                                              cutoff=par[0], cutoff_stable=par[1], len_stableregion=par[2], distfromtrans_stableregion=par[3],
                                              sliding_win=sliding_window)
         self.transition_tinds = transitions[0]
@@ -433,16 +429,14 @@ class CanvasPartStatistics(object):
 
             self.trans_start_time[j] = tran.transition_start_time(self, j)[1] # take the mean here, but could be the median (among variables)
             self.trans_start_tind[j] = np.argmax(self.t_ranges >= self.trans_start_time[j])
-            
+
             if trans > 1:
                 self.frac_diff_pixels_pre_vs_post_trans[j] = comp.count_image_differences(self.refimage_pretrans[j], self.refimage_posttrans[j], cpart) / self.area
                 self.refimage_intrans[j] = self.true_image[self.trans_start_tind[j]]
                 self.refimage_pretrans[j] = self.refimage_sw[end_pretrans_sw_ind]
-                self.refimage_posttrans[j] = self.refimage_sw[end_posttrans_sw_ind] 
+                self.refimage_posttrans[j] = self.refimage_sw[end_posttrans_sw_ind]
 
             if trans > 2:
                 util.pixels_to_image(self.refimage_pretrans[j], cpart.out_name(), 'referenceimage_sw_pre_transition'+str(j) + '.png')
                 util.pixels_to_image(self.refimage_intrans[j], cpart.out_name(), 'referenceimage_at_transition'+str(j) + '.png')
                 util.pixels_to_image(self.refimage_posttrans[j], cpart.out_name(), 'referenceimage_sw_post_transition'+str(j) + '.png')
-
-                

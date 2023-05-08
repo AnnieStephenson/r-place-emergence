@@ -27,11 +27,11 @@ def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
 
     # save pixel changes as a structured array
     pixel_changes_all = np.zeros(len(pixel_changes_all_npz['seconds']),
-                                 dtype=np.dtype([('seconds', np.float64), 
-                                                 ('xcoor', np.uint16), 
-                                                 ('ycoor', np.uint16), 
-                                                 ('user', np.uint32), 
-                                                 ('color', np.uint8), 
+                                 dtype=np.dtype([('seconds', np.float64),
+                                                 ('xcoor', np.uint16),
+                                                 ('ycoor', np.uint16),
+                                                 ('user', np.uint32),
+                                                 ('color', np.uint8),
                                                  ('moderator', np.bool_)])
                                  )
     pixel_changes_all['seconds'] = np.array(pixel_changes_all_npz['seconds'])
@@ -56,7 +56,7 @@ def get_file_size(path):
     return len(byte_array)
 
 
-def check_time(statement, sort = 'cumtime'):
+def check_time(statement, sort='cumtime'):
     '''
     parameters:
     -----------
@@ -68,7 +68,7 @@ def check_time(statement, sort = 'cumtime'):
 
 def equalize_list_sublengths(l):
     ''' Fill out each sublist-member of the list up to the length of the longest member, with redundant values (so that it can be a np.array)'''
-    maxlen = max(len(v) for v in l)  
+    maxlen = max(len(v) for v in l)
     for i in range(0,len(l)):
         l[i] += [l[i][0]] * max(maxlen - len(l[i]), 0)
     return l
@@ -81,10 +81,10 @@ def pixels_to_image(pix, dir='', save_name='', save_name2=''):
     if save_name != '':
         try:
             os.makedirs( os.path.join(var.FIGS_PATH, dir) )
-        except OSError: 
+        except OSError:
             pass
-        impath1 = os.path.join(var.FIGS_PATH, dir, save_name) 
-        impath2 = os.path.join(var.FIGS_PATH, dir, save_name2) 
+        impath1 = os.path.join(var.FIGS_PATH, dir, save_name)
+        impath2 = os.path.join(var.FIGS_PATH, dir, save_name2)
         im.save(impath1)
         if save_name2 != '':
             im.save(impath2)
@@ -108,9 +108,9 @@ def save_movie(image_path,
         Movie handling package you want to use
         values can be 'moviepy', 'ffmpeg-python', or 'ffmpeg'
         You must have the corresponding packages installed for this to work.
-        'moviepy' and 'ffmpeg-python' refer to python packages. 'ffmpeg' refers 
-        to software that must be installed on your system without requiring a 
-        specific python package. 
+        'moviepy' and 'ffmpeg-python' refer to python packages. 'ffmpeg' refers
+        to software that must be installed on your system without requiring a
+        specific python package.
     '''
     image_files = list(np.sort(glob.glob(os.path.join(image_path, '*.png'))))
     png_name0 = os.path.basename(image_files[0][0:-15])
@@ -121,7 +121,7 @@ def save_movie(image_path,
         if 'imsc' not in sys.modules:
             import moviepy.video.io.ImageSequenceClip as imsc
         clip = imsc.ImageSequenceClip(image_files, fps=fps)
-        clip.write_videofile(movie_file,  codec=codec)
+        clip.write_videofile(movie_file, codec=codec)
 
     if movie_tool == 'ffmpeg-python':
         # frames may not be in order
@@ -136,14 +136,14 @@ def save_movie(image_path,
 
 
 def update_image(image, xcoords, ycoords, color, t_inds=None):
-    '''Update the pixels of the [image] using the 1d arrays [xcoords], [ycoords], [color]. 
+    '''Update the pixels of the [image] using the 1d arrays [xcoords], [ycoords], [color].
     These latter arrays are taken at indices [t_inds].
     For each (x,y) pixel, one needs to keep only the last pixel change. '''
     if len(t_inds) == 0:
         return
     if t_inds is None:
         t_inds = np.arange(0, len(color))
-    
+
     color_inv = (color[t_inds])[::-1]
     ycoords_inv = (ycoords[t_inds])[::-1]
     xcoords_inv = (xcoords[t_inds])[::-1]
@@ -166,7 +166,7 @@ def load_atlas():
 
 def make_dir(path, renew=False):
     '''
-    Makes directory only if it does not exist yet. 
+    Makes directory only if it does not exist yet.
     If [renew], removes the directory contents if it exists.
     Returns a bool saying if the dir existed beforehand
     '''
@@ -177,7 +177,7 @@ def make_dir(path, renew=False):
         if renew:
             shutil.rmtree(path)
         res = True
-    
+
     return res
 
 
@@ -186,7 +186,7 @@ def merge_pickles(file_list, file_out):
     for file in file_list:
         with open(file, 'rb') as f:
             out += pickle.load(f)
-    
+
     with open(os.path.join(var.DATA_PATH, file_out), 'wb') as handle:
         pickle.dump(out, handle, protocol=pickle.HIGHEST_PROTOCOL)
 

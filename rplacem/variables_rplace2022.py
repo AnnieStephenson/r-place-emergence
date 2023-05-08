@@ -13,7 +13,7 @@ COOLDOWN_MIN = 250
 
 FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 
-DATA_PATH = os.path.join(FILE_DIR, '..' ,'data')
+DATA_PATH = os.path.join(FILE_DIR, '..', 'data')
 FULL_DATA_FILE = 'PixelChangesCondensedData_sorted.npz'
 FIGS_PATH = os.path.join(FILE_DIR, '..', 'figs')
 

@@ -6,6 +6,7 @@ import os, copy
 import rplacem.variables_rplace2022 as var
 import rplacem.utilities as util
 import numpy as np
+import math
 
 
 def show_canvas_part(pixels, ax=None):
@@ -18,6 +19,22 @@ def show_canvas_part(pixels, ax=None):
         plt.imshow(pixels, origin='upper')
     else:
         ax.imshow(pixels, origin='upper')
+
+
+def show_canvas_part_over_time(pixels_vst, figsize=(3,3)):
+    '''
+    Plots a grid of the canvas part instantaneous images over time
+    '''
+    num_time_steps = len(pixels_vst)
+    ncols = np.min([num_time_steps, 10])
+    nrows = np.max([1, int(math.ceil(num_time_steps/10))])
+    fig, axes = plt.subplots(nrows, ncols, sharex=True, sharey=True, figsize=figsize)
+
+    for i, ax in enumerate(axes.flat):
+        ax.axis('off')
+        if i < num_time_steps:
+            show_canvas_part(util.get_rgb(pixels_vst[i]), ax=ax)
+
 
 def compression(file_size_bmp, file_size_png, times, out_name=''):
     '''
