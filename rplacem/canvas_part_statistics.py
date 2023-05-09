@@ -1,6 +1,5 @@
 import numpy as np
 import os
-import cv2
 import rplacem.variables_rplace2022 as var
 import rplacem.compute_variables as comp
 import rplacem.utilities as util
@@ -401,6 +400,7 @@ class CanvasPartStatistics(object):
         for t in range(1, self.n_t_bins+1):
             self.returntime_tbinned[t], _ = np.histogram(self.returntime[t], bins=returnt_bins)
             if np.count_nonzero(self.returntime[t] < 0) > 0:
+                print(t, self.returntime[t], np.count_nonzero(self.returntime[t] < 0))
                 warnings.warn('There are negative return times, this is a problem!')
             self.returntime_mean[t] = np.mean(self.returntime[t])
             self.returntime_median_overln2[t] = np.median(self.returntime[t]) / np.log(2)

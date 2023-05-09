@@ -318,7 +318,7 @@ def main_variables(cpart,
             show_progress(i/n_tlims, i_fraction_print, 0.1)
         timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_lims[i-1]), int(t_lims[i]))
 
-        # Starting time of the slinding window.
+        # Starting time of the sliding window. 
         tind_sw_start = max(0, i - cpst.sw_width)
         t_sw_start = t_lims[tind_sw_start]
         # Keep only changes within the window (reject older ones).
