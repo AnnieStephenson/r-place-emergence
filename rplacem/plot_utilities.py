@@ -6,6 +6,7 @@ import os, copy
 import rplacem.variables_rplace2022 as var
 import rplacem.utilities as util
 import numpy as np
+import math
 
 
 def show_canvas_part(pixels, ax=None):
@@ -18,6 +19,22 @@ def show_canvas_part(pixels, ax=None):
         plt.imshow(pixels, origin='upper')
     else:
         ax.imshow(pixels, origin='upper')
+
+
+def show_canvas_part_over_time(pixels_vst, figsize=(3,3)):
+    '''
+    Plots a grid of the canvas part instantaneous images over time
+    '''
+    num_time_steps = len(pixels_vst)
+    ncols = np.min([num_time_steps, 10])
+    nrows = np.max([1, int(math.ceil(num_time_steps/10))])
+    fig, axes = plt.subplots(nrows, ncols, sharex=True, sharey=True, figsize=figsize)
+
+    for i, ax in enumerate(axes.flat):
+        ax.axis('off')
+        if i < num_time_steps:
+            show_canvas_part(util.get_rgb(pixels_vst[i]), ax=ax)
+
 
 def compression(file_size_bmp, file_size_png, times, out_name=''):
     '''
@@ -106,7 +123,8 @@ def draw_1dhist(data, xrange=[], bins=[100],
                 xlab='', ylab='',
                 xlog=False, ylog=False, x0log=0,
                 outfile='',
-                scientific_labels=True, alreadyhist=False):
+                scientific_labels=True, alreadyhist=False,
+                fontsize=14, fontsize_label=17, linecolor=[0.2, 0.2, 0.2], linewidth=1):
     '''
     plot the histogram of the given 1d array and saves it
 
@@ -121,26 +139,26 @@ def draw_1dhist(data, xrange=[], bins=[100],
     fig, ax = plt.subplots()
 
     if alreadyhist:
-        plt.stairs(data, bins, lw=1, facecolor='b')
+        plt.stairs(data, bins, lw=linewidth, facecolor='b', edgecolor=linecolor)
     elif len(bins) == 1:
         if xrange==[]:
             res = [np.min(data), np.max(data)]
             spread = res[1] - res[0]
             xrange = [res[0] - spread*2/bins, res[1] + spread*2/bins]
 
-        plt.hist(data, bins=bins[0], range=xrange, lw=1, histtype='step', facecolor='b')
+        plt.hist(data, bins=bins[0], range=xrange, lw=linewidth, histtype='step', facecolor='b', edgecolor=linecolor)
     else:
-        plt.hist(data, bins=bins, lw=1, histtype='step', facecolor='b')
+        plt.hist(data, bins=bins, lw=linewidth, histtype='step', facecolor='b', edgecolor=linecolor)
 
     sns.despine()
     plt.ticklabel_format(style=('scientific' if scientific_labels else 'plain'),
                          scilimits=([0,0] if scientific_labels else [-10,10]) )
-    plt.xticks(fontsize=14)
-    plt.yticks(fontsize=14)
-    ax.xaxis.offsetText.set_fontsize(14)
-    ax.yaxis.offsetText.set_fontsize(14)
-    plt.xlabel(xlab, fontsize=17)
-    plt.ylabel(ylab, fontsize=17)
+    plt.xticks(fontsize=fontsize)
+    plt.yticks(fontsize=fontsize)
+    ax.xaxis.offsetText.set_fontsize(fontsize)
+    ax.yaxis.offsetText.set_fontsize(fontsize)
+    plt.xlabel(xlab, fontsize=fontsize_label)
+    plt.ylabel(ylab, fontsize=fontsize_label)
 
     xlimits = xrange if len(bins) == 1 else [bins[0],bins[-1]]
     if xlog or x0log != 0:
@@ -159,7 +177,12 @@ def draw_2dmap(h2d, xedges, yedges,
                logz=True,
                zmax=1500,
                clabel='',
-               outfile=''):
+               outfile='',
+               cmap_log='cividis',
+               cmap = 'inferno',
+               colorbar_orient='horizontal',
+               cbar_ticks_pos = 'top',
+               fontsize_ticks = 20):
     '''
     plots and saves a 2D histogram in the style of a heatmap, including a colormap
 
@@ -181,18 +204,18 @@ def draw_2dmap(h2d, xedges, yedges,
         h2d = np.ma.masked_where(h2d == 0, h2d)
         #lin_cmap.set_bad(color='white') # so that the bins with content 0 are not drawn
     map = plt.imshow(h2d, interpolation='none', origin='lower', aspect=1,
-                     cmap=('inferno' if logz else 'cividis'), norm=(colors.LogNorm(1,zmax) if logz else colors.Normalize(vmin=0, vmax=zmax)))
+                     cmap=(cmap_log if logz else cmap), norm=(colors.LogNorm(1,zmax) if logz else colors.Normalize(vmin=0, vmax=zmax)))
 
     plt.axis('off')
     ax = plt.gca()
     axins = insloc.inset_axes(ax, width="80%", height="3.5%", loc="upper center",
                               bbox_to_anchor=(0., 0.043, 1, 1), bbox_transform=ax.transAxes, borderpad=0)
 
-    cbar = fig.colorbar(map, cax=axins, orientation="horizontal")
+    cbar = fig.colorbar(map, cax=axins, orientation=colorbar_orient)
     cbar.ax.tick_params(labelsize=20)
-    cbar.ax.xaxis.set_ticks_position("top")
-    cbar.ax.xaxis.set_label_position("top")
-    cbar.set_label(clabel, fontsize=24, labelpad=10)
+    cbar.ax.xaxis.set_ticks_position(cbar_ticks_pos)
+    cbar.ax.xaxis.set_label_position(cbar_ticks_pos)
+    cbar.set_label(clabel, fontsize=fontsize_ticks, labelpad=10)
 
     if outfile != '':
         print('save figure in ',os.path.join(var.FIGS_PATH, outfile))

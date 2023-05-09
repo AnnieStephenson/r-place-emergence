@@ -95,7 +95,8 @@ ENV/
 *.bmp
 
 figs/
-*.pickle
+figs/*.pickle
+data/*.pickle
 *.root
 *.npz
 

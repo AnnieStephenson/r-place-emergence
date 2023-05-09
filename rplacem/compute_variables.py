@@ -11,7 +11,6 @@ import rplacem.utilities as util
 import rplacem.plot_utilities as plot
 import scipy
 import warnings
-import numpy.ma as ma
 
 
 def calc_num_pixel_changes(cpart,
@@ -79,9 +78,10 @@ def count_image_differences(pixels1, pixels2, cpart, indices=None):
     coords = cpart.coords_offset()[:, indices]
     return np.count_nonzero(pixels2[coords[1], coords[0]] - pixels1[coords[1], coords[0]])
 
+
 def initialize_start_time_grid(cpart, t_start, add_color_dim=False):
     '''
-    Initialize to the start of the time interval. 
+    Initialize to the start of the time interval.
     We neglect the time before the supplementary canvas
     quarters open by setting last_time_changed for those coordinates
     to either the interval start time or the time the coordinates
@@ -90,26 +90,28 @@ def initialize_start_time_grid(cpart, t_start, add_color_dim=False):
     if add_color_dim:
         res = np.full((var.NUM_COLORS, cpart.num_pix()), t_start, dtype='float64')
         res[:, cpart.quarter2_coordinds] = max(t_start, var.TIME_ENLARGE1)
-        res[:, cpart.quarter34_coordinds] = max(t_start, var.TIME_ENLARGE2)    
+        res[:, cpart.quarter34_coordinds] = max(t_start, var.TIME_ENLARGE2)
     else:
         res = np.full(cpart.num_pix(), t_start, dtype='float64')
         res[cpart.quarter2_coordinds] = max(t_start, var.TIME_ENLARGE1)
         res[cpart.quarter34_coordinds] = max(t_start, var.TIME_ENLARGE2)
     return res
 
-def calc_time_spent_in_color(cpart, seconds, color, pixch_coord_inds, 
-                             t_beg, t_end, current_color, 
+
+def calc_time_spent_in_color(cpart, seconds, color, pixch_coord_inds,
+                             t_beg, t_end, current_color,
                              last_time_installed_sw=None, last_time_removed_sw=None):
     '''
     Returns np.array of shape (n_tlims, n_pixels, n_colors)
     For each timestep, it contains the time that each pixel spent in each color
+    Also updates last_time_installed_sw pointer.
     '''
 
     # Get variables from canvas_part and set shorter names
     coord_range = np.arange(0, cpart.num_pix())
     time_spent_in_color = np.zeros((cpart.num_pix(), var.NUM_COLORS), dtype='float64')
 
-    # Initialize last_time_changed 
+    # Initialize last_time_changed
     last_time_changed = initialize_start_time_grid(cpart, t_beg, add_color_dim=False)
 
     # Loop through each pixel change in the step, indexing by time.
@@ -117,11 +119,12 @@ def calc_time_spent_in_color(cpart, seconds, color, pixch_coord_inds,
         # nothing necessary here if the color is not changed (redundant pixel change)
         if c == current_color[coor_idx]:
             continue
-        
+
         # Add the time that this pixel spent in the most recent color.
         time_spent_in_color[coor_idx, current_color[coor_idx]] += s - last_time_changed[coor_idx]
 
         # Update the time of the last pixel change for this pixel.
+        # This code updates the pointer last_time)installed_sw without returning.
         last_time_changed[coor_idx] = s
         if last_time_installed_sw is not None:
             last_time_installed_sw[ c ][coor_idx] = s # time where this pixel was changed to new color [c]
@@ -135,13 +138,14 @@ def calc_time_spent_in_color(cpart, seconds, color, pixch_coord_inds,
 
     return time_spent_in_color
 
+
 def cumulative_attack_timefrac(time_spent_in_col, ref_colors, inds_active_pix, stepwidth):
     '''
-    From the 2D array time_spent_in_col (shape (n_pixels, n_colors)) and the 1D image ref_colors, 
+    From the 2D array time_spent_in_col (shape (n_pixels, n_colors)) and the 1D image ref_colors,
     computes the sum of the times that every pixel spent in another color than that of ref_colors.
     Normalized by the total time summed over all pixels
     '''
-    time_spent = ma.array(time_spent_in_col[inds_active_pix, :])
+    time_spent = time_spent_in_col[inds_active_pix, :]
     ref_cols = ref_colors[inds_active_pix]
     time_spent_in_refcol = time_spent[ np.arange(0, time_spent.shape[0]), ref_cols]
     if len(inds_active_pix) == 0:
@@ -149,6 +153,7 @@ def cumulative_attack_timefrac(time_spent_in_col, ref_colors, inds_active_pix, s
     else:
         res = 1 - np.sum(time_spent_in_refcol) / (stepwidth * len(inds_active_pix))
     return max(res, 0)
+
 
 def calc_stability(stable_timefrac, inds_active, compute_average):
     stab_per_pixel = stable_timefrac[:, 0]  # Get time fraction for most stable color.
@@ -165,8 +170,10 @@ def calc_stability(stable_timefrac, inds_active, compute_average):
 
     return stability
 
+
 def calc_stable_col(time_spent_in_col):
     return np.flip(np.argsort(time_spent_in_col, axis=1), axis=1)
+
 
 def show_progress(timefrac, timeflag, frequency=0.1):
     if timefrac > timeflag * frequency:
@@ -174,8 +181,9 @@ def show_progress(timefrac, timeflag, frequency=0.1):
         print('Ran {:.2f}% of the steps'.format(100 * timefrac), end='\r')
     return 1
 
+
 def calc_stable_timefrac(cpart, t_step, t_lims,
-                             time_spent_in_color, stable_colors):
+                         time_spent_in_color, stable_colors):
         '''
         Compute the fraction of time that each pixel was in each color.
         The output stable_timefrac is of shape (n_pixels, n_colors), containing time fractions
@@ -191,15 +199,16 @@ def calc_stable_timefrac(cpart, t_step, t_lims,
 
         return res
 
+
 def main_variables(cpart,
                    cpst,
-                   print_progress=False,
+                   start_pixels=None,
                    delete_dir=False,
-                   start_pixels=None
+                   print_progress=False,
                    ):
     '''
-    makes map of stability in some time range.
-    Stability of a pixel is the fraction of time it spent in its 'favorite' color (meaning the color it was in for the most time)
+    Calculates the main variables that are contained in a CanvasPartStatistics object.
+    This includes stability and attack/defense related variables.
 
     parameters
     ----------
@@ -207,13 +216,16 @@ def main_variables(cpart,
         The CanvasPart object for which we want to calculate the stability
     cpst : CanvasPartStatistics object
         The object whose attributes will receive all computed variables
-    start_pixels : 1d array, size (n_pixels)
+    start_pixels : 1d array, optional, size (n_pixels)
         1D pixels to start with if t0!=0
-    delete_dir : boolean
+    delete_dir : boolean, optional
         Remove directory after running, if it did not exist before
-    returns: 
+    print_progress : boolean, optional
+        If True, prints a progress statement
+
+    returns
     -------
-    Modifies many attributes of the input cpst
+    returns nothing, but modifies many attributes of the input cpst
     '''
 
     # Preliminaries
@@ -224,35 +236,35 @@ def main_variables(cpart,
     instant = cpst.compute_vars['entropy']
 
     # Some warnings for required conditions of use of the function
-    if t_lims[0] != 0 and start_pixels == None:
+    if t_lims[0] != 0 and start_pixels is None:
         warnings.warn('t_lims parameter should start with time 0, or the start_pixels should be provided, for standard functioning.')
     if delete_dir and (instant > 2 or stab > 2 or attdef > 2):
         warnings.warn('Some images were required to be stored, but with delete_dir=True, the full directory will be removed! ')
 
     # Canvas part data
     cpart.set_quarters_coord_inds()
-    seconds = cpart.pixel_changes['seconds'] # add np.array()?
+    seconds = cpart.pixel_changes['seconds']  # add np.array()?
     color = cpart.pixel_changes['color']
     user = cpart.pixel_changes['user']
     pixch_coord_inds = cpart.pixel_changes['coord_index']  # indices of cpart.coords where to find the (x,y) of a given pixel_change
-    pixch_2Dcoor_offset = cpart.pixchanges_coords_offset() # for creation of the 2D images
-    coor_offset = cpart.coords_offset() # for transformation from 1D to 2D pixels
+    pixch_2Dcoor_offset = cpart.pixchanges_coords_offset()  # for creation of the 2D images
+    coor_offset = cpart.coords_offset()  # for transformation from 1D to 2D pixels
 
     # Initialize variables for first time iteration
-    ref_colors = cpart.white_image(1) # reference image (stable over the sliding window)
-    current_color = cpart.white_image(1) if start_pixels == None else start_pixels
-    previous_color = cpart.white_image(1) # image in the previous timestep
-    previous_stable_color = cpart.white_image(1) # stable image in the previous timestep
+    ref_colors = cpart.white_image(1)  # reference image (stable over the sliding window)
+    current_color = cpart.white_image(1) if start_pixels is None else start_pixels
+    previous_color = cpart.white_image(1)  # image in the previous timestep
+    previous_stable_color = cpart.white_image(1)  # stable image in the previous timestep
     time_spent_in_color = np.zeros((n_tlims, cpart.num_pix(), var.NUM_COLORS), dtype='float64')
     last_time_installed_sw = None if attdef == 0 else initialize_start_time_grid(cpart, t_lims[0], add_color_dim=True)
     last_time_removed_sw = None if attdef == 0 else np.copy(last_time_installed_sw)
 
     # Output
     cpst.stability = np.full(n_tlims, 1., dtype=np.float32)
-    cpst.diff_pixels_stable_vs_ref = np.zeros(n_tlims) 
-    cpst.diff_pixels_inst_vs_ref = np.zeros(n_tlims) 
-    cpst.diff_pixels_inst_vs_inst = np.zeros(n_tlims) 
-    cpst.diff_pixels_inst_vs_stable = np.zeros(n_tlims) 
+    cpst.diff_pixels_stable_vs_ref = np.zeros(n_tlims)
+    cpst.diff_pixels_inst_vs_ref = np.zeros(n_tlims)
+    cpst.diff_pixels_inst_vs_inst = np.zeros(n_tlims)
+    cpst.diff_pixels_inst_vs_stable = np.zeros(n_tlims)
     cpst.returntime = np.zeros((n_tlims, cpart.num_pix()), dtype='float64')
     cpst.area_vst = np.full(n_tlims, cpart.num_pix())
     cpst.n_changes = np.zeros(n_tlims)
@@ -279,7 +291,7 @@ def main_variables(cpart,
 
         # 2d numpy arrays containing color indices (from 0 to 31) for each pixel of the composition
         cpst.stable_image = cpst.second_stable_image = cpst.third_stable_image = cpart.white_image(3, images_number=n_tlims)
-        
+
         def modify_some_pixels(start, target, step, indices):
             ''' start and target are 1d arrays of 2d images.
             Coordinates at given indices in [start] must be replaced by the content of [target]'''
@@ -295,7 +307,7 @@ def main_variables(cpart,
         cpst.true_image = cpart.white_image(3, images_number=n_tlims)
 
     # Dummy fill of file_size_png and file_size_bmp for time 0
-    create_files_and_get_sizes(t_lims, 0, cpart.white_image(2), 
+    create_files_and_get_sizes(t_lims, 0, cpart.white_image(2),
                                cpst.size_png, cpst.size_bmp, out_path_time)
 
     # LOOP over time steps
@@ -306,13 +318,13 @@ def main_variables(cpart,
             show_progress(i/n_tlims, i_fraction_print, 0.1)
         timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_lims[i-1]), int(t_lims[i]))
 
-        # Starting time of the slinding window. 
+        # Starting time of the slinding window.
         tind_sw_start = max(0, i - cpst.sw_width)
         t_sw_start = t_lims[tind_sw_start]
         # Keep only changes within the window (reject older ones).
         last_time_installed_sw = np.maximum(last_time_installed_sw, t_sw_start)
         last_time_removed_sw = np.maximum(last_time_removed_sw, t_sw_start)
-        
+
         # Get indices of all pixels that are active in this time step.
         inds_coor_active = np.array(cpart.active_coord_inds(t_lims[i-1], t_lims[i]), dtype=np.int64)
         cpst.area_vst[i] = len(inds_coor_active)
@@ -330,16 +342,17 @@ def main_variables(cpart,
         # This also updates [current_color, last_time_installed_sw, last_time_removed_sw] with the pixel changes in this time step
         # time_spent_in_color is of shape (n_tlims, n_pixels, n_colors)
         time_spent_in_color[i] = calc_time_spent_in_color(cpart,
-                                                          seconds[t_inds], color[t_inds], pixch_coord_inds[t_inds], 
+                                                          seconds[t_inds], color[t_inds], pixch_coord_inds[t_inds],
                                                           t_lims[i-1], t_lims[i], current_color,
                                                           last_time_installed_sw, last_time_removed_sw)
-        
+
         # STABILITY
-        # Get the color indices in descending order of which color they spent the most time in
-        # stable_colors is of shape (n_pixels, n_colors), containing color indices ordered in decreasing occupation times
-        stable_colors = calc_stable_col(time_spent_in_color[i])
 
         if stab > 0:
+            # Get the color indices in descending order of which color they spent the most time in
+            # stable_colors is of shape (n_pixels, n_colors), containing color indices ordered in decreasing occupation times
+            stable_colors = calc_stable_col(time_spent_in_color[i])
+
             # Get the times spent in each color in descending order of time spent.
             # stable_timefrac is of shape (n_pixels, n_colors), containing time fractions
             stable_timefrac = calc_stable_timefrac(cpart, i, t_lims,
@@ -348,7 +361,7 @@ def main_variables(cpart,
             cpst.stability[i] = calc_stability(stable_timefrac, inds_coor_active, True)
 
         # Sum time_spent_in_color over timesteps included in the sliding window
-        time_spent_in_color_sw = np.sum(time_spent_in_color[ tind_sw_start:i, :, : ], axis=0)
+        time_spent_in_color_sw = np.sum(time_spent_in_color[tind_sw_start:i, :, :], axis=0)
 
         # Calculate the new reference image
         ref_colors = calc_stable_col(time_spent_in_color_sw)[:, 0]
@@ -356,24 +369,24 @@ def main_variables(cpart,
         # ATTACK/DEFENSE VS REFERENCE IMAGE
         if attdef > 0:
             # Calculate the (normalized) cumulative attack time over all pixels in this timestep
-            cpst.cumul_attack_timefrac[i] = cumulative_attack_timefrac(time_spent_in_color[i], ref_colors, 
+            cpst.cumul_attack_timefrac[i] = cumulative_attack_timefrac(time_spent_in_color[i], ref_colors,
                                                                        inds_coor_active, cpst.t_interval)
             # Calculate return time, as the time each pixel spent in the non-reference color during the last attack
             mask_attack = np.full(current_color.shape, False)
-            mask_attack[ np.where(current_color != ref_colors) ] = True # indices where pixels are in an attack color
+            mask_attack[np.where(current_color != ref_colors)] = True  # indices where pixels are in an attack color
             cpst.returntime[i][~mask_attack] = last_time_installed_sw[ref_colors[~mask_attack], ~mask_attack] \
-                                             - last_time_removed_sw[ref_colors[~mask_attack], ~mask_attack]
+                                              - last_time_removed_sw[ref_colors[~mask_attack], ~mask_attack]
             cpst.returntime[i][mask_attack] = t_lims[i] - last_time_removed_sw[ref_colors[mask_attack], mask_attack]
 
             # Calculate the number of changes and of users that are attacking or defending the reference image
             num_changes_and_users(cpart, i, timerange_str,
                                   user, pixch_coord_inds, pixch_2Dcoor_offset, color,
-                                  t_inds_active, ref_colors, 
+                                  t_inds_active, ref_colors,
                                   cpst.n_changes, cpst.n_defense_changes,
                                   cpst.n_users, cpst.n_bothattdef_users, cpst.n_defense_users,
                                   cpst.frac_attack_changes_image,
                                   attdef > 1, attdef > 2)
-    
+
         # INSTANTANEOUS IMAGES
         if instant > 0:
             # Calculate the number of pixels in the current interval (stable or instantaneous) that differ from the reference image, or from the previous timestep
@@ -381,16 +394,16 @@ def main_variables(cpart,
             cpst.diff_pixels_inst_vs_ref[i] = np.count_nonzero(current_color - ref_colors)
             cpst.diff_pixels_inst_vs_inst[i] = np.count_nonzero(current_color - previous_color)
             cpst.diff_pixels_inst_vs_stable[i] = np.count_nonzero(current_color - previous_stable_color)
-        
+
             # Create the png and bmp files from the current image, and store their sizes
             pix_tmp = cpart.white_image(2)
-            pix_tmp[ coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active] ] = current_color[inds_coor_active]
-            create_files_and_get_sizes(t_lims, i, pix_tmp, 
-                                    cpst.size_png, cpst.size_bmp,
-                                    out_path_time, True, instant > 2)
+            pix_tmp[coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active]] = current_color[inds_coor_active]
+            create_files_and_get_sizes(t_lims, i, pix_tmp,
+                                       cpst.size_png, cpst.size_bmp,
+                                       out_path_time, True, instant > 2)
 
         # END CORE COMPUTATIONS. Magic ends
-        
+
         # Save full result to pickle file.
         if stab > 3:
             file_path = os.path.join(var.DATA_PATH, 'stability_' + cpart.out_name() + '_time{:06d}to{:06d}.pickle'.format(int(t_lims[i-1]), int(t_lims[i])))
@@ -409,8 +422,8 @@ def main_variables(cpart,
             cpst.refimage_sw[i, coor_offset[1], coor_offset[0]] = ref_colors
             if attdef > 2:
                 timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_sw_start), int(t_lims[i]))
-                util.pixels_to_image(cpst.refimage_sw[i], os.path.join(cpart.out_name(), 'VsTimeStab','RefImg'), 'SlidingRef_' + timerange_str + '.png')
-        
+                util.pixels_to_image(cpst.refimage_sw[i], os.path.join(cpart.out_name(), 'VsTimeStab', 'RefImg'), 'SlidingRef_' + timerange_str + '.png')
+
         # Create images containing the (sub)dominant color only.
         if stab > 1:
             cpst.stable_image[i, coor_offset[1], coor_offset[0]] = stable_colors[:, 0]
@@ -441,9 +454,10 @@ def main_variables(cpart,
 
     return 1
 
+
 def num_changes_and_users(cpart, t_step, time_str,
                           user, pixch_coord_inds, pixch_2Dcoor_offset, color,
-                          t_inds_active, ref_image, 
+                          t_inds_active, ref_image,
                           num_changes, num_defense_changes,
                           num_users, num_attackdefense_users, num_defenseonly_users,
                           pixels_fracattack,
@@ -477,13 +491,13 @@ def num_changes_and_users(cpart, t_step, time_str,
     num_users[t_step] = len(np.unique(user[t_inds_active]))
 
     # pixel changes that agree or not with the ref image
-    agreeing_changes = np.array( ref_image[pixch_coord_inds[t_inds_active]] == color[t_inds_active], np.bool_)
+    agreeing_changes = np.array(ref_image[pixch_coord_inds[t_inds_active]] == color[t_inds_active], np.bool_)
     disagree_changes = np.invert(agreeing_changes)
     num_defense_changes[t_step] = np.count_nonzero(agreeing_changes)
 
     # count users making defense or attack moves
-    defense_users = np.unique( user[t_inds_active][agreeing_changes] )
-    attack_users = np.unique( user[t_inds_active][disagree_changes] )
+    defense_users = np.unique(user[t_inds_active][agreeing_changes])
+    attack_users = np.unique(user[t_inds_active][disagree_changes])
     attackdefense_users = np.intersect1d(attack_users, defense_users)
     num_attackdefense_users[t_step] = len(attackdefense_users)
     num_defense_users = len(defense_users)
@@ -520,11 +534,12 @@ def num_changes_and_users(cpart, t_step, time_str,
 
     return 1
 
-def create_files_and_get_sizes(t_lims, t_step, pixels, 
+
+def create_files_and_get_sizes(t_lims, t_step, pixels,
                                file_size_png, file_size_bmp,
                                out_path_time, delete_bmp=True, delete_png=False):
     '''
-    Creates bmp and png images from the 2D [pixels]. 
+    Creates bmp and png images from the 2D [pixels].
     Stores them, and records their sizes into file_size_png and file_size_bmp
     '''
     namecore = 'canvaspart_time{:06d}'.format(int(t_lims[t_step]))
@@ -537,141 +552,23 @@ def create_files_and_get_sizes(t_lims, t_step, pixels,
     if delete_png:
         os.remove(impath_png)
 
-def save_part_over_time_old(cpart,
-                        times, # in seconds
-                        record_pixels=False,
-                        delete_bmp=True,
-                        delete_png=False,
-                        show_plot=True,
-                        print_progress=False,
-                        remove_inactive=True
-                        ):
-    '''
-    Saves images of the canvas part for each time step
-
-    parameters
-    ----------
-    cpart : CanvasPart object
-    times : 1d array of floats
-        time limits of intervals in which to plot (in seconds)
-    delete_bmp / delete_png : boolean, optional
-        if True, the .bmp / .png files are deleted after their size is determined
-    show_plot : boolean, optional
-        if True, plots all the frames on a grid
-
-    returns
-    -------
-    file_size_bmp : float
-        size of png image in bytes
-    file_size_png : float
-        size of png image in bytes
-    t_inds_list : list
-        list of arrays of all the time indices of pixel changes in
-        each time interval
-    '''
-
-    if cpart.is_rectangle and remove_inactive:
-        remove_inactive = False # no need of removing inactive (vs time) pixels in this case
-    act_coor_inds = np.arange(cpart.num_pix())
-
-    pixchanges_coor_offset = cpart.pixchanges_coords_offset()
-    xcoords = pixchanges_coor_offset[0]
-    ycoords = pixchanges_coor_offset[1]
-    color = np.array(cpart.pixel_changes['color'])
-
-    num_time_steps = len(times)-1
-    file_size_bmp = np.zeros(num_time_steps+1)
-    file_size_png = np.zeros(num_time_steps+1)
-    num_active_pix = np.zeros(num_time_steps+1)
-    num_differing_pixels = np.zeros(num_time_steps+1)
-
-    if record_pixels:
-        # 2d numpy arrays containing color indices for each pixel of the composition, at each time step
-        pixels_vst = cpart.white_image(3, images_number=num_time_steps+1)
-    else:
-        pixels_vst = None
-
-    pixels_previous = cpart.white_image(2)
-    pixels = cpart.white_image(2) # fill as white first # the pixels must be [y,x,rgb]
-    out_path = os.path.join(var.FIGS_PATH, cpart.out_name())
-    out_path_time = os.path.join(out_path, 'VsTime')
-    util.make_dir(out_path)
-    util.make_dir(out_path_time)
-
-    if show_plot:
-        ncols = np.min([num_time_steps, 10])
-        nrows = np.max([1, int(math.ceil(num_time_steps/10))])
-        fig, ax = plt.subplots(nrows, ncols, sharex=True, sharey=True)
-        rowcount = 0
-        colcount = 0
-
-    i_fraction_print = 0  # only for output of a message when some fraction of the steps are ran
-
-    for t_step in range(0, num_time_steps+1): 
-        if print_progress:
-            show_progress(t_step/num_time_steps, i_fraction_print, 0.1)
-
-        # get the indices of the times within the interval
-        t_inds = cpart.intimerange_pixchanges_inds(times[t_step - 1], times[t_step]) # does NOT exclude inactive pixels
-        util.update_image(pixels, xcoords, ycoords, color, t_inds)
-
-        # save image and file sizes
-        if record_pixels:
-            pixels_vst[t_step] = pixels
-        if remove_inactive: # here, pixels are removed when they become inactive
-            act_coor_inds = cpart.active_coord_inds(times[t_step-1], times[t_step])
-            num_active_pix[t_step] = len(act_coor_inds)
-            pixels_out = cpart.white_image(2)
-            coords = cpart.coords_offset()[:, act_coor_inds]
-            pixels_out[coords[1], coords[0]] = pixels[coords[1], coords[0]]
-        else:
-            num_active_pix[t_step] = cpart.coords.shape[1]
-            pixels_out = pixels
-
-        num_differing_pixels[t_step] = count_image_differences(pixels, pixels_previous, cpart, act_coor_inds) if (num_active_pix[t_step] != 0 or cpart.is_rectangle) else 0
-        pixels_previous = np.copy(pixels)
-
-        create_files_and_get_sizes(times, t_step, pixels_out, 
-                                   file_size_png, file_size_bmp,
-                                   out_path_time, 
-                                   delete_bmp, delete_png)
-
-        if show_plot:
-            if t_step>-1:
-                if len(ax.shape) == 2:
-                    ax_single = ax[rowcount, colcount]
-                else:
-                    ax_single = ax[t_step]
-                ax_single.axis('off')
-                plot.show_canvas_part(util.get_rgb(pixels), ax=ax_single)
-
-                if colcount < 9:
-                    colcount += 1
-                else:
-                    colcount = 0
-                    rowcount += 1
-
-    if print_progress:
-        print('          produced', num_time_steps, 'images vs time ')
-    return [file_size_bmp, file_size_png, pixels_vst, num_active_pix, num_differing_pixels
-    ]
 
 def return_time_fwdlooking(cpart, ref_image, t_lims=[0, var.TIME_TOTAL], summary_stats=True):
     '''
     Return time for all attack pixel changes: the time that each pixel
     that was changed from its reference color (in ref_image) to return
-    to the reference color. Also returns the time at which those pixels wer attacked. 
+    to the reference color. Also returns the time at which those pixels wer attacked.
     '''
 
     # Canvas part data
-    sortcoor = cpart.pixch_sortcoord # sort pixel changes by pixel coordinate
+    sortcoor = cpart.pixch_sortcoord  # sort pixel changes by pixel coordinate
     color = cpart.pixel_changes['color'][sortcoor]
     coordidx = cpart.pixel_changes['coord_index'][sortcoor]
     time = cpart.pixel_changes['seconds'][sortcoor]
     pixchanges_coor_offset = cpart.pixchanges_coords_offset()
     xcoords = pixchanges_coor_offset[0][sortcoor]
     ycoords = pixchanges_coor_offset[1][sortcoor]
-    
+
     # should be of form [pixel 1 att(False), def(True), att, att, ..., pixel 2 def,def,att,def,att,...]
     agreeing_changes = np.array( ref_image[ycoords, xcoords] == color, np.bool_)
     disagree_changes = np.invert(agreeing_changes)
