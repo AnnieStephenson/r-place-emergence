@@ -36,5 +36,5 @@ def test_canvas_comp_stat():
     with open(filepath, 'rb') as f:
         canvas_part_stat_prev = pickle.load(f)
 
-    np.testing.assert_equal(canvas_part_stat.stability, canvas_part_stat_prev.stability)
+    np.testing.assert_equal(canvas_part_stat.stability.val, canvas_part_stat_prev.stability)
 

@@ -14,8 +14,8 @@ import warnings
 
 
 def calc_num_pixel_changes(cpart,
-                           time_inds_list,
-                           time_interval):
+                           time_inds_list
+                           ):
     '''
     calculate several quantities related to the rate of pixel changes
 
@@ -260,22 +260,22 @@ def main_variables(cpart,
     last_time_removed_sw = None if attdef == 0 else np.copy(last_time_installed_sw)
 
     # Output
-    cpst.stability = np.full(n_tlims, 1., dtype=np.float32)
-    cpst.diff_pixels_stable_vs_ref = np.zeros(n_tlims)
-    cpst.diff_pixels_inst_vs_ref = np.zeros(n_tlims)
-    cpst.diff_pixels_inst_vs_inst = np.zeros(n_tlims)
-    cpst.diff_pixels_inst_vs_stable = np.zeros(n_tlims)
+    cpst.stability = cpst.ts_init( np.full(n_tlims, 1., dtype=np.float32) )
+    cpst.diff_pixels_stable_vs_ref = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.diff_pixels_inst_vs_ref = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.diff_pixels_inst_vs_inst = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.diff_pixels_inst_vs_stable = cpst.ts_init( np.zeros(n_tlims) )
     cpst.returntime = np.zeros((n_tlims, cpart.num_pix()), dtype='float64')
-    cpst.area_vst = np.full(n_tlims, cpart.num_pix())
-    cpst.n_changes = np.zeros(n_tlims)
-    cpst.n_defense_changes = np.zeros(n_tlims)
-    cpst.n_users = np.zeros(n_tlims)
-    cpst.n_bothattdef_users = np.zeros(n_tlims)
-    cpst.n_defense_users = np.zeros(n_tlims)
+    cpst.area_vst = cpst.ts_init( np.full(n_tlims, cpart.num_pix()) )
+    cpst.n_changes = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.n_defense_changes = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.n_users = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.n_bothattdef_users = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.n_defense_users = cpst.ts_init( np.zeros(n_tlims) )
     cpst.frac_attack_changes_image = np.full((n_tlims, cpart.width(1), cpart.width(0)), 1, dtype=np.float16) if attdef > 1 else None
-    cpst.size_bmp = np.zeros(n_tlims)
-    cpst.size_png = np.zeros(n_tlims)
-    cpst.cumul_attack_timefrac = np.zeros(n_tlims)
+    cpst.size_bmp = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.size_png = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.cumul_attack_timefrac = cpst.ts_init( np.zeros(n_tlims) )
 
     # output paths
     out_path = os.path.join(var.FIGS_PATH, cpart.out_name())
@@ -308,7 +308,7 @@ def main_variables(cpart,
 
     # Dummy fill of file_size_png and file_size_bmp for time 0
     create_files_and_get_sizes(t_lims, 0, cpart.white_image(2),
-                               cpst.size_png, cpst.size_bmp, out_path_time)
+                               cpst.size_png.val, cpst.size_bmp.val, out_path_time)
 
     # LOOP over time steps
     i_fraction_print = 0
@@ -327,7 +327,7 @@ def main_variables(cpart,
 
         # Get indices of all pixels that are active in this time step.
         inds_coor_active = np.array(cpart.active_coord_inds(t_lims[i-1], t_lims[i]), dtype=np.int64)
-        cpst.area_vst[i] = len(inds_coor_active)
+        cpst.area_vst.val[i] = len(inds_coor_active)
         # Get indices of pixel changes in this time step, without or with the condition of being in an "active" pixel at this time
         t_inds = cpart.intimerange_pixchanges_inds(t_lims[i-1], t_lims[i])
         t_inds_active = cpart.select_active_pixchanges_inds(t_inds)
@@ -358,7 +358,7 @@ def main_variables(cpart,
             stable_timefrac = calc_stable_timefrac(cpart, i, t_lims,
                                                    time_spent_in_color, stable_colors)
             # calculate the stability value in the time interval
-            cpst.stability[i] = calc_stability(stable_timefrac, inds_coor_active, True)
+            cpst.stability.val[i] = calc_stability(stable_timefrac, inds_coor_active, True)
 
         # Sum time_spent_in_color over timesteps included in the sliding window
         time_spent_in_color_sw = np.sum(time_spent_in_color[tind_sw_start:i, :, :], axis=0)
@@ -369,7 +369,7 @@ def main_variables(cpart,
         # ATTACK/DEFENSE VS REFERENCE IMAGE
         if attdef > 0:
             # Calculate the (normalized) cumulative attack time over all pixels in this timestep
-            cpst.cumul_attack_timefrac[i] = cumulative_attack_timefrac(time_spent_in_color[i], ref_colors,
+            cpst.cumul_attack_timefrac.val[i] = cumulative_attack_timefrac(time_spent_in_color[i], ref_colors,
                                                                        inds_coor_active, cpst.t_interval)
             # Calculate return time, as the time each pixel spent in the non-reference color during the last attack
             mask_attack = np.full(current_color.shape, False)
@@ -382,24 +382,24 @@ def main_variables(cpart,
             num_changes_and_users(cpart, i, timerange_str,
                                   user, pixch_coord_inds, pixch_2Dcoor_offset, color,
                                   t_inds_active, ref_colors,
-                                  cpst.n_changes, cpst.n_defense_changes,
-                                  cpst.n_users, cpst.n_bothattdef_users, cpst.n_defense_users,
+                                  cpst.n_changes.val, cpst.n_defense_changes.val,
+                                  cpst.n_users.val, cpst.n_bothattdef_users.val, cpst.n_defense_users.val,
                                   cpst.frac_attack_changes_image,
                                   attdef > 1, attdef > 2)
 
         # INSTANTANEOUS IMAGES
         if instant > 0:
             # Calculate the number of pixels in the current interval (stable or instantaneous) that differ from the reference image, or from the previous timestep
-            cpst.diff_pixels_stable_vs_ref[i] = np.count_nonzero(stable_colors[:, 0] - ref_colors[:])
-            cpst.diff_pixels_inst_vs_ref[i] = np.count_nonzero(current_color - ref_colors)
-            cpst.diff_pixels_inst_vs_inst[i] = np.count_nonzero(current_color - previous_color)
-            cpst.diff_pixels_inst_vs_stable[i] = np.count_nonzero(current_color - previous_stable_color)
+            cpst.diff_pixels_stable_vs_ref.val[i] = np.count_nonzero(stable_colors[:, 0] - ref_colors[:])
+            cpst.diff_pixels_inst_vs_ref.val[i] = np.count_nonzero(current_color - ref_colors)
+            cpst.diff_pixels_inst_vs_inst.val[i] = np.count_nonzero(current_color - previous_color)
+            cpst.diff_pixels_inst_vs_stable.val[i] = np.count_nonzero(current_color - previous_stable_color)
 
             # Create the png and bmp files from the current image, and store their sizes
             pix_tmp = cpart.white_image(2)
             pix_tmp[coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active]] = current_color[inds_coor_active]
             create_files_and_get_sizes(t_lims, i, pix_tmp,
-                                       cpst.size_png, cpst.size_bmp,
+                                       cpst.size_png.val, cpst.size_bmp.val,
                                        out_path_time, True, instant > 2)
 
         # END CORE COMPUTATIONS. Magic ends
@@ -463,7 +463,7 @@ def num_changes_and_users(cpart, t_step, time_str,
                           pixels_fracattack,
                           save_ratio_pixels, save_ratio_images):
     '''
-    Returnes multiple variables dealing with the number of pixel changes and users
+    Modifies multiple variables dealing with the number of pixel changes and users
     and their relation to the provided reference (stable) image
 
     parameters

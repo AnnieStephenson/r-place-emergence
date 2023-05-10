@@ -258,3 +258,46 @@ def draw_colorhist(data,
     if outfile != '':
         print('save figure in', os.path.join(var.FIGS_PATH, outfile))
         plt.savefig(os.path.join(var.FIGS_PATH, outfile), bbox_inches='tight')
+
+def draw_1d(xdata, 
+            ydata, 
+            xlab='',
+            ylab='',
+            xlog=False,
+            ylog=False,
+            xmin=None,
+            ymin=None,
+            ymax=None,
+            save='',
+            hline=None,
+            vline=None
+            ):
+    
+    plt.figure()
+    plt.plot(xdata, ydata)
+    sns.despine()
+    plt.ylabel(ylab)
+    plt.xlabel(xlab)
+
+    xm = min(xdata)
+    if xm == 0 and xlog:
+        xm = 1e-3
+    ym = min(ydata)
+    if ym == 0 and ylog:
+        ym = 1e-5
+    yM = (1.6 if ylog else 1.1) * max(ydata)
+    plt.ylim([ (ym if ymin == None else ymin) , (yM if ymax == None else ymax)])
+    plt.xlim([ (xm if xmin == None else xmin), max(xdata)])
+
+    if xlog:
+        plt.xscale('log')
+    if ylog:
+        plt.yscale('log')
+
+    if hline != None:
+        plt.hlines(y = hline, xmin=xm, xmax=max(xdata), colors = 'black', linestyle='dashed')
+    if vline != None:
+        plt.vlines(x = vline, ymin=ym, ymax=ymax, colors = 'black', linestyle='dashed')
+
+    if save != '':
+        plt.savefig(save, bbox_inches='tight')

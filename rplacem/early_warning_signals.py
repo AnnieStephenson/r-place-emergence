@@ -145,30 +145,6 @@ class EarlyWarnSignals(object):
 
 ####### OUTSIDE CLASS #############
 
-def calc_variance(x, time_window):
-    '''
-    calculates the variance vs time of the state variable
-    '''
-    x = pd.Series(x)
-    variance = x.rolling(window=time_window).var()
-    return np.array(variance)
-    
-def calc_skewness(x, time_window):
-    '''
-    calculates the skewness vs time of the state variable
-    '''
-    x = pd.Series(x)
-    skewness = x.rolling(window=time_window).skew()
-    return np.array(skewness)
-
-def calc_autocorrelation(x, time_window):
-    '''
-    calculates the skewness vs time of the state variable
-    '''
-    x = pd.Series(x)
-    autocorrelation = x.rolling(window=time_window).apply(lambda y: y.autocorr())
-    return np.array(autocorrelation)
-
 def calc_ews_shift(canvas_comp_stat_list, early_warn_signals_list,
                    time_padding=20):
     '''
