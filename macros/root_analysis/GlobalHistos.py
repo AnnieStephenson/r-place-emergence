@@ -29,7 +29,7 @@ def DrawHeatMap(h, Zmin, Zmax, file_title, hist_title=';pixel X; pixel Y;# of pi
     bottomm = 0.05
     topm = 0.1
     c1 = ROOT.TCanvas('c1','c1',(int)(2020/(1-leftm-rightm)), (int)(2020/(1-bottomm-topm))) ##### try to get the exact number of pixels
-    c1.SetCanvasSize((int)(2020/(1-leftm-rightm)), (int)(2020/(1-bottomm-topm)));
+    c1.SetCanvasSize((int)(2020/(1-leftm-rightm)), (int)(2020/(1-bottomm-topm)))
     c1.SetMargin(leftm,rightm,bottomm,topm)
     if logz:
         c1.SetLogz()
@@ -52,7 +52,7 @@ def DrawHeatMap(h, Zmin, Zmax, file_title, hist_title=';pixel X; pixel Y;# of pi
     c1.SaveAs('figs/'+file_title)
 
 
-'''
+
 arrays = np.load('data/PixelChangesCondensedData_sorted.npz')
 sec = arrays['seconds']
 eventNb = arrays['eventNumber']
@@ -210,4 +210,3 @@ c2.SetLogy()
 c2.SetLogx()
 
 c2.SaveAs('figs/ChangesPerPixel.pdf')
-'''

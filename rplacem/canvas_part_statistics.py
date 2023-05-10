@@ -1,10 +1,10 @@
 import numpy as np
 import os
-import cv2
 import rplacem.variables_rplace2022 as var
 import rplacem.compute_variables as comp
 import rplacem.utilities as util
 import rplacem.transitions as tran
+import rplacem.time_series as ts
 import shutil
 import warnings
 import math
@@ -45,7 +45,7 @@ class CanvasPartStatistics(object):
         size (in pixels) of the smallest rectangle encompassing the whole composition.
         Equals area when the composition is such a rectangle at some time point.
             Set in __init__()
-    area_vst : 1d array of ints of length n_t_bins
+    area_vst : TimeSeries, n_pts = n_t_bins+1
         Number of active pixels at each time step.
             Needs compute_vars['attackdefense'] > 0
             Set in comp.n_changes_and_users(), in count_attack_defense_events().
@@ -79,11 +79,11 @@ class CanvasPartStatistics(object):
 
     VARIABLES
     STABILITY
-    stability: 1d numpy array of floats
+    stability: TimeSeries, n_pts = n_t_bins+1
         stability averaged over all pixels of the CanvasPart, for each time bin.
             Needs compute_vars['stability'] > 0
             Set in comp.main_variables()
-    instability_norm : 1d numpy array of floats
+    instability_norm : TimeSeries, n_pts = n_t_bins+1
         Time-normalised instability: (1 - stability_vst) / t_norm
             Needs compute_vars['stability'] > 0
             Set in __init__()
@@ -98,7 +98,7 @@ class CanvasPartStatistics(object):
     diff_pixels_stable_vs_ref
     diff_pixels_inst_vs_ref
     diff_pixels_inst_vs_inst
-    diff_pixels_inst_vs_stable : 1d numpy array of length n_t_bins+1
+    diff_pixels_inst_vs_stable : TimeSeries, n_pts = n_t_bins+1
         Number of pixels that differ between images:
         stable over the timestep, instantaneous at the end of this or the previous timestep ("inst"),
         or the reference image over the sliding window (ref)
@@ -106,19 +106,19 @@ class CanvasPartStatistics(object):
     frac_pixdiff_stable_vs_ref
     frac_pixdiff_inst_vs_ref
     frac_pixdiff_inst_vs_inst_norm
-    frac_pixdiff_inst_vs_stable_norm : 1d numpy array of length n_t_bins
+    frac_pixdiff_inst_vs_stable_norm : TimeSeries, n_pts = n_t_bins+1
         Same as above, but divided the number of active pixels.
         Also normalized by t_norm for the last two.
             Set in ratios_and_normalizations()
     size_bmp
-    size_png : 1d numpy array of size n_t_bins+1
+    size_png : TimeSeries, n_pts = n_t_bins+1
         Size of the bmp or png image (of the canvas part) file at the end of each time step
             Needs compute_vars['entropy'] > 0 (or > 3 for size_png)
             Set in comp.main_variables()
-    entropy_bpmnorm : 1d numpy array of size n_t_bins+1
+    entropy_bpmnorm : TimeSeries, n_pts = n_t_bins+1
         Ratio of sizes of the png and bmp image files at the end of each time step
             Set in ratios_and_normalizations()
-    entropy : 1d numpy array of size n_t_bins
+    entropy : TimeSeries, n_pts = n_t_bins+1
         Ratio of size of the png image file to the number of active pixels, at each time step
             Set in ratios_and_normalizations()
     true_image: 1d array of size n_t_bins, of 2d numpy arrays.
@@ -163,7 +163,7 @@ class CanvasPartStatistics(object):
         used as reference image for all the attack/defense variables
         Kept if compute_vars['attackdefense'] > 1
             Set in comp.main_variables()
-    n_changes : 1d array of length n_t_bins
+    n_changes : TimeSeries, n_pts = n_t_bins+1
         Number of pixel changes in each time bin
             Set in comp.main_variables()
     n_changes_norm :
@@ -175,7 +175,7 @@ class CanvasPartStatistics(object):
     n_users_total : float
         total number of user having contributed to the composition between tmin and tmax
             Set in comp.main_variables()
-    n_users : 1d array of int of length n_t_bins
+    n_users : TimeSeries, n_pts = n_t_bins+1
         number of users that changed any pixels in this composition in each time range
             Set in comp.main_variables()
     n_users_norm :
@@ -183,7 +183,7 @@ class CanvasPartStatistics(object):
             Set in ratios_and_normalizations()
     frac_attackonly_users
     frac_defenseonly_users
-    frac_bothattdef_users : 1d array of floats of length n_t_bins
+    frac_bothattdef_users : TimeSeries, n_pts = n_t_bins+1
         fraction of n_users that contributed pixels that are consistent refimage_sw,
         or not (attackonly), or fraction of users that did both (bothattdef)
             Set in ratios_and_normalizations()
@@ -210,7 +210,7 @@ class CanvasPartStatistics(object):
     returntime_percentile90_overln2 : 2d array of shape (n_t_bins)
         mean, median, and 90th percentile of returntime in each time bin
             Set in returntime_stats()
-    cumul_attack_timefrac : 1d array of shape n_t_bins+1
+    cumul_attack_timefrac : TimeSeries, n_pts = n_t_bins+1
         Sum of the times that each pixel spent in an attack color during this timestep
         Normalized by the timestep width times #pixels
             Set in comp.main_variables()
@@ -221,6 +221,7 @@ class CanvasPartStatistics(object):
         __init__
     protected:
     public:
+        ts_init()
         checks_warnings()
         ratios_and_normalizations()
             Normalize variables
@@ -289,13 +290,13 @@ class CanvasPartStatistics(object):
         self.sw_width = int(sliding_window/self.t_interval)
 
         # Creating attributes that will be computed in comp.main_variables()
-        self.diff_pixels_stable_vs_ref = None
-        self.diff_pixels_inst_vs_ref = None
-        self.diff_pixels_inst_vs_inst = None
-        self.diff_pixels_inst_vs_stable = None
-        self.area_vst = None
+        self.diff_pixels_stable_vs_ref = ts.TimeSeries()
+        self.diff_pixels_inst_vs_ref = ts.TimeSeries()
+        self.diff_pixels_inst_vs_inst = ts.TimeSeries()
+        self.diff_pixels_inst_vs_stable = ts.TimeSeries()
+        self.area_vst = ts.TimeSeries()
 
-        self.stability = None
+        self.stability = ts.TimeSeries()
         self.stable_image = None
         self.second_stable_image = None
         self.third_stable_image = None
@@ -303,17 +304,17 @@ class CanvasPartStatistics(object):
         self.true_image = None
         self.frac_attack_changes_image = None
 
-        self.n_changes = None
-        self.n_defense_changes = None
-        self.n_users = None
+        self.n_changes = ts.TimeSeries()
+        self.n_defense_changes = ts.TimeSeries()
+        self.n_users = ts.TimeSeries()
         self.n_users_total = None
-        self.n_bothattdef_users = None
-        self.n_defense_users = None
+        self.n_bothattdef_users = ts.TimeSeries()
+        self.n_defense_users = ts.TimeSeries()
         self.returntime = None
-        self.cumul_attack_timefrac = None
+        self.cumul_attack_timefrac = ts.TimeSeries()
 
-        self.size_png = None
-        self.size_bmp = None
+        self.size_png = ts.TimeSeries()
+        self.size_bmp = ts.TimeSeries()
 
         self.transition_param = trans_param
         self.n_transitions = None
@@ -341,15 +342,15 @@ class CanvasPartStatistics(object):
         # Memory savings here
         if compute_vars['attackdefense'] < 4:
             self.returntime = None
-            self.n_defense_changes = None
-            self.n_defense_users = None
-            self.n_bothattdef_users = None
+            self.n_defense_changes = ts.TimeSeries()
+            self.n_defense_users = ts.TimeSeries()
+            self.n_bothattdef_users = ts.TimeSeries()
         if compute_vars['entropy'] < 4:
-            self.size_png = None
-            self.diff_pixels_stable_vs_ref = None
-            self.diff_pixels_inst_vs_ref = None
-            self.diff_pixels_inst_vs_inst = None
-            self.diff_pixels_inst_vs_stable = None
+            self.size_png = ts.TimeSeries()
+            self.diff_pixels_stable_vs_ref = ts.TimeSeries()
+            self.diff_pixels_inst_vs_ref = ts.TimeSeries()
+            self.diff_pixels_inst_vs_inst = ts.TimeSeries()
+            self.diff_pixels_inst_vs_stable = ts.TimeSeries()
         if compute_vars['attackdefense'] < 2:
             self.refimage_sw = None
 
@@ -370,45 +371,49 @@ class CanvasPartStatistics(object):
         if self.sw_width == 0:
             warnings.warn('The interval size is larger than the sliding window. Choose a smaller interval size or a larger sliding window.')
 
+    def ts_init(self, val):
+        return ts.TimeSeries(val=val, cpstat=self)
+    
     def ratios_and_normalizations(self):
-        self.instability_norm = (1 - self.stability) / self.t_norm
-        self.n_changes_norm = util.divide_treatzero(self.n_changes / self.t_norm, self.area_vst, 0, 0)
-        self.n_users_norm = util.divide_treatzero(self.n_users / self.t_norm, self.area_vst, 0, 0)
-        self.frac_pixdiff_stable_vs_ref = util.divide_treatzero(self.diff_pixels_stable_vs_ref, self.area_vst, 0, 0)
-        self.frac_pixdiff_inst_vs_ref = util.divide_treatzero(self.diff_pixels_inst_vs_ref, self.area_vst, 0, 0)
-        self.frac_pixdiff_inst_vs_inst_norm = util.divide_treatzero(self.diff_pixels_inst_vs_inst / self.t_norm, self.area_vst, 0, 0)
-        self.frac_pixdiff_inst_vs_stable_norm = util.divide_treatzero(self.diff_pixels_inst_vs_stable / self.t_norm, self.area_vst, 0, 0)
+        self.instability_norm = self.ts_init( (1 - self.stability.val) / self.t_norm )
+        self.n_changes_norm = self.ts_init( util.divide_treatzero(self.n_changes.val / self.t_norm, self.area_vst.val, 0, 0) )
+        self.n_users_norm = self.ts_init( util.divide_treatzero(self.n_users.val / self.t_norm, self.area_vst.val, 0, 0) )
+        self.frac_pixdiff_stable_vs_ref = self.ts_init( util.divide_treatzero(self.diff_pixels_stable_vs_ref.val, self.area_vst.val, 0, 0) )
+        self.frac_pixdiff_inst_vs_ref = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_ref.val, self.area_vst.val, 0, 0) )
+        self.frac_pixdiff_inst_vs_inst_norm = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_inst.val / self.t_norm, self.area_vst.val, 0, 0) )
+        self.frac_pixdiff_inst_vs_stable_norm = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_stable.val / self.t_norm, self.area_vst.val, 0, 0) )
 
         # attack-defense ratios
-        self.frac_attack_changes = util.divide_treatzero(self.n_changes - self.n_defense_changes, self.n_changes, 0.5, 0.5)
-        self.frac_defenseonly_users = util.divide_treatzero(self.n_defense_users - self.n_bothattdef_users, self.n_users, 0.5, 0.5)
-        self.frac_bothattdef_users = util.divide_treatzero(self.n_bothattdef_users, self.n_users, 0.5, 0.5)
-        self.frac_attackonly_users = util.divide_treatzero(self.n_users - self.n_defense_users - self.n_bothattdef_users, self.n_users, 0.5, 0.5)
+        self.frac_attack_changes = self.ts_init( util.divide_treatzero(self.n_changes.val - self.n_defense_changes.val, self.n_changes.val, 0.5, 0.5) )
+        self.frac_defenseonly_users = self.ts_init( util.divide_treatzero(self.n_defense_users.val - self.n_bothattdef_users.val, self.n_users.val, 0.5, 0.5) )
+        self.frac_bothattdef_users = self.ts_init( util.divide_treatzero(self.n_bothattdef_users.val, self.n_users.val, 0.5, 0.5) )
+        self.frac_attackonly_users = self.ts_init( util.divide_treatzero(self.n_users.val - self.n_defense_users.val - self.n_bothattdef_users.val, self.n_users.val, 0.5, 0.5) )
         # for entropy
-        self.entropy = util.divide_treatzero(self.size_png, self.area_vst)
-        self.entropy_bmpnorm = self.size_png / self.size_bmp
-        self.entropy[0] = 0
-        self.entropy_bmpnorm[0] = 0
-        idx_dividebyzero = np.where(self.area_vst == 0)
-        self.entropy[idx_dividebyzero] = self.entropy_bmpnorm[idx_dividebyzero] * 3.2  # typical factor hard-coded here
+        self.entropy = self.ts_init( util.divide_treatzero(self.size_png.val, self.area_vst.val) )
+        self.entropy_bmpnorm = self.ts_init( self.size_png.val / self.size_bmp.val )
+        self.entropy.val[0] = 0
+        self.entropy_bmpnorm.val[0] = 0
+        idx_dividebyzero = np.where(self.area_vst.val == 0)
+        self.entropy.val[idx_dividebyzero] = self.entropy_bmpnorm.val[idx_dividebyzero] * 3.2  # typical factor hard-coded here
 
     def returntime_stats(self, sliding_window, binwidth=100):
         returnt_bins = np.arange(0, sliding_window+binwidth, binwidth)
         self.returntime_tbinned = np.zeros((self.n_t_bins+1, math.ceil(sliding_window/binwidth)))
-        self.returntime_mean = np.zeros(self.n_t_bins+1)
-        self.returntime_median_overln2 = np.zeros(self.n_t_bins+1)
-        self.returntime_percentile90_overln2 = np.zeros(self.n_t_bins+1)
+        self.returntime_mean = self.ts_init( np.zeros(self.n_t_bins+1) )
+        self.returntime_median_overln2 = self.ts_init( np.zeros(self.n_t_bins+1) )
+        self.returntime_percentile90_overln2 = self.ts_init( np.zeros(self.n_t_bins+1) )
         for t in range(1, self.n_t_bins+1):
             self.returntime_tbinned[t], _ = np.histogram(self.returntime[t], bins=returnt_bins)
             if np.count_nonzero(self.returntime[t] < 0) > 0:
+                print(t, self.returntime[t], np.count_nonzero(self.returntime[t] < 0))
                 warnings.warn('There are negative return times, this is a problem!')
-            self.returntime_mean[t] = np.mean(self.returntime[t])
-            self.returntime_median_overln2[t] = np.median(self.returntime[t]) / np.log(2)
-            self.returntime_percentile90_overln2[t] = np.percentile(self.returntime[t], 90) / np.log(2)
+            self.returntime_mean.val[t] = np.mean(self.returntime[t])
+            self.returntime_median_overln2.val[t] = np.median(self.returntime[t]) / np.log(2)
+            self.returntime_percentile90_overln2.val[t] = np.percentile(self.returntime[t], 90) / np.log(2)
 
     def search_transitions(self, cpart, sliding_window):
         par = self.transition_param
-        transitions = tran.find_transitions(self.t_ranges, self.frac_pixdiff_inst_vs_ref,
+        transitions = tran.find_transitions(self.t_ranges, self.frac_pixdiff_inst_vs_ref.val,
                                              cutoff=par[0], cutoff_stable=par[1], len_stableregion=par[2], distfromtrans_stableregion=par[3],
                                              sliding_win=sliding_window)
         self.transition_tinds = transitions[0]
@@ -440,3 +445,70 @@ class CanvasPartStatistics(object):
                 util.pixels_to_image(self.refimage_pretrans[j], cpart.out_name(), 'referenceimage_sw_pre_transition'+str(j) + '.png')
                 util.pixels_to_image(self.refimage_intrans[j], cpart.out_name(), 'referenceimage_at_transition'+str(j) + '.png')
                 util.pixels_to_image(self.refimage_posttrans[j], cpart.out_name(), 'referenceimage_sw_post_transition'+str(j) + '.png')
+
+    def fill_timeseries_info(self):
+        def filepath(name):
+            return os.path.join(var.FIGS_PATH, self.id, name+'.png')
+        n_min_tunit = str(int(self.t_unit+1e-3)) + ' min'
+
+        self.frac_pixdiff_inst_vs_stable_norm.desc_long = 'Fraction of pixels differing from the stable image in the previous step, normalized by the time unit.'
+        self.frac_pixdiff_inst_vs_stable_norm.desc_short = 'frac of pixels differing from previous-step stable image / '+n_min_tunit
+        self.frac_pixdiff_inst_vs_stable_norm.savename = filepath('fraction_of_differing_pixels_vs_stable_normalized')
+
+        self.frac_pixdiff_inst_vs_inst_norm.desc_long = 'Fraction of pixels differing from the instantaneous image in the previous step, normalized by the time unit.'
+        self.frac_pixdiff_inst_vs_inst_norm.desc_short = 'frac of pixels differing from previous-step image / '+n_min_tunit
+        self.frac_pixdiff_inst_vs_inst_norm.savename = filepath('fraction_of_differing_pixels_normalized')
+
+        self.frac_pixdiff_inst_vs_ref.desc_long = 'Fraction of pixels differing from the reference image in the preceding sliding window'
+        self.frac_pixdiff_inst_vs_ref.desc_short = 'frac of pixels differing from sliding-window ref image'
+        self.frac_pixdiff_inst_vs_ref.savename = filepath('fraction_of_differing_pixels_vs_slidingwindowref')
+
+        self.instability_norm.desc_long = 'instability = (1 - stability), normalized by the time unit. \
+            Stability is the time fraction that each pixel spent in its dominant color, averaged over all active pixels'
+        self.instability_norm.desc_short = 'instability / '+n_min_tunit
+        self.instability_norm.savename = filepath('instability_normalized')
+
+        self.n_users_norm.desc_long = 'number of users, normalized by the time unit and the number of active pixels.'
+        self.n_users_norm.desc_short = '# users / area / '+n_min_tunit
+        self.n_users_norm.savename = filepath('number_of_users_normalized')
+
+        self.n_changes_norm.desc_long = 'number of pixel changes, normalized by the time unit and the number of active pixels.'
+        self.n_changes_norm.desc_short = '# pixel changes / area / '+n_min_tunit
+        self.n_changes_norm.savename = filepath('number_of_pixel_changes_normalized')
+
+        self.entropy.desc_long = 'entropy, calculated as the computable information density of the instantaneous image'
+        self.entropy.desc_short = 'entropy (computable information density)'
+        self.entropy.savename = filepath('entropy')
+
+        self.frac_attack_changes.desc_long = 'Fraction of the number of pixel changes that are attacking. \
+            Attack is defined compared to the stable reference image on a sliding window.'
+        self.frac_attack_changes.desc_short = 'fraction of attack changes'
+        self.frac_attack_changes.savename = filepath('fraction_attack_pixelchanges')
+
+        self.frac_attackonly_users.desc_long = 'Fraction of the active users that are only attacking in this timestep. \
+            Attack is defined compared to the stable reference image on a sliding window.'
+        self.frac_attackonly_users.desc_short = 'fraction of users only attacking'
+        self.frac_attackonly_users.savename = filepath('fraction_of_users_onlyattacking')
+
+        self.frac_defenseonly_users.desc_long = 'Fraction of the active users that are only defending in this timestep. \
+            Defense is defined as following the stable reference image on a sliding window.'
+        self.frac_defenseonly_users.desc_short = 'fraction of users only defending'
+        self.frac_defenseonly_users.savename = filepath('fraction_of_users_onlydefending')
+
+        self.frac_bothattdef_users.desc_long = 'Fraction of the active users that are both attacking and defending in this timestep. \
+            Attack is defined compared to the stable reference image on a sliding window.'
+        self.frac_bothattdef_users.desc_short = 'fraction of users both attacking and defending'
+        self.frac_bothattdef_users.savename = filepath('fraction_of_users_bothattackingdefending')
+
+        self.returntime_median_overln2.desc_long = 'Median time for pixels to recover from attack [s] / ln(2)'
+        self.returntime_median_overln2.desc_short = 'median pixel recovery time from attack [s] / ln(2)'
+        self.returntime_median_overln2.savename = filepath('median_pixel_recovery_time')
+
+        self.returntime_mean.desc_long = 'Mean time for pixels to recover from attack [s]'
+        self.returntime_mean.desc_short = 'mean pixel recovery time from attack [s]'
+        self.returntime_mean.savename = filepath('mean_pixel_recovery_time')
+
+        self.cumul_attack_timefrac.desc_long = 'Fraction of the time that all pixels spent in an attack color [s]'
+        self.cumul_attack_timefrac.desc_short = 'frac of time spent in attack colors [s]'
+        self.cumul_attack_timefrac.savename = filepath('attack_time_fraction_allpixels')
+

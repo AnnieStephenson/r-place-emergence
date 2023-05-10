@@ -10,6 +10,8 @@ import seaborn as sns
 from scipy import stats
 import os
 import pickle
+import matplotlib.colors as pltcolors
+
 
 # Set parameters.
 atlas_id_index = '000006'
@@ -22,21 +24,19 @@ t_lims = np.linspace(0, var.TIME_TOTAL, n_tbins + 1)
 canvas_comp = cp.CanvasPart(id=atlas_id_index)
 
 # Instantiate a canvas composition statistics object.
-'''
+
 canvas_comp_stat = stat.CanvasPartStatistics(canvas_comp,
                                              n_tbins=n_tbins,
-                                             n_tbins_trans=n_tbins_trans,
                                              compute_vars={'stability': 2,
-                                                           'mean_stability': 0,
-                                                           'entropy': 1,
-                                                           'transitions': 0,
-                                                           'attackdefense': 1})
+                                                           'entropy': 2,
+                                                           'transitions': 2,
+                                                           'attackdefense': 2})
 '''
 
 # Use stability function to calculate the stable reference images (pixels1)
 [stab_vst, _,
  pixels1,_,
- _, _, diffpix_vst] = compute.stability(canvas_comp,
+ _, _, diffpix_vst,return_time] = compute.stability(canvas_comp,
                               t_lims=t_lims,
                               compute_average=True,
                               create_images=True,
@@ -49,7 +49,7 @@ canvas_comp_stat = stat.CanvasPartStatistics(canvas_comp,
 # Use stability function again to get the number of differing pixels
 [stab_vst2,
  _, _, _, _,_,
- diffpix_vst2] = compute.stability(canvas_comp,
+ diffpix_vst2,_] = compute.stability(canvas_comp,
                                       t_lims=t_lims,
                                       compute_average=True,
                                       save_images=True)
@@ -66,3 +66,34 @@ plt.figure()
 plt.plot(t_lims[1:], stab_vst2+0.1)
 plt.plot(t_lims[1:], stab_vst)
 plt.savefig(os.path.join(var.FIGS_PATH, 'test2.png'))
+
+returnt_bins = np.arange(0, 3*3600 + 100, 100)
+returntval = np.zeros((len(t_lims)-1, len(returnt_bins)-1))
+
+for t in range(1, len(t_lims)):
+    returntval[t-1],_ = np.histogram(return_time[t-1], bins=returnt_bins)
+returntval = np.swapaxes(returntval,0,1)
+
+tminind = np.argmax(t_lims>194000)
+#for t in range(tminind,tminind+10):
+    #print(t_lims[t])
+    #print(return_time[t][0:1000])
+
+fig12 = plt.figure()
+plt.pcolormesh(t_lims, returnt_bins, returntval, cmap =plt.cm.jet, vmin = 0, vmax = 60)
+plt.xlabel('time [sec]')
+plt.ylabel('return time')
+plt.colorbar(label='number of pixels')
+#plt.xlim([170000,230000])
+#plt.ylim([0.9, 800])
+plt.savefig(os.path.join(var.FIGS_PATH,'test_returntime'), bbox_inches='tight')
+
+returntmed = np.empty((len(t_lims)-1))
+for t in range(1, len(t_lims)):
+    returntmed[t-1] = np.median(return_time[t-1][return_time[t-1]>0])
+
+plt.figure()
+plt.plot(t_lims[1:], returntmed)
+plt.savefig(os.path.join(var.FIGS_PATH, 'test_returntime2.png'))
+
+'''
