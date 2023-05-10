@@ -32,7 +32,7 @@ def test_canvas_comp_stat():
                                                     dont_keep_dir=True)
 
     # open the previously saved canvas_part_stat
-    filepath = os.path.join(var.FILE_DIR, 'tests', 'canvas_comp_stat.pickle')
+    filepath = os.path.join(var.FILE_DIR, 'tests', 'canvas_comp_stat_297.pickle')
     with open(filepath, 'rb') as f:
         canvas_part_stat_prev = pickle.load(f)
 
