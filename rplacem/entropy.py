@@ -10,7 +10,16 @@ from sweetsourcod.zipper_compress import get_comp_size_bytes
 from sweetsourcod.block_entropy import block_entropy
 
 
-def calc_compressed_size(pixels, flattening='hilbert_sweetsourcod', power2=10):
+def calc_size(pixels):
+    '''
+    Calculates the size of the uncompressed pixels
+    '''
+    data = pixels.tobytes()
+    len_data = len(data)
+    return len_data
+
+
+def calc_compressed_size(pixels, flattening='hilbert_sweetsourcod', compression='LZ77'):
     '''
     Calculates the compressed file size of an image
 
@@ -23,9 +32,6 @@ def calc_compressed_size(pixels, flattening='hilbert_sweetsourcod', power2=10):
         from the sweetsourcod package developed by Stefan Martiniani. if "ravel", then flattens
         into a simple 1d array without taking advantage of the original 2d structure of the image.
         "hilbert" is another implementation of the hilbert curve method.
-    power2: int, optional
-        maximum power of 2 that describes the data. Note that the data is cut off after the max power
-        of two, because the hilbert curve method requires the data to have dimensions of a power of 2.
 
     Returns
     -------
@@ -33,39 +39,40 @@ def calc_compressed_size(pixels, flattening='hilbert_sweetsourcod', power2=10):
         Length of the compressed image array.
 
     '''
+    if flattening[0:7] == 'hilbert':
+        # for any hilbert method, have to set up pixel padding and define exponent of 2
+        power2 = math.ceil(math.log2(pixels.shape[0]))
+        pixels_pad = np.zeros((2**power2, 2**power2))
+        pixels_pad[:pixels.shape[0], :pixels.shape[1]] = pixels
+
     if flattening == 'hilbert_sweetsourcod':
-        pixels = pixels[:2**power2, :2**power2]
-        lattice_boxv = np.asarray(pixels.shape[::-1])
+        lattice_boxv = np.asarray(pixels_pad.shape[::-1])
         n = np.prod(lattice_boxv)
         hilbert_mask = get_hilbert_mask(lattice_boxv)
-        pixels_flat = mask_array(pixels.ravel(), hilbert_mask).astype('uint8')
-        len_compressed, _ = get_entropy_rate_lz77(pixels_flat)
+        pixels_flat = mask_array(pixels_pad.ravel(), hilbert_mask).astype('uint8')
 
-    if flattening == 'hilbert':
-        flat_image = pixels.flatten()
-        num_dimensions = flat_image.shape[0]
-        nbits = int(np.ceil(np.log2(num_dimensions)))
-        hc = HilbertCurve(nbits, 2)
-        hilbert = np.zeros(len(flat_image))
-        count = 0
-
+    if flattening == 'hilbert_pkg':
+        pixels_flat = np.zeros(len(pixels_pad.flatten()))
+        hc = HilbertCurve(power2, 2)
         for i in range(pixels.shape[0]):
             for j in range(pixels.shape[1]):
                 h_index = hc.distance_from_point([i, j])
-                hilbert[h_index] = pixels[i, j]
-                count += 1
-        data = hilbert.tobytes()
-
-        compressed_data = zlib.compress(data)
-        len_compressed = len(compressed_data)
+                pixels_flat[h_index] = pixels[i, j]
 
     elif flattening == 'ravel':
-        # convert the array to a byte string
-        data = pixels.tobytes()
+        pixels_flat = pixels.flatten()
 
-        # compress the byte string using Deflate
+    if compression == 'LZ77':
+        len_compressed, _ = lempel_ziv_complexity(pixels_flat, 'lz77')
+
+    if compression == 'LZ78':
+        len_compressed = lempel_ziv_complexity(pixels_flat, 'lz78')
+
+    if compression == 'DEFLATE':
+        data = pixels_flat.tobytes()
         compressed_data = zlib.compress(data)
         len_compressed = len(compressed_data)
+
     return len_compressed
 
 
@@ -94,32 +101,29 @@ def decimate(pixels, delta, dec_start=0):
     return pixel_dec
 
 
-def calc_Q(pixels, delta, flattening='hilbert_sweetsourcod'):
+def calc_Q(pixels, delta, flattening='hilbert_sweetsourcod', compression='LZ77'):
     '''
     calculate the Q value (scales with compressibility) for a given interval delta.
     '''
     kappa = np.zeros(delta)
     kappa_shuff = np.zeros(delta)
-    for i in range(delta): # loop over all possible decimation start points
+    for i in range(delta):  # loop over all possible decimation start points
         # Get the decimated pixels
         pixel_dec = decimate(pixels, delta, dec_start=i)
 
-        # Calculate the largest power of two that is in the data limits
-        power2 = int(math.log2(pixel_dec.shape[0]))
-
         # Calculate the compressed size of the decimated image
-        kappa[i] = calc_compressed_size(pixel_dec, power2=power2, flattening=flattening)
+        kappa[i] = calc_compressed_size(pixel_dec, flattening=flattening, compression=compression)
 
         # Calcualte the compressed size of the randomly shuffled image
         shuffled_pix = randomize(pixel_dec)
-        kappa_shuff[i] = calc_compressed_size(shuffled_pix, power2=power2, flattening=flattening)
+        kappa_shuff[i] = calc_compressed_size(shuffled_pix, flattening=flattening, compression=compression)
 
     # Calculate the Q value
     Q = 1 - np.mean(kappa)/np.mean(kappa_shuff)
     return Q
 
 
-def calc_Q_delta_vst(canvas_part_stat, flattening='hilbert_sweetsourcod'):
+def calc_Q_delta_vst(canvas_part_stat, flattening='hilbert_sweetsourcod', compression='LZ77'):
     '''
     Calculate the Q vs delta curve for each instantaneous image in the canvas_part_stat
     '''
@@ -134,7 +138,7 @@ def calc_Q_delta_vst(canvas_part_stat, flattening='hilbert_sweetsourcod'):
     q = np.zeros((n_tlims, len(delta)))
     for j in range(n_tlims):  # loop through the times
         for i in range(len(delta)):  # loop through the deltas
-            q[j, i] = calc_Q(pixels_vst[j], delta[i], flattening=flattening)
+            q[j, i] = calc_Q(pixels_vst[j], delta[i], flattening=flattening, compression=compression)
 
     return q, delta
 
@@ -165,7 +169,6 @@ def _get_entropy_rate(c, nsites, norm=1, alphabetsize=2, method='lz77'):
     else:
         raise NotImplementedError
     return h
-
 
 def get_entropy_rate_lz77(x, extrapolate=True):
     # now with LZ77 we compute the number of longest previous factors c, and the entropy rate h

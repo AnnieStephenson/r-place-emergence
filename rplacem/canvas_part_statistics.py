@@ -110,10 +110,10 @@ class CanvasPartStatistics(object):
         Same as above, but divided the number of active pixels.
         Also normalized by t_norm for the last two.
             Set in ratios_and_normalizations()
-    size_bmp
-    size_png : TimeSeries, n_pts = n_t_bins+1
-        Size of the bmp or png image (of the canvas part) file at the end of each time step
-            Needs compute_vars['entropy'] > 0 (or > 3 for size_png)
+    size_uncompressed :
+    size_compressed : TimeSeries, n_pts = n_t_bins+1
+        Size of the uncompressed or compressed image (of the canvas part) file at the end of each time step
+            Needs compute_vars['entropy'] > 0 (or > 3 for size_compressed)
             Set in comp.main_variables()
     entropy_bpmnorm : TimeSeries, n_pts = n_t_bins+1
         Ratio of sizes of the png and bmp image files at the end of each time step
@@ -242,7 +242,9 @@ class CanvasPartStatistics(object):
                  timeunit=300,  # 5 minutes
                  verbose=False,
                  renew=True,
-                 dont_keep_dir=False
+                 dont_keep_dir=False,
+                 flattening='hilbert_sweetsourcod',
+                 compression='LZ77'
                  ):
         '''
         cpart : CanvasPart object
@@ -302,6 +304,7 @@ class CanvasPartStatistics(object):
         self.third_stable_image = None
         self.refimage_sw = None
         self.true_image = None
+        self.attack_defense_image = None
         self.frac_attack_changes_image = None
 
         self.n_changes = ts.TimeSeries()
@@ -313,8 +316,8 @@ class CanvasPartStatistics(object):
         self.returntime = None
         self.cumul_attack_timefrac = ts.TimeSeries()
 
-        self.size_png = ts.TimeSeries()
-        self.size_bmp = ts.TimeSeries()
+        self.size_compressed = ts.TimeSeries()
+        self.size_uncompressed = ts.TimeSeries()
 
         self.transition_param = trans_param
         self.n_transitions = None
@@ -322,7 +325,9 @@ class CanvasPartStatistics(object):
         self.checks_warnings()
 
         # Magic happens here
-        comp.main_variables(cpart, self, print_progress=self.verbose, delete_dir=dont_keep_dir)
+        comp.main_variables(cpart, self, print_progress=self.verbose, delete_dir=dont_keep_dir,
+                            flattening=flattening,
+                            compression=compression)
 
         # ratio variables and normalizations
         self.ratios_and_normalizations()
@@ -338,15 +343,16 @@ class CanvasPartStatistics(object):
             util.save_movie(os.path.join(dirpath, 'VsTime'), fps=15)
         if self.compute_vars['attackdefense'] > 2:
             util.save_movie(os.path.join(dirpath, 'attack_defense_ratio'), fps=15)
+            util.save_movie(os.path.join(dirpath, 'AttDefImg'), fps=6)
 
         # Memory savings here
-        if compute_vars['attackdefense'] < 4:
+        if compute_vars['attackdefense'] < 2:
             self.returntime = None
             self.n_defense_changes = ts.TimeSeries()
             self.n_defense_users = ts.TimeSeries()
             self.n_bothattdef_users = ts.TimeSeries()
-        if compute_vars['entropy'] < 4:
-            self.size_png = ts.TimeSeries()
+        if compute_vars['entropy'] < 2:
+            self.size_compressed = ts.TimeSeries()
             self.diff_pixels_stable_vs_ref = ts.TimeSeries()
             self.diff_pixels_inst_vs_ref = ts.TimeSeries()
             self.diff_pixels_inst_vs_inst = ts.TimeSeries()
@@ -373,7 +379,7 @@ class CanvasPartStatistics(object):
 
     def ts_init(self, val):
         return ts.TimeSeries(val=val, cpstat=self)
-    
+
     def ratios_and_normalizations(self):
         self.instability_norm = self.ts_init( (1 - self.stability.val) / self.t_norm )
         self.n_changes_norm = self.ts_init( util.divide_treatzero(self.n_changes.val / self.t_norm, self.area_vst.val, 0, 0) )
@@ -389,8 +395,8 @@ class CanvasPartStatistics(object):
         self.frac_bothattdef_users = self.ts_init( util.divide_treatzero(self.n_bothattdef_users.val, self.n_users.val, 0.5, 0.5) )
         self.frac_attackonly_users = self.ts_init( util.divide_treatzero(self.n_users.val - self.n_defense_users.val - self.n_bothattdef_users.val, self.n_users.val, 0.5, 0.5) )
         # for entropy
-        self.entropy = self.ts_init( util.divide_treatzero(self.size_png.val, self.area_vst.val) )
-        self.entropy_bmpnorm = self.ts_init( self.size_png.val / self.size_bmp.val )
+        self.entropy = self.ts_init( util.divide_treatzero(self.size_compressed.val, self.area_vst.val) )
+        self.entropy_bmpnorm = self.ts_init( self.size_compressed.val / self.size_uncompressed.val )
         self.entropy.val[0] = 0
         self.entropy_bmpnorm.val[0] = 0
         idx_dividebyzero = np.where(self.area_vst.val == 0)
