@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
+from matplotlib.ticker import ScalarFormatter
 import mpl_toolkits.axes_grid1.inset_locator as insloc
 import seaborn as sns
 import os, copy
@@ -259,8 +260,8 @@ def draw_colorhist(data,
         print('save figure in', os.path.join(var.FIGS_PATH, outfile))
         plt.savefig(os.path.join(var.FIGS_PATH, outfile), bbox_inches='tight')
 
-def draw_1d(xdata, 
-            ydata, 
+def draw_1d(xdata,
+            ydata,
             xlab='',
             ylab='',
             xlog=False,
@@ -272,7 +273,7 @@ def draw_1d(xdata,
             hline=None,
             vline=None
             ):
-    
+
     plt.figure()
     plt.plot(xdata, ydata)
     sns.despine()
@@ -301,3 +302,32 @@ def draw_1d(xdata,
 
     if save != '':
         plt.savefig(save, bbox_inches='tight')
+
+
+def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5):
+    fig, axes = plt.subplots(nrows, ncols, sharex=True, figsize=figsize)
+
+    t_series_vars = [cpstat.frac_pixdiff_inst_vs_stable_norm,
+                     cpstat.frac_pixdiff_inst_vs_inst_norm,
+                     cpstat.frac_pixdiff_inst_vs_ref,
+                     cpstat.instability_norm,
+                     cpstat.n_users_norm,
+                     cpstat.n_changes_norm,
+                     cpstat.entropy,
+                     cpstat.frac_attack_changes,
+                     cpstat.frac_attackonly_users,
+                     cpstat.frac_defenseonly_users,
+                     cpstat.frac_bothattdef_users,
+                     cpstat.returntime_median_overln2,
+                     cpstat.returntime_mean,
+                     cpstat.cumul_attack_timefrac]
+
+    for i, ax in enumerate(axes.flat):
+        ax.plot(cpstat.t_ranges, t_series_vars[i].val)
+        ax.patch.set_alpha(0)
+        ax.set_yticklabels([])
+        ax.set_xlim([cpstat.t_ranges[0], cpstat.t_ranges[-1]])
+        ax.set_ylabel(t_series_vars[i].label, fontsize=fontsize)
+        sns.despine()
+    plt.subplots_adjust(hspace=0.0)
+    fig.text(0.5, 0.05, 'Time (s)', ha='center')

@@ -30,6 +30,8 @@ class TimeSeries(object):
         long description of the meaning of the variable
     desc_short: string
         short description of the variable, used as y-axis label for plotting
+    label: string
+        shortened name of variable, used as y-axis label for internal plotting with limited space
     name: string
         generic name of the variable
     savename: string (without spaces)
@@ -72,6 +74,7 @@ class TimeSeries(object):
                  desc_short='',
                  name='',
                  savename='',
+                 label='',
                  record_all=False
                  ):
 
@@ -90,6 +93,7 @@ class TimeSeries(object):
 
         self.desc_long = desc_long
         self.desc_short = desc_short
+        self.label = label
         self.name = name
         self.savename = os.path.join(var.FIGS_PATH, cpstat.id, savename + '.png') if savename != '' else ''
 
