@@ -24,7 +24,7 @@ class CanvasPartStatistics(object):
     compute_vars: dictionary (string to int)
         says what level of information to compute and store for each variable.
         The keys for the computed variables are:
-            'stability', 'mean_stability', 'entropy', 'transitions', 'attackdefense'
+            'stability', 'other', 'entropy', 'transitions', 'attackdefense'
         The levels mean:
             0: not computed
             1: basic variables are computed
@@ -69,8 +69,12 @@ class CanvasPartStatistics(object):
     tmin, tmax: floats
         time range on which to compute the variables. As for now, cannot accept tmin > 0.
             Set in __init__()
-    sw_width: float
+    sw_width_sec: float
         Size [in seconds] of the sliding window over which the sliding reference image is computed
+    sw_width: int
+        Size [in units of t_interval] of the sliding window over which the sliding reference image is computed
+    returnt_binwidth: float
+        bin width [in seconds] for the saved histogram of return times returntime_tbinned
 
     TRANSITIONS
     transition_param : list of floats
@@ -215,6 +219,24 @@ class CanvasPartStatistics(object):
         Normalized by the timestep width times #pixels
             Set in comp.main_variables()
 
+    OTHER: -- all need compute_vars['other'] > 0
+    n_moderator_changes
+    n_cooldowncheat_changes
+    n_redundant_color_changes
+    n_redundant_coloranduser_changes
+        number of pixel changes that:
+        - were issued by moderators
+        - break the 5-minute per-user cooldown
+        - are redundant in color with what the pixel contained before the change
+        - are redundant in color and user with what the pixel contained before the change
+            Set in comp.main_variables()
+    frac_moderator_changes
+    frac_cooldowncheat_changes
+    frac_redundant_color_changes
+    frac_redundant_coloranduser_changes
+        Same as above, but divided by the number of pixel changes in this timestep
+            Set in ratios_and_normalizations()
+
     methods
     -------
     private:
@@ -223,19 +245,23 @@ class CanvasPartStatistics(object):
     public:
         ts_init()
         checks_warnings()
+        keep_all_basics()
+            Check if all basic variables are asked for (compute_vars[:] > 0)
         ratios_and_normalizations()
             Normalize variables
         returntime_stats()
             Calculate various variables for the full returntime array
         search_transitions()
             Look for transitions and set associated attributes
+        fill_timeseries_info()
+            User-called function that fills all the textual attributes of 1d time-series variables
     '''
 
     def __init__(self,
                  cpart,
                  n_tbins=750,
                  tmax=var.TIME_TOTAL,
-                 compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3},
+                 compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1},
                  sliding_window=14400,
                  returnt_binwidth=100,
                  trans_param=[0.2, 0.05, 7200, 10800],
@@ -290,6 +316,8 @@ class CanvasPartStatistics(object):
         self.t_norm = self.t_interval / self.t_unit
         self.t_ranges = np.arange(self.tmin, tmax + self.t_interval - 1e-4, self.t_interval)
         self.sw_width = int(sliding_window/self.t_interval)
+        self.sw_width_sec = self.sw_width * self.t_interval # force the sliding window to be a multiple of the time interval
+        self.returnt_binwidth = returnt_binwidth
 
         # Creating attributes that will be computed in comp.main_variables()
         self.diff_pixels_stable_vs_ref = ts.TimeSeries()
@@ -316,6 +344,11 @@ class CanvasPartStatistics(object):
         self.returntime = None
         self.cumul_attack_timefrac = ts.TimeSeries()
 
+        self.n_moderator_changes = ts.TimeSeries()
+        self.n_cooldowncheat_changes = ts.TimeSeries()
+        self.n_redundant_color_changes = ts.TimeSeries()
+        self.n_redundant_coloranduser_changes = ts.TimeSeries()
+        
         self.size_compressed = ts.TimeSeries()
         self.size_uncompressed = ts.TimeSeries()
 
@@ -334,7 +367,7 @@ class CanvasPartStatistics(object):
 
         # Return time: histogram, mean and median
         if self.compute_vars['attackdefense'] > 0:
-            self.returntime_stats(sliding_window, binwidth=returnt_binwidth)
+            self.returntime_stats(self.sw_width_sec, binwidth=returnt_binwidth)
 
         # Make movies
         if self.compute_vars['stability'] > 2:
@@ -362,7 +395,7 @@ class CanvasPartStatistics(object):
 
         # find transitions
         if compute_vars['transitions'] > 0:
-            self.search_transitions(cpart, sliding_window=sliding_window)
+            self.search_transitions(cpart)
 
         # remove directory if it did not exist before and if dont_keep_dir
         if (not dir_exists) and dont_keep_dir:
@@ -379,7 +412,14 @@ class CanvasPartStatistics(object):
 
     def ts_init(self, val):
         return ts.TimeSeries(val=val, cpstat=self)
-
+    
+    def keep_all_basics(self):
+        return self.compute_vars['entropy'] > 0 \
+           and self.compute_vars['stability'] > 0 \
+           and self.compute_vars['attackdefense']> 0 \
+           and self.compute_vars['transitions'] > 0 \
+           and self.compute_vars['other'] > 0
+    
     def ratios_and_normalizations(self):
         self.instability_norm = self.ts_init( (1 - self.stability.val) / self.t_norm )
         self.n_changes_norm = self.ts_init( util.divide_treatzero(self.n_changes.val / self.t_norm, self.area_vst.val, 0, 0) )
@@ -396,14 +436,19 @@ class CanvasPartStatistics(object):
         self.frac_attackonly_users = self.ts_init( util.divide_treatzero(self.n_users.val - self.n_defense_users.val - self.n_bothattdef_users.val, self.n_users.val, 0.5, 0.5) )
         # for entropy
         self.entropy = self.ts_init( util.divide_treatzero(self.size_compressed.val, self.area_vst.val) )
-        self.entropy_bmpnorm = self.ts_init( self.size_compressed.val / self.size_uncompressed.val )
+        self.entropy_bmpnorm = self.ts_init( util.divide_treatzero(self.size_compressed.val, self.size_uncompressed.val, 0, 0) )
         self.entropy.val[0] = 0
         self.entropy_bmpnorm.val[0] = 0
         idx_dividebyzero = np.where(self.area_vst.val == 0)
         self.entropy.val[idx_dividebyzero] = self.entropy_bmpnorm.val[idx_dividebyzero] * 3.2  # typical factor hard-coded here
+        # other
+        self.frac_moderator_changes = self.ts_init( util.divide_treatzero(self.n_moderator_changes.val, self.n_changes.val, 0, 0) )
+        self.frac_cooldowncheat_changes = self.ts_init( util.divide_treatzero(self.n_cooldowncheat_changes.val, self.n_changes.val, 0, 0) )
+        self.frac_redundant_color_changes = self.ts_init( util.divide_treatzero(self.n_redundant_color_changes.val, self.n_changes.val, 0, 0) )
+        self.frac_redundant_coloranduser_changes = self.ts_init( util.divide_treatzero(self.n_redundant_coloranduser_changes.val, self.n_changes.val, 0, 0) )
 
     def returntime_stats(self, sliding_window, binwidth=100):
-        returnt_bins = np.arange(0, sliding_window+binwidth, binwidth)
+        returnt_bins = np.arange(0, sliding_window+binwidth-1e-4, binwidth)
         self.returntime_tbinned = np.zeros((self.n_t_bins+1, math.ceil(sliding_window/binwidth)))
         self.returntime_mean = self.ts_init( np.zeros(self.n_t_bins+1) )
         self.returntime_median_overln2 = self.ts_init( np.zeros(self.n_t_bins+1) )
@@ -417,32 +462,34 @@ class CanvasPartStatistics(object):
             self.returntime_median_overln2.val[t] = np.median(self.returntime[t]) / np.log(2)
             self.returntime_percentile90_overln2.val[t] = np.percentile(self.returntime[t], 90) / np.log(2)
 
-    def search_transitions(self, cpart, sliding_window):
+    def search_transitions(self, cpart):
         par = self.transition_param
         transitions = tran.find_transitions(self.t_ranges, self.frac_pixdiff_inst_vs_ref.val,
                                              cutoff=par[0], cutoff_stable=par[1], len_stableregion=par[2], distfromtrans_stableregion=par[3],
-                                             sliding_win=sliding_window)
+                                             sliding_win=self.sw_width_sec)
         self.transition_tinds = transitions[0]
         self.transition_times = transitions[1]
         self.n_transitions = len(transitions[1])
         trans = self.compute_vars['transitions']
 
-        self.refimage_pretrans = cpart.white_image(3, images_number=self.n_transitions) if trans > 1 else None
-        self.refimage_intrans = cpart.white_image(3, images_number=self.n_transitions) if trans > 1 else None
-        self.refimage_posttrans = cpart.white_image(3, images_number=self.n_transitions) if trans > 1 else None
-        self.trans_start_time = np.empty(self.n_transitions)
-        self.trans_start_tind = np.empty(self.n_transitions, dtype=np.int64)
-        self.frac_diff_pixels_pre_vs_post_trans = np.empty(self.n_transitions) if trans > 1 else None
+        if trans > 1:
+            self.refimage_pretrans = cpart.white_image(3, images_number=self.n_transitions) if trans > 1 else None
+            self.refimage_intrans = cpart.white_image(3, images_number=self.n_transitions) if trans > 1 else None
+            self.refimage_posttrans = cpart.white_image(3, images_number=self.n_transitions) if trans > 1 else None
+            self.frac_diff_pixels_pre_vs_post_trans = np.empty(self.n_transitions) if trans > 1 else None
+        self.trans_start_time = np.empty(self.n_transitions) if self.keep_all_basics() else None
+        self.trans_start_tind = np.empty(self.n_transitions, dtype=np.int64) if self.keep_all_basics() else None
 
         for j in range(0, self.n_transitions):
-            end_pretrans_sw_ind = min(self.transition_tinds[j][1] + 1, self.n_t_bins+1)
-            end_posttrans_sw_ind = min(self.transition_tinds[j][4] + self.sw_width + 1, self.n_t_bins+1)
-
-            self.trans_start_time[j] = tran.transition_start_time(self, j)[1] # take the mean here, but could be the median (among variables)
-            self.trans_start_tind[j] = np.argmax(self.t_ranges >= self.trans_start_time[j])
+            if self.keep_all_basics():
+                self.trans_start_time[j] = tran.transition_start_time(self, j)[1] # take the mean here, but could be the median (among variables)
+                self.trans_start_tind[j] = np.argmax(self.t_ranges >= self.trans_start_time[j])
 
             if trans > 1:
                 self.frac_diff_pixels_pre_vs_post_trans[j] = comp.count_image_differences(self.refimage_pretrans[j], self.refimage_posttrans[j], cpart) / self.area
+                
+                end_pretrans_sw_ind = min(self.transition_tinds[j][1] + 1, self.n_t_bins+1)
+                end_posttrans_sw_ind = min(self.transition_tinds[j][4] + self.sw_width + 1, self.n_t_bins+1)
                 self.refimage_intrans[j] = self.true_image[self.trans_start_tind[j]]
                 self.refimage_pretrans[j] = self.refimage_sw[end_pretrans_sw_ind]
                 self.refimage_posttrans[j] = self.refimage_sw[end_posttrans_sw_ind]
@@ -531,4 +578,20 @@ class CanvasPartStatistics(object):
         self.cumul_attack_timefrac.desc_short = 'frac of time spent in attack colors [s]'
         self.cumul_attack_timefrac.label = 'cumul_attack\ntimefrac'
         self.cumul_attack_timefrac.savename = filepath('attack_time_fraction_allpixels')
+
+        self.frac_moderator_changes.desc_long = 'Fraction of active pixels changes issued from moderators'
+        self.frac_moderator_changes.desc_short = 'fraction of moderator changes'
+        self.frac_moderator_changes.savename = filepath('fraction_moderator_changes')
+
+        self.frac_cooldowncheat_changes.desc_long = 'Fraction of active pixels changes that break the 5-minute per-user cooldown'
+        self.frac_cooldowncheat_changes.desc_short = 'fraction of cooldown-cheating changes'
+        self.frac_cooldowncheat_changes.savename = filepath('fraction_cooldowncheating_changes')
+
+        self.frac_redundant_color_changes.desc_long = 'Fraction of active pixels changes that are redundant in color with the pixel content before its change'
+        self.frac_redundant_color_changes.desc_short = 'fraction of redundant changes'
+        self.frac_redundant_color_changes.savename = filepath('fraction_redundant_changes')
+
+        self.frac_redundant_coloranduser_changes.desc_long = 'Fraction of active pixels changes that are redundant in color and user with the pixel content before its change'
+        self.frac_redundant_coloranduser_changes.desc_short = 'fraction of redundant (color and user) changes'
+        self.frac_redundant_coloranduser_changes.savename = filepath('fraction_redundant_coloranduser_changes')
 

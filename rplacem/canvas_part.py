@@ -4,7 +4,6 @@ import pickle
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image, ImageColor
 import rplacem.variables_rplace2022 as var
 import rplacem.utilities as util
 
@@ -615,7 +614,7 @@ class CanvasPart(object):
         or a 2D array being the actual pixels/image of the part;
         or a 3D array containing [images_number] of these 2D images. '''
         if dimension == 1:
-            return np.full(self.num_pix(), var.WHITE, dtype='int8')
+            return np.full(self.num_pix(), var.WHITE, dtype=np.int8)
         if dimension == 2:
             return np.full((self.width(1), self.width(0)), var.WHITE, dtype=np.int8)
         if dimension == 3:

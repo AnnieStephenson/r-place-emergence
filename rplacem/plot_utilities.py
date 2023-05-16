@@ -185,7 +185,8 @@ def draw_2dmap(h2d, xedges, yedges,
                cbar_ticks_pos = 'top',
                fontsize_ticks = 20):
     '''
-    plots and saves a 2D histogram in the style of a heatmap, including a colormap
+    plots and saves a 2D histogram in the style of a heatmap, including a colormap.
+    Mostly designed for the whole 2000x2000 canvas
 
     parameters
     ----------
@@ -273,7 +274,9 @@ def draw_1d(xdata,
             hline=None,
             vline=None
             ):
-
+    '''
+    Draw 1d plot from full x and y information
+    '''
     plt.figure()
     plt.plot(xdata, ydata)
     sns.despine()
@@ -283,11 +286,20 @@ def draw_1d(xdata,
     xm = min(xdata)
     if xm == 0 and xlog:
         xm = 1e-3
-    ym = min(ydata)
-    if ym == 0 and ylog:
-        ym = 1e-5
-    yM = (1.6 if ylog else 1.1) * max(ydata)
-    plt.ylim([ (ym if ymin == None else ymin) , (yM if ymax == None else ymax)])
+    if ymin is None:
+        ym = min(ydata)
+        if ym == 0 and ylog:
+            ym = 1e-5
+    else:
+        ym = ymin
+
+    if ymax is None:
+        yM = (1.6 if ylog else 1.1) * max(ydata)
+    else:
+        yM = ymax
+    if yM <= ym:
+        yM = ym + 0.01
+    plt.ylim([ym , yM])
     plt.xlim([ (xm if xmin == None else xmin), max(xdata)])
 
     if xlog:
@@ -302,7 +314,6 @@ def draw_1d(xdata,
 
     if save != '':
         plt.savefig(save, bbox_inches='tight')
-
 
 def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5):
     fig, axes = plt.subplots(nrows, ncols, sharex=True, figsize=figsize)
@@ -331,3 +342,30 @@ def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5):
         sns.despine()
     plt.subplots_adjust(hspace=0.0)
     fig.text(0.5, 0.05, 'Time (s)', ha='center')
+
+def draw_2dplot(x, y, z, 
+                xlab='', ylab='', zlab='',
+                ymax=None,
+                logz=False, zmin=None, zmax=None,
+                force_scientific=False,
+                outname=''):
+    '''
+    Draw 2d (pcolormesh) plot from full x, y, z information
+    '''
+    plt.figure()
+    zm = (1e-3 if logz else 0) if zmin == None else zmin
+    zM = 1.1 * np.amax(z) if zmax == None else zmax
+    plt.pcolormesh(x, y, np.transpose(z),
+                   cmap=('cividis' if logz else 'inferno'), 
+                   norm=colors.LogNorm(vmin=zm, vmax=zM) if logz else None,
+                   vmin=None if logz else zm, vmax=None if logz else zM,
+                   shading='nearest'
+                   )
+    plt.xlabel(xlab)
+    plt.ylabel(ylab)
+    plt.ylim([y[0], y[-1] if ymax == None else ymax])
+    if force_scientific:
+        plt.ticklabel_format(style='scientific')
+    plt.colorbar(label=zlab)
+    if outname != '':
+        plt.savefig(os.path.join(var.FIGS_PATH, outname), bbox_inches='tight')
