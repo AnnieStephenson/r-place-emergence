@@ -9,6 +9,7 @@ import math
 import rplacem.variables_rplace2022 as var
 import rplacem.utilities as util
 import rplacem.plot_utilities as plot
+import rplacem.entropy as entropy
 import scipy
 import warnings
 
@@ -127,8 +128,8 @@ def calc_time_spent_in_color(cpart, seconds, color, pixch_coord_inds,
         # This code updates the pointer last_time)installed_sw without returning.
         last_time_changed[coor_idx] = s
         if last_time_installed_sw is not None:
-            last_time_installed_sw[ c ][coor_idx] = s # time where this pixel was changed to new color [c]
-            last_time_removed_sw[ current_color[coor_idx] ][coor_idx] = s # time where this pixel lost its old color [current_color]
+            last_time_installed_sw[c][coor_idx] = s # time where this pixel was changed to new color [c]
+            last_time_removed_sw[current_color[coor_idx]][coor_idx] = s  # time where this pixel lost its old color [current_color]
 
         # Update the current color.
         current_color[coor_idx] = c
@@ -205,6 +206,8 @@ def main_variables(cpart,
                    start_pixels=None,
                    delete_dir=False,
                    print_progress=False,
+                   flattening='hilbert_sweetsourcod',
+                   compression='DEFLATE'
                    ):
     '''
     Calculates the main variables that are contained in a CanvasPartStatistics object.
@@ -260,22 +263,22 @@ def main_variables(cpart,
     last_time_removed_sw = None if attdef == 0 else np.copy(last_time_installed_sw)
 
     # Output
-    cpst.stability = cpst.ts_init( np.full(n_tlims, 1., dtype=np.float32) )
-    cpst.diff_pixels_stable_vs_ref = cpst.ts_init( np.zeros(n_tlims) )
-    cpst.diff_pixels_inst_vs_ref = cpst.ts_init( np.zeros(n_tlims) )
-    cpst.diff_pixels_inst_vs_inst = cpst.ts_init( np.zeros(n_tlims) )
-    cpst.diff_pixels_inst_vs_stable = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.stability = cpst.ts_init(np.full(n_tlims, 1., dtype=np.float32))
+    cpst.diff_pixels_stable_vs_ref = cpst.ts_init(np.zeros(n_tlims))
+    cpst.diff_pixels_inst_vs_ref = cpst.ts_init(np.zeros(n_tlims))
+    cpst.diff_pixels_inst_vs_inst = cpst.ts_init(np.zeros(n_tlims))
+    cpst.diff_pixels_inst_vs_stable = cpst.ts_init(np.zeros(n_tlims))
     cpst.returntime = np.zeros((n_tlims, cpart.num_pix()), dtype='float64')
-    cpst.area_vst = cpst.ts_init( np.full(n_tlims, cpart.num_pix()) )
-    cpst.n_changes = cpst.ts_init( np.zeros(n_tlims) )
-    cpst.n_defense_changes = cpst.ts_init( np.zeros(n_tlims) )
-    cpst.n_users = cpst.ts_init( np.zeros(n_tlims) )
-    cpst.n_bothattdef_users = cpst.ts_init( np.zeros(n_tlims) )
-    cpst.n_defense_users = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.area_vst = cpst.ts_init(np.full(n_tlims, cpart.num_pix()))
+    cpst.n_changes = cpst.ts_init(np.zeros(n_tlims))
+    cpst.n_defense_changes = cpst.ts_init(np.zeros(n_tlims))
+    cpst.n_users = cpst.ts_init(np.zeros(n_tlims))
+    cpst.n_bothattdef_users = cpst.ts_init(np.zeros(n_tlims))
+    cpst.n_defense_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.frac_attack_changes_image = np.full((n_tlims, cpart.width(1), cpart.width(0)), 1, dtype=np.float16) if attdef > 1 else None
-    cpst.size_bmp = cpst.ts_init( np.zeros(n_tlims) )
-    cpst.size_png = cpst.ts_init( np.zeros(n_tlims) )
-    cpst.cumul_attack_timefrac = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.size_uncompressed = cpst.ts_init(np.zeros(n_tlims))
+    cpst.size_compressed = cpst.ts_init(np.zeros(n_tlims))
+    cpst.cumul_attack_timefrac = cpst.ts_init(np.zeros(n_tlims))
 
     # output paths
     out_path = os.path.join(var.FIGS_PATH, cpart.out_name())
@@ -290,7 +293,9 @@ def main_variables(cpart,
         util.make_dir(out_path_stab, renew=True)
 
         # 2d numpy arrays containing color indices (from 0 to 31) for each pixel of the composition
-        cpst.stable_image = cpst.second_stable_image = cpst.third_stable_image = cpart.white_image(3, images_number=n_tlims)
+        cpst.stable_image = cpart.white_image(3, images_number=n_tlims)
+        cpst.second_stable_image = cpart.white_image(3, images_number=n_tlims)
+        cpst.third_stable_image = cpart.white_image(3, images_number=n_tlims)
 
         def modify_some_pixels(start, target, step, indices):
             ''' start and target are 1d arrays of 2d images.
@@ -299,6 +304,7 @@ def main_variables(cpart,
 
     if attdef > 1:
         cpst.refimage_sw = cpart.white_image(3, images_number=n_tlims)
+        cpst.attack_defense_image = cpart.white_image(3, images_number=n_tlims)
 
     if attdef > 2:
         util.make_dir(out_path_attdef, renew=True)
@@ -306,9 +312,13 @@ def main_variables(cpart,
     if instant > 1:
         cpst.true_image = cpart.white_image(3, images_number=n_tlims)
 
-    # Dummy fill of file_size_png and file_size_bmp for time 0
-    create_files_and_get_sizes(t_lims, 0, cpart.white_image(2),
-                               cpst.size_png.val, cpst.size_bmp.val, out_path_time)
+    # Start with a white image for time time 0
+    if ((compression == 'DEFLATE_BMP_PNG') or (instant > 2)):
+        if flattening != 'ravel':
+            warnings.warn(('Compression algorithm DEFLATE with BMP to PNG can only handle ravel flattening. Using ravel'
+                            ' instead of ' + flattening))
+        create_files_and_get_sizes(t_lims, 0, cpart.white_image(2),
+                                   cpst.size_compressed.val, cpst.size_uncompressed.val, out_path_time)
 
     # LOOP over time steps
     i_fraction_print = 0
@@ -318,7 +328,7 @@ def main_variables(cpart,
             show_progress(i/n_tlims, i_fraction_print, 0.1)
         timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_lims[i-1]), int(t_lims[i]))
 
-        # Starting time of the sliding window. 
+        # Starting time of the sliding window.
         tind_sw_start = max(0, i - cpst.sw_width)
         t_sw_start = t_lims[tind_sw_start]
         # Keep only changes within the window (reject older ones).
@@ -370,13 +380,20 @@ def main_variables(cpart,
         if attdef > 0:
             # Calculate the (normalized) cumulative attack time over all pixels in this timestep
             cpst.cumul_attack_timefrac.val[i] = cumulative_attack_timefrac(time_spent_in_color[i], ref_colors,
-                                                                       inds_coor_active, cpst.t_interval)
+                                                                           inds_coor_active, cpst.t_interval)
             # Calculate return time, as the time each pixel spent in the non-reference color during the last attack
             mask_attack = np.full(current_color.shape, False)
             mask_attack[np.where(current_color != ref_colors)] = True  # indices where pixels are in an attack color
             cpst.returntime[i][~mask_attack] = last_time_installed_sw[ref_colors[~mask_attack], ~mask_attack] \
                                               - last_time_removed_sw[ref_colors[~mask_attack], ~mask_attack]
             cpst.returntime[i][mask_attack] = t_lims[i] - last_time_removed_sw[ref_colors[mask_attack], mask_attack]
+
+            if attdef > 1:
+                diff_image = current_color - ref_colors
+                diff_image[diff_image != 0] = 31  # white if defense
+                diff_image[diff_image != 31] = 5  # black if attack
+                cpst.attack_defense_image[i][coor_offset[1, inds_coor_active],
+                                             coor_offset[0, inds_coor_active]] = diff_image[inds_coor_active]
 
             # Calculate the number of changes and of users that are attacking or defending the reference image
             num_changes_and_users(cpart, i, timerange_str,
@@ -398,9 +415,13 @@ def main_variables(cpart,
             # Create the png and bmp files from the current image, and store their sizes
             pix_tmp = cpart.white_image(2)
             pix_tmp[coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active]] = current_color[inds_coor_active]
-            create_files_and_get_sizes(t_lims, i, pix_tmp,
-                                       cpst.size_png.val, cpst.size_bmp.val,
-                                       out_path_time, True, instant > 2)
+            if ((compression == 'DEFLATE_BMP_PNG') or (instant > 2)):
+                create_files_and_get_sizes(t_lims, i, pix_tmp,
+                                           cpst.size_compressed.val, cpst.size_uncompressed.val,
+                                           out_path_time, True, instant > 2)
+            else:
+                cpst.size_compressed.val[i] = entropy.calc_compressed_size(pix_tmp, flattening=flattening, compression=compression)
+                cpst.size_uncompressed.val[i] = entropy.calc_size(pix_tmp)
 
         # END CORE COMPUTATIONS. Magic ends
 
@@ -423,6 +444,7 @@ def main_variables(cpart,
             if attdef > 2:
                 timerange_str = 'time{:06d}to{:06d}.png'.format(int(t_sw_start), int(t_lims[i]))
                 util.pixels_to_image(cpst.refimage_sw[i], os.path.join(cpart.out_name(), 'VsTimeStab', 'RefImg'), 'SlidingRef_' + timerange_str + '.png')
+                util.pixels_to_image(cpst.attack_defense_image[i], os.path.join(cpart.out_name(), 'AttDefImg'), 'SlidingRef_' + timerange_str)
 
         # Create images containing the (sub)dominant color only.
         if stab > 1:

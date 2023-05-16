@@ -4,6 +4,7 @@ import pandas as pd
 import rplacem.variables_rplace2022 as var
 import rplacem.plot_utilities as plot
 
+
 class TimeSeries(object):
     '''
     Object recording values for a time-dependent variable.
@@ -29,18 +30,20 @@ class TimeSeries(object):
         long description of the meaning of the variable
     desc_short: string
         short description of the variable, used as y-axis label for plotting
+    label: string
+        shortened name of variable, used as y-axis label for internal plotting with limited space
     name: string
         generic name of the variable
     savename: string (without spaces)
         core of the name under which the plot is saved (does not include directory and file extension)
-    ratio_to_sw_mean: 
-        At index i, contains the ratio of self.val[i] to the average over the 
+    ratio_to_sw_mean:
+        At index i, contains the ratio of self.val[i] to the average over the
         preceding sliding window [max(0, i-sw_width_mean) : i[  (excluding i)
         Set in set_ratio_to_sw_average()
-    variance, 
-    skewness, 
+    variance,
+    skewness,
     autocorrelation: numpy 1d array, length n_pts
-        At index i, it contains the relevant transformation applied to the 
+        At index i, it contains the relevant transformation applied to the
         values at indices [max(0, i-sw_width_ews) : i]  (including i)
         Set in set_variance(), set_autocorrelation(), set_skewness()
 
@@ -71,13 +74,14 @@ class TimeSeries(object):
                  desc_short='',
                  name='',
                  savename='',
+                 label='',
                  record_all=False
                  ):
-        
+
         self.val = val
         if self.exists():
             self.n_pts = len(val)
-            if cpstat == None:
+            if cpstat is None:
                 self.tmin = tmin
                 self.t_interval = t_interval
                 self.sw_width_mean = sw_width_mean
@@ -89,6 +93,7 @@ class TimeSeries(object):
 
         self.desc_long = desc_long
         self.desc_short = desc_short
+        self.label = label
         self.name = name
         self.savename = os.path.join(var.FIGS_PATH, cpstat.id, savename + '.png') if savename != '' else ''
 
@@ -97,8 +102,8 @@ class TimeSeries(object):
             self.set_all_vars()
 
     def exists(self):
-        return np.any(self.val != None)
-    
+        return np.any(self.val is not None)
+
     def set_all_vars(self):
         self.set_t_ranges()
         self.set_ratio_to_sw_average()
@@ -114,10 +119,10 @@ class TimeSeries(object):
         '''
         mean_sliding = np.empty(self.n_pts)
         sw = self.sw_width_mean
-        cumul_sum = np.cumsum(self.val) # cumsum[i] is the sum of values in indices [0, i] with i included
+        cumul_sum = np.cumsum(self.val)  # cumsum[i] is the sum of values in indices [0, i] with i included
         mean_sliding[0] = self.val[0]
         mean_sliding[1:(sw+1)] = cumul_sum[0:sw] / np.arange(1, sw+1)
-        mean_sliding[(sw+1):] = (cumul_sum[sw:] - cumul_sum[:-sw]) / float(sw) #CHECK THAT BEG IDX
+        mean_sliding[(sw+1):] = (cumul_sum[sw:] - cumul_sum[:-sw]) / float(sw)  # CHECK THAT BEG IDX
 
         self.ratio_to_sw_mean = self.val / mean_sliding
 
@@ -131,7 +136,7 @@ class TimeSeries(object):
         x = pd.Series(self.val)
         variance = x.rolling(window=self.sw_width_ews, min_periods=1).var()
         self.variance = np.array(variance)
-        
+
     def set_skewness(self):
         '''
         calculates the skewness vs time of the state variable
@@ -149,11 +154,11 @@ class TimeSeries(object):
         self.autocorrelation = np.array(autocorrelation)
 
     def plot1d(self, xlog=False, xmin=None, ylog=False, ymin=None, ymax=None, save=True, hline=None, vline=None, ibeg_remove=0, iend_remove=0):
-        if self.t_ranges == None:
+        if self.t_ranges is None:
             self.set_t_ranges()
-        
+
         iend = self.n_pts - iend_remove
-        plot.draw_1d(self.t_ranges[ibeg_remove:iend], self.val[ibeg_remove:iend], 
+        plot.draw_1d(self.t_ranges[ibeg_remove:iend], self.val[ibeg_remove:iend],
                      xlab='Time [s]', ylab=self.desc_short,
                      xlog=xlog, xmin=xmin,
                      ylog=ylog, ymin=ymin, ymax=ymax,
