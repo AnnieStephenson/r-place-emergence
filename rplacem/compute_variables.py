@@ -391,7 +391,7 @@ def main_variables(cpart,
             cpst.n_redundant_coloranduser_changes.val[i] = np.count_nonzero(redundant_coloranduser[t_inds_active])
 
         # Store the image of the previous timestep
-        if instant > 0:
+        if stab > 0 and instant > 0:
             previous_stable_color = np.copy(stable_colors[:, 0]) if i > 1 else cpart.white_image(1)
 
         # Calculate the time each pixel spent in what color.
@@ -459,16 +459,17 @@ def main_variables(cpart,
 
         # INSTANTANEOUS IMAGES
         # Calculate the number of pixels in the current interval (stable or instantaneous) that differ from the reference image, or from the previous timestep
-        if instant > 0:
+        if instant > 0 or tran > 0:
             cpst.diff_pixels_inst_vs_swref.val[i] = np.count_nonzero(current_color - ref_color)
         if tran > 0:
             if i >= cpst.sw_width:
                 cpst.diff_pixels_inst_vs_swref_forwardlook.val[i - cpst.sw_width] = np.count_nonzero(previous_colors[i_replace] - ref_color)
             previous_colors[i_replace] = np.copy(current_color)
-        if instant > 0:
+        if stab > 0 and instant > 0:
             cpst.diff_pixels_stable_vs_swref.val[i] = np.count_nonzero(stable_colors[:, 0] - ref_color[:])
-            cpst.diff_pixels_inst_vs_inst.val[i] = np.count_nonzero(current_color - previous_colors[(i-1) % cpst.sw_width])
             cpst.diff_pixels_inst_vs_stable.val[i] = np.count_nonzero(current_color - previous_stable_color)
+        if instant > 0:
+            cpst.diff_pixels_inst_vs_inst.val[i] = np.count_nonzero(current_color - previous_colors[(i-1) % cpst.sw_width])
 
             # Create the png and bmp files from the current image, and store their sizes
             pix_tmp = cpart.white_image(2)

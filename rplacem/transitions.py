@@ -129,7 +129,10 @@ def find_transitions(t_lims,
     
     # merge transitions that have the same preceding and subsequent stable regions
     full_transitions = merge_similar_transitions(np.array(full_transition_tmp))
-    return (full_transitions, t_lims[full_transitions])
+    
+    full_transitions_cap = np.copy(full_transitions)
+    full_transitions_cap[full_transitions_cap > (len(t_lims)-1)] = len(t_lims)-1
+    return (full_transitions, t_lims[np.array(full_transitions_cap, dtype=int)])
 
 def transition_start_time(cpstat, tr):
 

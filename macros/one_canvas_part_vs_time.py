@@ -21,7 +21,7 @@ fromatlas = True
 cp_fromfile = False
 cps_fromfile = False
 
-id = '000297' #'twoztm',#'twwgx2',#'000006' # only if fromatlas
+id = '000006' #'twoztm',#'twwgx2',#'000006' # only if fromatlas
 x1 = 0 # only if not fromatlas
 x2 = 1999
 y1 = 0
@@ -72,7 +72,6 @@ else:
                                         compute_vars={'stability': 3, 'entropy' :3, 'transitions' : 3, 'attackdefense' : 3, 'other' : 1},
                                         sliding_window=14400,
                                         verbose=False, dont_keep_dir=False)
-
 
 cpstat.fill_timeseries_info()
 
