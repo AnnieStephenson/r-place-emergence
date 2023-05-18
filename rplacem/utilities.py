@@ -113,7 +113,7 @@ def save_movie(image_path,
         specific python package.
     '''
     image_files = list(np.sort(glob.glob(os.path.join(image_path, '*.png'))))
-    png_name0 = os.path.basename(image_files[0][0:-15])
+    png_name0 = os.path.basename(image_files[0][0:15])
     movie_name = png_name0 + '_fps' + str(fps)
     movie_file = os.path.join(image_path, movie_name) + '.' + video_type
 
@@ -151,7 +151,6 @@ def update_image(image, xcoords, ycoords, color, t_inds=None):
     xyidx_unique, idx_first = np.unique(xycoords_inv, return_index=True, axis=0) # keeping the index of the first occurence in the reverse-order array
     image[xyidx_unique[:,1] , xyidx_unique[:,0]] = color_inv[idx_first]
 
-
 def load_atlas():
     '''
     Load the composition atlas and return the atlas and the number of entries in the atlas
@@ -162,7 +161,6 @@ def load_atlas():
 
     atlas_size = len(list(atlas))
     return atlas, atlas_size
-
 
 def make_dir(path, renew=False):
     '''
@@ -179,7 +177,6 @@ def make_dir(path, renew=False):
         res = True
 
     return res
-
 
 def merge_pickles(file_list, file_out):
     out = []

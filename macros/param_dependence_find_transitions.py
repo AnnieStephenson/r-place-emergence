@@ -33,8 +33,8 @@ with open(file_path, 'rb') as f:
     canparts = pickle.load(f)
 
 # Test grid of parameters
-cutoffs = np.array([0.1, 0.15, 0.2, 0.25, 0.3, 0.35])
-cutoff_stables = np.array([0.015, 0.03, 0.05, 0.07, 0.09])
+cutoffs = np.array([0.2, 0.25, 0.3, 0.35, 0.4, 0.5])
+cutoff_stables = np.array([0.03, 0.07, 0.1, 0.13, 0.16, 0.19])
 num_stables = np.arange(1,6) * 3600
 dist_stables = np.arange(1,6) * 3600
 
@@ -45,12 +45,10 @@ vary_cutoffs = np.zeros((len(cutoff_stables), len(cutoffs)))
 vary_dist = np.zeros((len(dist_stables), len(num_stables)))
 
 for k in keep_idx_comps[0:400]:
-    #if canparts[k].id != '000354':
-    #    continue
     num_comps += 1
     print('compo #',k, ' id ', canparts[k].id)
-    cpstat = stat.CanvasPartStatistics(canparts[k], n_tbins=750, sliding_window=14400,
-                                       compute_vars={'stability': 0, 'entropy' : 0, 'transitions' : 1, 'attackdefense' : 0},
+    cpstat = stat.CanvasPartStatistics(canparts[k], t_interval=300, sliding_window=14400,
+                                       compute_vars={'stability': 0, 'entropy' : 0, 'transitions' : 1, 'attackdefense' : 0, 'other' :0},
                                        verbose=False, dont_keep_dir=True)
 
     # Vary first 2 parameters

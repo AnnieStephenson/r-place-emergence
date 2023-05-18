@@ -57,7 +57,7 @@ class CanvasPartStatistics(object):
     t_interval: float
         width of time interval
             Set in __init__()
-    t_ranges : 1d array of size n_t_bins+1
+    t_lims : 1d array of size n_t_bins+1
         limits of the time bins in which all variables are computed
            Set in __init__()
     t_unit : float
@@ -99,16 +99,19 @@ class CanvasPartStatistics(object):
             Set in comp.main_variables()
 
     ENTROPY -- all need compute_vars['entropy'] > 0
-    diff_pixels_stable_vs_ref
-    diff_pixels_inst_vs_ref
+    diff_pixels_stable_vs_swref
+    diff_pixels_inst_vs_swref
+    diff_pixels_inst_vs_swref_forwardlook
     diff_pixels_inst_vs_inst
     diff_pixels_inst_vs_stable : TimeSeries, n_pts = n_t_bins+1
         Number of pixels that differ between images:
         stable over the timestep, instantaneous at the end of this or the previous timestep ("inst"),
-        or the reference image over the sliding window (ref)
+        or the reference image over the sliding window ("swref") 
+        or over a forward-looking future sliding window ("swref_forwardlook")
             Set in comp.main_variables()
-    frac_pixdiff_stable_vs_ref
-    frac_pixdiff_inst_vs_ref
+    frac_pixdiff_stable_vs_swref
+    frac_pixdiff_inst_vs_swref
+    frac_pixdiff_inst_vs_swref_forwardlook
     frac_pixdiff_inst_vs_inst_norm
     frac_pixdiff_inst_vs_stable_norm : TimeSeries, n_pts = n_t_bins+1
         Same as above, but divided the number of active pixels.
@@ -137,13 +140,13 @@ class CanvasPartStatistics(object):
             Set in search_transitions()
     transition_tinds
     transition_times: 2d array, shape (number of transitions, 6)
-        Delimiting times, and indices of t_ranges, for each transition.
+        Delimiting times, and indices of t_lims, for each transition.
         For each transition, is of the form
         [beg, end of pre stable period, beg, end of transition period, beg, end of post stable region]
             Set in tran.find_transitions(), in search_transitions()
     trans_start_time
     trans_start_tind : array of size n_transitions
-        Time (and indices in t_ranges) at which most of the variables characterizing the transition have reached
+        Time (and indices in t_lims) at which most of the variables characterizing the transition have reached
         their half maximum, as computed in tran.transition_start_time()
             Set in search_transitions()
     refimage_pretrans
@@ -195,7 +198,7 @@ class CanvasPartStatistics(object):
     n_attack_users
     n_bothattdef_users :
         Same as above, but without divinging by n_users.
-        Kept if compute_vars['attackdefense'] > 3
+        Kept if compute_vars['attackdefense'] > 1
             Set in comp.main_variables()
     frac_attack_changes_image : array of size n_t_bins, of 2d numpy arrays.
         Each element is a pixels image info (2d numpy array containing color indices)
@@ -204,7 +207,7 @@ class CanvasPartStatistics(object):
     returntime : 2d array of shape (n_t_bins+1, # pixels)
         For each time step, contains the time that each pixel spent in an 'attack' color
         during its latest or current attack (maxxed at the size of the sliding window)
-        Kept if compute_vars['attackdefense'] > 3
+        Kept if compute_vars['attackdefense'] > 1
             Set in comp.main_variables()
     returntime_tbinned : 2d array of shape (n_t_bins+1, n_returnt_bins)
         For each time bin, contains histogram of return times for all pixels
@@ -259,7 +262,7 @@ class CanvasPartStatistics(object):
 
     def __init__(self,
                  cpart,
-                 n_tbins=750,
+                 t_interval=300,                 
                  tmax=var.TIME_TOTAL,
                  compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1},
                  sliding_window=14400,
@@ -269,7 +272,7 @@ class CanvasPartStatistics(object):
                  verbose=False,
                  renew=True,
                  dont_keep_dir=False,
-                 flattening='hilbert_sweetsourcod',
+                 flattening='hilbert_pkg',
                  compression='LZ77'
                  ):
         '''
@@ -295,6 +298,8 @@ class CanvasPartStatistics(object):
             Duration of the sliding window on which the reference image is computed
         returnt_binwidth : float, in seconds
             Size of the bins for the return time output histogram
+        t_interval : float, in seconds
+            width of the time bins
         '''
 
         self.id = cpart.out_name()
@@ -307,21 +312,21 @@ class CanvasPartStatistics(object):
         self.verbose = verbose
         self.area = len(cpart.coords[0])
         self.area_rectangle = cpart.width(0) * cpart.width(1)
-
-        self.tmin = 0  # not functioning yet for tmin > 0
+        self.tmin = cpart.minimum_time()
         self.tmax = tmax
-        self.n_t_bins = n_tbins
-        self.t_interval = (self.tmax - self.tmin) / n_tbins  # seconds
+        self.t_interval = t_interval # seconds
+        self.n_t_bins = math.ceil((self.tmax - self.tmin) / self.t_interval)
+        self.t_lims = np.arange(self.tmin, tmax + self.t_interval, self.t_interval)
         self.t_unit = timeunit
         self.t_norm = self.t_interval / self.t_unit
-        self.t_ranges = np.arange(self.tmin, tmax + self.t_interval - 1e-4, self.t_interval)
         self.sw_width = int(sliding_window/self.t_interval)
         self.sw_width_sec = self.sw_width * self.t_interval # force the sliding window to be a multiple of the time interval
         self.returnt_binwidth = returnt_binwidth
 
         # Creating attributes that will be computed in comp.main_variables()
-        self.diff_pixels_stable_vs_ref = ts.TimeSeries()
-        self.diff_pixels_inst_vs_ref = ts.TimeSeries()
+        self.diff_pixels_stable_vs_swref = ts.TimeSeries()
+        self.diff_pixels_inst_vs_swref = ts.TimeSeries()
+        self.diff_pixels_inst_vs_swref_forwardlook = ts.TimeSeries()
         self.diff_pixels_inst_vs_inst = ts.TimeSeries()
         self.diff_pixels_inst_vs_stable = ts.TimeSeries()
         self.area_vst = ts.TimeSeries()
@@ -373,10 +378,10 @@ class CanvasPartStatistics(object):
         if self.compute_vars['stability'] > 2:
             util.save_movie(os.path.join(dirpath, 'VsTimeStab'), fps=15)
         if self.compute_vars['entropy'] > 2:
-            util.save_movie(os.path.join(dirpath, 'VsTime'), fps=15)
+            util.save_movie(os.path.join(dirpath, 'VsTimeInst'), fps=15)
         if self.compute_vars['attackdefense'] > 2:
             util.save_movie(os.path.join(dirpath, 'attack_defense_ratio'), fps=15)
-            util.save_movie(os.path.join(dirpath, 'AttDefImg'), fps=6)
+            util.save_movie(os.path.join(dirpath, 'attack_defense_Ising'), fps=6)
 
         # Memory savings here
         if compute_vars['attackdefense'] < 2:
@@ -386,8 +391,8 @@ class CanvasPartStatistics(object):
             self.n_bothattdef_users = ts.TimeSeries()
         if compute_vars['entropy'] < 2:
             self.size_compressed = ts.TimeSeries()
-            self.diff_pixels_stable_vs_ref = ts.TimeSeries()
-            self.diff_pixels_inst_vs_ref = ts.TimeSeries()
+            self.diff_pixels_stable_vs_swref = ts.TimeSeries()
+            self.diff_pixels_inst_vs_swref_forwardlook = ts.TimeSeries()
             self.diff_pixels_inst_vs_inst = ts.TimeSeries()
             self.diff_pixels_inst_vs_stable = ts.TimeSeries()
         if compute_vars['attackdefense'] < 2:
@@ -402,11 +407,11 @@ class CanvasPartStatistics(object):
             shutil.rmtree(dirpath)
 
     def checks_warnings(self):
-        if np.any(np.diff(self.t_ranges) < 0):
-            warnings.warn('The array of time limits t_ranges should contain increasing values. It will be modified to fit this requirement.')
+        if np.any(np.diff(self.t_lims) < 0):
+            warnings.warn('The array of time limits t_lims should contain increasing values. It will be modified to fit this requirement.')
             for i in range(1, self.n_t_bins + 1): # need for loop because it needs to be done in that order
-                if self.t_ranges[i] < self.t_ranges[i-1]:
-                    self.t_ranges[i] = self.t_ranges[i-1]
+                if self.t_lims[i] < self.t_lims[i-1]:
+                    self.t_lims[i] = self.t_lims[i-1]
         if self.sw_width == 0:
             warnings.warn('The interval size is larger than the sliding window. Choose a smaller interval size or a larger sliding window.')
 
@@ -424,8 +429,9 @@ class CanvasPartStatistics(object):
         self.instability_norm = self.ts_init( (1 - self.stability.val) / self.t_norm )
         self.n_changes_norm = self.ts_init( util.divide_treatzero(self.n_changes.val / self.t_norm, self.area_vst.val, 0, 0) )
         self.n_users_norm = self.ts_init( util.divide_treatzero(self.n_users.val / self.t_norm, self.area_vst.val, 0, 0) )
-        self.frac_pixdiff_stable_vs_ref = self.ts_init( util.divide_treatzero(self.diff_pixels_stable_vs_ref.val, self.area_vst.val, 0, 0) )
-        self.frac_pixdiff_inst_vs_ref = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_ref.val, self.area_vst.val, 0, 0) )
+        self.frac_pixdiff_stable_vs_swref = self.ts_init( util.divide_treatzero(self.diff_pixels_stable_vs_swref.val, self.area_vst.val, 0, 0) )
+        self.frac_pixdiff_inst_vs_swref = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_swref.val, self.area_vst.val, 0, 0) )
+        self.frac_pixdiff_inst_vs_swref_forwardlook = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_swref_forwardlook.val, self.area_vst.val, 0, 0) )
         self.frac_pixdiff_inst_vs_inst_norm = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_inst.val / self.t_norm, self.area_vst.val, 0, 0) )
         self.frac_pixdiff_inst_vs_stable_norm = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_stable.val / self.t_norm, self.area_vst.val, 0, 0) )
 
@@ -464,9 +470,8 @@ class CanvasPartStatistics(object):
 
     def search_transitions(self, cpart):
         par = self.transition_param
-        transitions = tran.find_transitions(self.t_ranges, self.frac_pixdiff_inst_vs_ref.val,
-                                             cutoff=par[0], cutoff_stable=par[1], len_stableregion=par[2], distfromtrans_stableregion=par[3],
-                                             sliding_win=self.sw_width_sec)
+        transitions = tran.find_transitions(self.t_lims, self.frac_pixdiff_inst_vs_swref.val, self.frac_pixdiff_inst_vs_swref_forwardlook.val,
+                                             cutoff=par[0], cutoff_stable=par[1], len_stableregion=par[2], distfromtrans_stableregion=par[3])
         self.transition_tinds = transitions[0]
         self.transition_times = transitions[1]
         self.n_transitions = len(transitions[1])
@@ -483,7 +488,7 @@ class CanvasPartStatistics(object):
         for j in range(0, self.n_transitions):
             if self.keep_all_basics():
                 self.trans_start_time[j] = tran.transition_start_time(self, j)[1] # take the mean here, but could be the median (among variables)
-                self.trans_start_tind[j] = np.argmax(self.t_ranges >= self.trans_start_time[j])
+                self.trans_start_tind[j] = np.argmax(self.t_lims >= self.trans_start_time[j])
 
             if trans > 1:
                 self.frac_diff_pixels_pre_vs_post_trans[j] = comp.count_image_differences(self.refimage_pretrans[j], self.refimage_posttrans[j], cpart) / self.area
@@ -506,33 +511,38 @@ class CanvasPartStatistics(object):
 
         self.frac_pixdiff_inst_vs_stable_norm.desc_long = 'Fraction of pixels differing from the stable image in the previous step, normalized by the time unit.'
         self.frac_pixdiff_inst_vs_stable_norm.desc_short = 'frac of pixels differing from previous-step stable image / '+n_min_tunit
-        self.frac_pixdiff_inst_vs_stable_norm.label = 'frac_pixdiff_inst\nvs_stable_norm'
+        self.frac_pixdiff_inst_vs_stable_norm.label = 'frac_pixdiff_inst_vs_stable_norm'
         self.frac_pixdiff_inst_vs_stable_norm.savename = filepath('fraction_of_differing_pixels_vs_stable_normalized')
 
         self.frac_pixdiff_inst_vs_inst_norm.desc_long = 'Fraction of pixels differing from the instantaneous image in the previous step, normalized by the time unit.'
         self.frac_pixdiff_inst_vs_inst_norm.desc_short = 'frac of pixels differing from previous-step image / '+n_min_tunit
-        self.frac_pixdiff_inst_vs_inst_norm.label = 'frac_pixdiff_inst\nvs_inst_norm'
+        self.frac_pixdiff_inst_vs_inst_norm.label = 'frac_pixdiff_inst_vs_inst_norm'
         self.frac_pixdiff_inst_vs_inst_norm.savename = filepath('fraction_of_differing_pixels_normalized')
 
-        self.frac_pixdiff_inst_vs_ref.desc_long = 'Fraction of pixels differing from the reference image in the preceding sliding window'
-        self.frac_pixdiff_inst_vs_ref.desc_short = 'frac of pixels differing from sliding-window ref image'
-        self.frac_pixdiff_inst_vs_ref.label = 'frac_pixdiff_inst\nvs_ref'
-        self.frac_pixdiff_inst_vs_ref.savename = filepath('fraction_of_differing_pixels_vs_slidingwindowref')
+        self.frac_pixdiff_inst_vs_swref.desc_long = 'Fraction of pixels differing from the reference image in the preceding sliding window'
+        self.frac_pixdiff_inst_vs_swref.desc_short = 'frac of pixels differing from sliding-window ref image'
+        self.frac_pixdiff_inst_vs_swref.label = 'frac_pixdiff_inst_vs_swref'
+        self.frac_pixdiff_inst_vs_swref.savename = filepath('fraction_of_differing_pixels_vs_slidingwindowref')
+
+        self.frac_pixdiff_inst_vs_swref_forwardlook.desc_long = 'Fraction of pixels differing from the reference image in the future (forward-looking) sliding window'
+        self.frac_pixdiff_inst_vs_swref_forwardlook.desc_short = 'frac of pixels differing from forward-looking sliding-window ref image'
+        self.frac_pixdiff_inst_vs_swref_forwardlook.label = 'frac_pixdiff_inst_vs_swref_forwardlook'
+        self.frac_pixdiff_inst_vs_swref_forwardlook.savename = filepath('fraction_of_differing_pixels_vs_slidingwindowref_forwardlook')
 
         self.instability_norm.desc_long = 'instability = (1 - stability), normalized by the time unit. \
             Stability is the time fraction that each pixel spent in its dominant color, averaged over all active pixels'
         self.instability_norm.desc_short = 'instability / '+n_min_tunit
-        self.instability_norm.label = 'instability\n_norm'
+        self.instability_norm.label = 'instability_norm'
         self.instability_norm.savename = filepath('instability_normalized')
 
         self.n_users_norm.desc_long = 'number of users, normalized by the time unit and the number of active pixels.'
         self.n_users_norm.desc_short = '# users / area / '+n_min_tunit
-        self.n_users_norm.label = 'n_users\n_norm'
+        self.n_users_norm.label = 'n_users_norm'
         self.n_users_norm.savename = filepath('number_of_users_normalized')
 
         self.n_changes_norm.desc_long = 'number of pixel changes, normalized by the time unit and the number of active pixels.'
         self.n_changes_norm.desc_short = '# pixel changes / area / '+n_min_tunit
-        self.n_changes_norm.label = 'n_changes\n_norm'
+        self.n_changes_norm.label = 'n_changes_norm'
         self.n_changes_norm.savename = filepath('number_of_pixel_changes_normalized')
 
         self.entropy.desc_long = 'entropy, calculated as the computable information density of the instantaneous image'
@@ -543,30 +553,30 @@ class CanvasPartStatistics(object):
         self.frac_attack_changes.desc_long = 'Fraction of the number of pixel changes that are attacking. \
             Attack is defined compared to the stable reference image on a sliding window.'
         self.frac_attack_changes.desc_short = 'fraction of attack changes'
-        self.frac_attack_changes.label = 'frac_attack\n_changes'
+        self.frac_attack_changes.label = 'frac_attack_changes'
         self.frac_attack_changes.savename = filepath('fraction_attack_pixelchanges')
 
         self.frac_attackonly_users.desc_long = 'Fraction of the active users that are only attacking in this timestep. \
             Attack is defined compared to the stable reference image on a sliding window.'
         self.frac_attackonly_users.desc_short = 'fraction of users only attacking'
-        self.frac_attackonly_users.label = 'frac_attackonly\n_users'
+        self.frac_attackonly_users.label = 'frac_attackonly_users'
         self.frac_attackonly_users.savename = filepath('fraction_of_users_onlyattacking')
 
         self.frac_defenseonly_users.desc_long = 'Fraction of the active users that are only defending in this timestep. \
             Defense is defined as following the stable reference image on a sliding window.'
         self.frac_defenseonly_users.desc_short = 'fraction of users only defending'
-        self.frac_defenseonly_users.label = 'frac_defenseonly\n_users'
+        self.frac_defenseonly_users.label = 'frac_defenseonly_users'
         self.frac_defenseonly_users.savename = filepath('fraction_of_users_onlydefending')
 
         self.frac_bothattdef_users.desc_long = 'Fraction of the active users that are both attacking and defending in this timestep. \
             Attack is defined compared to the stable reference image on a sliding window.'
         self.frac_bothattdef_users.desc_short = 'fraction of users both attacking and defending'
-        self.frac_bothattdef_users.label = 'frac_bothattdef\n_users'
+        self.frac_bothattdef_users.label = 'frac_bothattdef_users'
         self.frac_bothattdef_users.savename = filepath('fraction_of_users_bothattackingdefending')
 
         self.returntime_median_overln2.desc_long = 'Median time for pixels to recover from attack [s] / ln(2)'
         self.returntime_median_overln2.desc_short = 'median pixel recovery time from attack [s] / ln(2)'
-        self.returntime_median_overln2.label = 'returntime\n_median_overln2'
+        self.returntime_median_overln2.label = 'returntime_median_overln2'
         self.returntime_median_overln2.savename = filepath('median_pixel_recovery_time')
 
         self.returntime_mean.desc_long = 'Mean time for pixels to recover from attack [s]'
@@ -576,7 +586,7 @@ class CanvasPartStatistics(object):
 
         self.cumul_attack_timefrac.desc_long = 'Fraction of the time that all pixels spent in an attack color [s]'
         self.cumul_attack_timefrac.desc_short = 'frac of time spent in attack colors [s]'
-        self.cumul_attack_timefrac.label = 'cumul_attack\ntimefrac'
+        self.cumul_attack_timefrac.label = 'cumul_attack_timefrac'
         self.cumul_attack_timefrac.savename = filepath('attack_time_fraction_allpixels')
 
         self.frac_moderator_changes.desc_long = 'Fraction of active pixels changes issued from moderators'
@@ -585,10 +595,12 @@ class CanvasPartStatistics(object):
 
         self.frac_cooldowncheat_changes.desc_long = 'Fraction of active pixels changes that break the 5-minute per-user cooldown'
         self.frac_cooldowncheat_changes.desc_short = 'fraction of cooldown-cheating changes'
+        self.frac_cooldowncheat_changes.label = 'frac_cooldowncheat_changes'
         self.frac_cooldowncheat_changes.savename = filepath('fraction_cooldowncheating_changes')
 
         self.frac_redundant_color_changes.desc_long = 'Fraction of active pixels changes that are redundant in color with the pixel content before its change'
         self.frac_redundant_color_changes.desc_short = 'fraction of redundant changes'
+        self.frac_redundant_color_changes.label = 'frac_redundant_color_changes'
         self.frac_redundant_color_changes.savename = filepath('fraction_redundant_changes')
 
         self.frac_redundant_coloranduser_changes.desc_long = 'Fraction of active pixels changes that are redundant in color and user with the pixel content before its change'

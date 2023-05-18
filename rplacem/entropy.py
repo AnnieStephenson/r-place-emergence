@@ -47,7 +47,6 @@ def calc_compressed_size(pixels, flattening='hilbert_sweetsourcod', compression=
 
     if flattening == 'hilbert_sweetsourcod':
         lattice_boxv = np.asarray(pixels_pad.shape[::-1])
-        n = np.prod(lattice_boxv)
         hilbert_mask = get_hilbert_mask(lattice_boxv)
         pixels_flat = mask_array(pixels_pad.ravel(), hilbert_mask).astype('uint8')
 

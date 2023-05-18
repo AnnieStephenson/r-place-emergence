@@ -313,35 +313,51 @@ def draw_1d(xdata,
         plt.vlines(x = vline, ymin=ym, ymax=ymax, colors = 'black', linestyle='dashed')
 
     if save != '':
-        plt.savefig(save, bbox_inches='tight')
+        plt.savefig(save, dpi=250, bbox_inches='tight')
+        plt.close()
 
-def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5):
+def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5, save=True):
+
     fig, axes = plt.subplots(nrows, ncols, sharex=True, figsize=figsize)
 
-    t_series_vars = [cpstat.frac_pixdiff_inst_vs_stable_norm,
-                     cpstat.frac_pixdiff_inst_vs_inst_norm,
-                     cpstat.frac_pixdiff_inst_vs_ref,
-                     cpstat.instability_norm,
-                     cpstat.n_users_norm,
-                     cpstat.n_changes_norm,
-                     cpstat.entropy,
-                     cpstat.frac_attack_changes,
-                     cpstat.frac_attackonly_users,
-                     cpstat.frac_defenseonly_users,
-                     cpstat.frac_bothattdef_users,
-                     cpstat.returntime_median_overln2,
-                     cpstat.returntime_mean,
-                     cpstat.cumul_attack_timefrac]
+    t_series_vars = [[cpstat.frac_pixdiff_inst_vs_stable_norm, 0, None],
+                     [cpstat.frac_pixdiff_inst_vs_swref, 0, None],
+                     [cpstat.instability_norm, 0, None],
+                     [cpstat.entropy, 0, None],
+                     [cpstat.frac_redundant_color_changes, 0, None],
+                     [cpstat.n_changes_norm, 0, None],
+                     [cpstat.frac_attack_changes, 0, 1],
+                     [cpstat.frac_cooldowncheat_changes, 0, None],
+                     [cpstat.frac_bothattdef_users, 0, None],
+                     [cpstat.returntime_median_overln2, 0, None],
+                     [cpstat.returntime_mean, 0, None],
+                     [cpstat.cumul_attack_timefrac, 0, None],
+                     [cpstat.n_users_norm, 0, None],
+                     [cpstat.frac_attackonly_users, 0, 1]]
 
-    for i, ax in enumerate(axes.flat):
-        ax.plot(cpstat.t_ranges, t_series_vars[i].val)
+    for i, ax in enumerate(axes.T.flat):
+        ax.plot(cpstat.t_lims, t_series_vars[i][0].val)
         ax.patch.set_alpha(0)
-        ax.set_yticklabels([])
-        ax.set_xlim([cpstat.t_ranges[0], cpstat.t_ranges[-1]])
-        ax.set_ylabel(t_series_vars[i].label, fontsize=fontsize)
+
+        ax.set_xlim([cpstat.t_lims[0], cpstat.t_lims[-1]])
+        ax.tick_params(axis='x', direction='in')
+
+        reject_end = int(t_series_vars[0][0].n_pts * 6./300.) # reject ending white period, and the very beginning
+        ym = min(t_series_vars[i][0].val[4:-reject_end])
+        yM = max(t_series_vars[i][0].val[4:-reject_end])
+        ymin = ym - 0.1*(yM-ym) if t_series_vars[i][1] is None else t_series_vars[i][1]
+        ymax = yM + 0.1*(yM-ym) if t_series_vars[i][2] is None else t_series_vars[i][2]
+        ax.set_ylim([ymin + 1e-6, ymax - 1e-6])
+        ax.tick_params(axis='y', which='major', labelsize=8)
+
+        ax.set_title(t_series_vars[i][0].label, fontsize=fontsize, y=1.0, pad=-15)
         sns.despine()
+
     plt.subplots_adjust(hspace=0.0)
-    fig.text(0.5, 0.05, 'Time (s)', ha='center')
+    fig.text(0.52, 0.08, 'Time [s]', ha='center')
+
+    if save:
+        plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'all_time_series.pdf'), dpi=250, bbox_inches='tight')
 
 def draw_2dplot(x, y, z, 
                 xlab='', ylab='', zlab='',
@@ -369,3 +385,4 @@ def draw_2dplot(x, y, z,
     plt.colorbar(label=zlab)
     if outname != '':
         plt.savefig(os.path.join(var.FIGS_PATH, outname), bbox_inches='tight')
+        plt.close()

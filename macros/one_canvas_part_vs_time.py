@@ -48,11 +48,11 @@ else:
     if not fromatlas:
         canpart = cp.CanvasPart(border_path=[[[x1, y1], [x1, y2], [x2, y2], [x2, y1]]],
                                 pixel_changes_all=pixel_changes_all,
-                                verbose=True, save=True)
+                                verbose=False, save=True)
     else:
         canpart = cp.CanvasPart(id=id,
                                 pixel_changes_all=pixel_changes_all,
-                                verbose=True, save=True)
+                                verbose=False, save=True)
 
 # Get CanvasPartStatistics
 if cps_fromfile:
@@ -68,8 +68,8 @@ if cps_fromfile:
             break
 
 else: 
-    cpstat = stat.CanvasPartStatistics(canpart, n_tbins=750, 
-                                        compute_vars={'stability': 2, 'entropy' : 2, 'transitions' : 2, 'attackdefense' : 2, 'other' : 1},
+    cpstat = stat.CanvasPartStatistics(canpart, t_interval=300, 
+                                        compute_vars={'stability': 3, 'entropy' :3, 'transitions' : 3, 'attackdefense' : 3, 'other' : 1},
                                         sliding_window=14400,
                                         verbose=False, dont_keep_dir=False)
 
@@ -78,23 +78,33 @@ cpstat.fill_timeseries_info()
 
 cpstat.frac_pixdiff_inst_vs_stable_norm.plot1d(ymin=0)
 cpstat.frac_pixdiff_inst_vs_inst_norm.plot1d(ymin=0)
-cpstat.frac_pixdiff_inst_vs_ref.plot1d(ymin=0)
+cpstat.frac_pixdiff_inst_vs_swref.plot1d(ymin=0)
+cpstat.frac_pixdiff_inst_vs_swref_forwardlook.plot1d(ymin=0)
 
 plt.figure()
-plt.plot(cpstat.t_ranges, cpstat.frac_pixdiff_inst_vs_stable_norm.val, label='inst. vs stable / 5 min')
-plt.plot(cpstat.t_ranges, cpstat.frac_pixdiff_inst_vs_inst_norm.val, label='inst. vs inst. / 5 min')
-plt.plot(cpstat.t_ranges, cpstat.frac_pixdiff_inst_vs_ref.val, label='inst. vs sliding-window reference')
-plt.plot(cpstat.t_ranges, cpstat.frac_pixdiff_stable_vs_ref.val, label='stable. vs sliding-window reference')
+plt.plot(cpstat.t_lims, cpstat.frac_pixdiff_inst_vs_stable_norm.val, label='inst. vs stable / 5 min')
+#plt.plot(cpstat.t_lims, cpstat.frac_pixdiff_inst_vs_inst_norm.val, label='inst. vs inst. / 5 min')
+plt.plot(cpstat.t_lims, cpstat.frac_pixdiff_inst_vs_swref.val, label='inst. vs sliding-window ref')
+plt.plot(cpstat.t_lims, cpstat.frac_pixdiff_inst_vs_swref_forwardlook.val, label='inst. vs fwd-looking sliding-window ref')
+#plt.plot(cpstat.t_lims, cpstat.frac_pixdiff_stable_vs_swref.val, label='stable. vs sliding-window ref')
 plt.xlabel('Time [s]')
 plt.ylabel('fraction of differing pixels')
-plt.yscale('log')
-plt.xlim([0, var.TIME_TOTAL])
-plt.ylim([1e-4, 1.1*np.amax(np.hstack((cpstat.frac_pixdiff_inst_vs_ref.val, 
-                                    cpstat.frac_pixdiff_stable_vs_ref.val, 
+#plt.yscale('log')
+plt.xlim([cpstat.frac_pixdiff_inst_vs_swref.tmin, var.TIME_TOTAL])
+plt.ylim([1e-4, 1.1*np.amax(np.hstack((cpstat.frac_pixdiff_inst_vs_swref.val, 
+                                    cpstat.frac_pixdiff_stable_vs_swref.val, 
                                     cpstat.frac_pixdiff_inst_vs_inst_norm.val, 
                                     cpstat.frac_pixdiff_inst_vs_stable_norm.val)))])
-plt.legend()
-plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Fraction_of_differing_pixels_variousmethods.png'), bbox_inches='tight')
+plt.legend(loc='upper right')
+plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Fraction_of_differing_pixels_variousmethods.png'), dpi=200, bbox_inches='tight')
+
+#plt.figure()
+#plt.plot(cpstat.t_lims, cpstat.frac_pixdiff_inst_vs_stable_norm.val / cpstat.frac_pixdiff_inst_vs_inst_norm.val)
+#plt.xlabel('Time [s]')
+#plt.ylabel('inst. vs stable / inst vs inst')
+#plt.xlim([0, var.TIME_TOTAL])
+#plt.ylim([0., 2])
+#plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Fraction_of_differing_pixels__ratio_inst_vs_stable.png'), bbox_inches='tight')
 
 cpstat.instability_norm.plot1d(ymin=0)
 cpstat.n_users_norm.plot1d(ymin=0)
@@ -114,11 +124,13 @@ cpstat.frac_redundant_color_changes.plot1d(ymin=0)
 cpstat.frac_redundant_coloranduser_changes.plot1d(ymin=0)
 
 returnt_bins = np.arange(0, cpstat.sw_width_sec-1e-4, cpstat.returnt_binwidth)
-plot.draw_2dplot(cpstat.t_ranges, returnt_bins, cpstat.returntime_tbinned,
+plot.draw_2dplot(cpstat.t_lims, returnt_bins, cpstat.returntime_tbinned,
                  xlab='Time [s]', ylab='time to recover from fresh attack to ref image [s]', zlab='# fresh attacks',
                  ymax=cpstat.sw_width_sec*0.6,
                  logz=True, zmin=0.9, zmax=1000,
                  outname=os.path.join(cpstat.id, 'returntime_vs_time_hist2d.png'))
+
+plot.cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(8,11.5), fontsize=10, save=True)
 
 #OLD EWS
 '''
