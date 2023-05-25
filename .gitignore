@@ -97,6 +97,7 @@ ENV/
 figs/
 figs/*.pickle
 data/*.pickle
+test/*.pickle
 *.root
 *.npz
 
@@ -106,3 +107,7 @@ data/userDict.json
 
 # additional scripts
 my_scripts/
+
+# modules
+sweetsourcod_source/
+sweetsourcod/

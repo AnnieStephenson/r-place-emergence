@@ -32,15 +32,15 @@ parser.add_argument("-b", "--beginning", default=0)
 parser.add_argument("-e", "--end", default=atlas_num)
 args = parser.parse_args()
 
-store_compos(args.beginning, args.end)
+#store_compos(args.beginning, args.end)
 
-util.merge_pickles([ 'data/canvas_compositions_files0to1299.pickle',
-                'data/canvas_compositions_files1300to2599.pickle',
-                'data/canvas_compositions_files2600to3899.pickle',
-                'data/canvas_compositions_files3900to5199.pickle',
-                'data/canvas_compositions_files5200to6499.pickle',
-                'data/canvas_compositions_files6500to7199.pickle',
-                'data/canvas_compositions_files7200to8399.pickle',
-                'data/canvas_compositions_files8400to9957.pickle',
+
+util.merge_pickles([ 'data/canvas_compositions_files0to1599.pickle',
+                'data/canvas_compositions_files1600to2599.pickle',
+                'data/canvas_compositions_files2600to3999.pickle',
+                'data/canvas_compositions_files4000to5799.pickle',
+                'data/canvas_compositions_files5800to7799.pickle',
+                'data/canvas_compositions_files7800to9799.pickle',
+                'data/canvas_compositions_files9800to9956.pickle',# actually til 9957
                 ],
                 'canvas_compositions_all.pickle')

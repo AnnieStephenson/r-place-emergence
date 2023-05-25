@@ -37,4 +37,6 @@ def test_canvas_comp_stat():
         canvas_part_stat_prev = pickle.load(f)
 
     np.testing.assert_equal(canvas_part_stat.stability.val, canvas_part_stat_prev.stability)
+    np.testing.assert_equal(canvas_part_stat.diff_pixels_inst_vs_ref.val, canvas_part_stat_prev.diff_pixels_inst_vs_ref)
 
+test_canvas_comp_stat()

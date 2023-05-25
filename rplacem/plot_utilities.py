@@ -185,7 +185,8 @@ def draw_2dmap(h2d, xedges, yedges,
                cbar_ticks_pos = 'top',
                fontsize_ticks = 20):
     '''
-    plots and saves a 2D histogram in the style of a heatmap, including a colormap
+    plots and saves a 2D histogram in the style of a heatmap, including a colormap.
+    Mostly designed for the whole 2000x2000 canvas
 
     parameters
     ----------
@@ -273,7 +274,9 @@ def draw_1d(xdata,
             hline=None,
             vline=None
             ):
-
+    '''
+    Draw 1d plot from full x and y information
+    '''
     plt.figure()
     plt.plot(xdata, ydata)
     sns.despine()
@@ -283,11 +286,20 @@ def draw_1d(xdata,
     xm = min(xdata)
     if xm == 0 and xlog:
         xm = 1e-3
-    ym = min(ydata)
-    if ym == 0 and ylog:
-        ym = 1e-5
-    yM = (1.6 if ylog else 1.1) * max(ydata)
-    plt.ylim([ (ym if ymin == None else ymin) , (yM if ymax == None else ymax)])
+    if ymin is None:
+        ym = min(ydata)
+        if ym == 0 and ylog:
+            ym = 1e-5
+    else:
+        ym = ymin
+
+    if ymax is None:
+        yM = (1.6 if ylog else 1.1) * max(ydata)
+    else:
+        yM = ymax
+    if yM <= ym:
+        yM = ym + 0.01
+    plt.ylim([ym , yM])
     plt.xlim([ (xm if xmin == None else xmin), max(xdata)])
 
     if xlog:
@@ -301,33 +313,76 @@ def draw_1d(xdata,
         plt.vlines(x = vline, ymin=ym, ymax=ymax, colors = 'black', linestyle='dashed')
 
     if save != '':
-        plt.savefig(save, bbox_inches='tight')
+        plt.savefig(save, dpi=250, bbox_inches='tight')
+        plt.close()
 
+def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5, save=True):
 
-def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5):
     fig, axes = plt.subplots(nrows, ncols, sharex=True, figsize=figsize)
 
-    t_series_vars = [cpstat.frac_pixdiff_inst_vs_stable_norm,
-                     cpstat.frac_pixdiff_inst_vs_inst_norm,
-                     cpstat.frac_pixdiff_inst_vs_ref,
-                     cpstat.instability_norm,
-                     cpstat.n_users_norm,
-                     cpstat.n_changes_norm,
-                     cpstat.entropy,
-                     cpstat.frac_attack_changes,
-                     cpstat.frac_attackonly_users,
-                     cpstat.frac_defenseonly_users,
-                     cpstat.frac_bothattdef_users,
-                     cpstat.returntime_median_overln2,
-                     cpstat.returntime_mean,
-                     cpstat.cumul_attack_timefrac]
+    t_series_vars = [[cpstat.frac_pixdiff_inst_vs_stable_norm, 0, None],
+                     [cpstat.frac_pixdiff_inst_vs_swref, 0, None],
+                     [cpstat.instability_norm, 0, None],
+                     [cpstat.entropy, 0, None],
+                     [cpstat.frac_redundant_color_changes, 0, None],
+                     [cpstat.n_changes_norm, 0, None],
+                     [cpstat.frac_attack_changes, 0, 1],
+                     [cpstat.frac_cooldowncheat_changes, 0, None],
+                     [cpstat.frac_bothattdef_users, 0, None],
+                     [cpstat.returntime_median_overln2, 0, None],
+                     [cpstat.returntime_mean, 0, None],
+                     [cpstat.cumul_attack_timefrac, 0, None],
+                     [cpstat.n_users_norm, 0, None],
+                     [cpstat.frac_attackonly_users, 0, 1]]
 
-    for i, ax in enumerate(axes.flat):
-        ax.plot(cpstat.t_ranges, t_series_vars[i].val)
+    for i, ax in enumerate(axes.T.flat):
+        ax.plot(cpstat.t_lims, t_series_vars[i][0].val)
         ax.patch.set_alpha(0)
-        ax.set_yticklabels([])
-        ax.set_xlim([cpstat.t_ranges[0], cpstat.t_ranges[-1]])
-        ax.set_ylabel(t_series_vars[i].label, fontsize=fontsize)
+
+        ax.set_xlim([cpstat.t_lims[0], cpstat.t_lims[-1]])
+        ax.tick_params(axis='x', direction='in')
+
+        reject_end = int(t_series_vars[0][0].n_pts * 6./300.) # reject ending white period, and the very beginning
+        ym = min(t_series_vars[i][0].val[4:-reject_end])
+        yM = max(t_series_vars[i][0].val[4:-reject_end])
+        ymin = ym - 0.1*(yM-ym) if t_series_vars[i][1] is None else t_series_vars[i][1]
+        ymax = yM + 0.1*(yM-ym) if t_series_vars[i][2] is None else t_series_vars[i][2]
+        ax.set_ylim([ymin + 1e-6, ymax - 1e-6])
+        ax.tick_params(axis='y', which='major', labelsize=8)
+
+        ax.set_title(t_series_vars[i][0].label, fontsize=fontsize, y=1.0, pad=-15)
         sns.despine()
+
     plt.subplots_adjust(hspace=0.0)
-    fig.text(0.5, 0.05, 'Time (s)', ha='center')
+    fig.text(0.52, 0.08, 'Time [s]', ha='center')
+
+    if save:
+        plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'all_time_series.pdf'), dpi=250, bbox_inches='tight')
+
+def draw_2dplot(x, y, z, 
+                xlab='', ylab='', zlab='',
+                ymax=None,
+                logz=False, zmin=None, zmax=None,
+                force_scientific=False,
+                outname=''):
+    '''
+    Draw 2d (pcolormesh) plot from full x, y, z information
+    '''
+    plt.figure()
+    zm = (1e-3 if logz else 0) if zmin == None else zmin
+    zM = 1.1 * np.amax(z) if zmax == None else zmax
+    plt.pcolormesh(x, y, np.transpose(z),
+                   cmap=('cividis' if logz else 'inferno'), 
+                   norm=colors.LogNorm(vmin=zm, vmax=zM) if logz else None,
+                   vmin=None if logz else zm, vmax=None if logz else zM,
+                   shading='nearest'
+                   )
+    plt.xlabel(xlab)
+    plt.ylabel(ylab)
+    plt.ylim([y[0], y[-1] if ymax == None else ymax])
+    if force_scientific:
+        plt.ticklabel_format(style='scientific')
+    plt.colorbar(label=zlab)
+    if outname != '':
+        plt.savefig(os.path.join(var.FIGS_PATH, outname), bbox_inches='tight')
+        plt.close()
