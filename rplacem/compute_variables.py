@@ -314,7 +314,7 @@ def main_variables(cpart,
 
     # Start with a white image for time time 0
     if ((compression == 'DEFLATE_BMP_PNG') or (instant > 2)):
-        if flattening != 'ravel':
+        if (compression == 'DEFLATE_BMP_PNG') and (flattening != 'ravel'):
             warnings.warn(('Compression algorithm DEFLATE with BMP to PNG can only handle ravel flattening. Using ravel'
                             ' instead of ' + flattening))
         create_files_and_get_sizes(t_lims, 0, cpart.white_image(2),
