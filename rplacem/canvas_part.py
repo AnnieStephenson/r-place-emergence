@@ -4,7 +4,6 @@ import pickle
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image, ImageColor
 import rplacem.variables_rplace2022 as var
 import rplacem.utilities as util
 
@@ -615,17 +614,31 @@ class CanvasPart(object):
         or a 2D array being the actual pixels/image of the part;
         or a 3D array containing [images_number] of these 2D images. '''
         if dimension == 1:
-            return np.full(self.num_pix(), var.WHITE, dtype='int8')
+                return np.full(self.num_pix(), var.WHITE, dtype=np.int8)
         if dimension == 2:
-            return np.full((self.width(1), self.width(0)), var.WHITE, dtype=np.int8)
+            if images_number == 1:
+                return np.full((self.width(1), self.width(0)), var.WHITE, dtype=np.int8)
+            else:
+                return np.full((images_number, self.num_pix()), var.WHITE, dtype=np.int8)
         if dimension == 3:
             return np.full((images_number, self.width(1), self.width(0)), var.WHITE, dtype=np.int8)
 
-    def set_quarters_coord_inds(self):
+    def set_quarters_coord_inds(self, rerun=False):
         ''' Set the attributes quarter1_coordinds, quarter2_coordinds, quarter34_coordinds '''
-        self.quarter1_coordinds = np.where((self.coords[0]<1000) & (self.coords[1]<1000))
-        self.quarter2_coordinds = np.where((self.coords[0]>=1000) & (self.coords[1]<1000))
-        self.quarter34_coordinds = np.where(self.coords[1]>=1000)
+        if (not hasattr(self, 'quarter1_coordinds')) or rerun:
+            self.quarter1_coordinds = np.where((self.coords[0]<1000) & (self.coords[1]<1000))
+            self.quarter2_coordinds = np.where((self.coords[0]>=1000) & (self.coords[1]<1000))
+            self.quarter34_coordinds = np.where(self.coords[1]>=1000)
+
+    def minimum_time(self):
+        self.set_quarters_coord_inds()
+        if len(self.quarter1_coordinds[0]) > 0:
+            return 0
+        else:
+            if len(self.quarter2_coordinds[0]) > 0:
+                return var.TIME_ENLARGE1
+            else:
+                return var.TIME_ENLARGE2
 
     def save_object(self):
         '''

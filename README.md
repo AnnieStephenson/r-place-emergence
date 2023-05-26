@@ -12,12 +12,14 @@ Python package for exploring emergent collective phenomena in the 2022 r/place d
 - The arrays are sorted in terms of the 'seconds', starting at second 0.315.
 
 #### For testing
-install pytest 
-```shell
-pip install pytest
-```
-
 In the terminal, navigate to the rplacem directory and run:
 ```shell
 pytest
 ```
+
+#### Requirements
+In addition to installing in a standard way (pip install ```module```) the modules listed in requirements.txt, do:
+```git clone git@github.com:martiniani-lab/sweetsourcod.git
+python setup.py build_ext -i
+```
+and then add sweetsourcod_builddirectory/sweetsourcod/ to your PYTHONPATH

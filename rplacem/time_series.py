@@ -15,13 +15,13 @@ class TimeSeries(object):
         number of limits of time bins (ie n_timebins+1)
     val: numpy 1d array, length n_pts
         values of the variables at each timestep
-    t_ranges: numpy 1d array, length n_pts
+    t_pts: numpy 1d array, length n_pts
         time limits at which the values of val are given
-        This is filled only if set_t_ranges() is run (if record_all==True in __init__())
+        This is filled only if set_t_pts() is run (if record_all==True in __init__())
     tmin: float
-        minimum time (first element of t_ranges)
+        minimum time (first element of t_pts)
     t_interval: float
-        time interval (in seconds) between two times of t_ranges
+        time interval (in seconds) between two times of t_pts
     sw_width_mean: int
         width of the sliding window used for the ratio-to-sliding average, as a number of time intervals
     sw_width_ews: int
@@ -56,7 +56,7 @@ class TimeSeries(object):
         exists(): returns bool
             True if val is filled (not None)
         set_all_vars()
-        set_t_ranges()
+        set_t_pts()
         set_ratio_to_sw_average()
         set_variance()
         set_autocorrelation()
@@ -97,7 +97,7 @@ class TimeSeries(object):
         self.name = name
         self.savename = os.path.join(var.FIGS_PATH, cpstat.id, savename + '.png') if savename != '' else ''
 
-        self.t_ranges = None
+        self.t_pts = None
         if record_all:
             self.set_all_vars()
 
@@ -105,7 +105,7 @@ class TimeSeries(object):
         return np.any(self.val is not None)
 
     def set_all_vars(self):
-        self.set_t_ranges()
+        self.set_t_pts()
         self.set_ratio_to_sw_average()
         self.set_variance()
         self.set_autocorrelation()
@@ -126,8 +126,8 @@ class TimeSeries(object):
 
         self.ratio_to_sw_mean = self.val / mean_sliding
 
-    def set_t_ranges(self):
-        self.t_ranges = np.arange(self.tmin, self.tmin + self.n_pts * self.t_interval - 1e-4, self.t_interval)
+    def set_t_pts(self):
+        self.t_pts = np.arange(self.tmin, self.tmin + self.n_pts * self.t_interval - 1e-4, self.t_interval)
 
     def set_variance(self):
         '''
@@ -154,11 +154,11 @@ class TimeSeries(object):
         self.autocorrelation = np.array(autocorrelation)
 
     def plot1d(self, xlog=False, xmin=None, ylog=False, ymin=None, ymax=None, save=True, hline=None, vline=None, ibeg_remove=0, iend_remove=0):
-        if self.t_ranges is None:
-            self.set_t_ranges()
+        if self.t_pts is None:
+            self.set_t_pts()
 
         iend = self.n_pts - iend_remove
-        plot.draw_1d(self.t_ranges[ibeg_remove:iend], self.val[ibeg_remove:iend],
+        plot.draw_1d(self.t_pts[ibeg_remove:iend], self.val[ibeg_remove:iend],
                      xlab='Time [s]', ylab=self.desc_short,
                      xlog=xlog, xmin=xmin,
                      ylog=ylog, ymin=ymin, ymax=ymax,

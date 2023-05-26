@@ -28,49 +28,39 @@ def find_all_transitions(keep_idx_compos, ntbins, canparts, v, x, y, z):
     return(num_trans / num_comp, num_comp_with_trans / num_comp)
 
 # get all compos
-file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
+file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') #_all
 with open(file_path, 'rb') as f:
     canparts = pickle.load(f)
 
-## get time-dependent stability for all compos
-#file_path_stab = os.path.join(var.DATA_PATH, 'stability_all_canvas_compositions.pickle')
-
-#with open(file_path_stab, 'rb') as handle:
-#    [mean_stability, stability_vs_time] = pickle.load(handle)
-
-
 # Test grid of parameters
-cutoffs = np.array([5e-3, 7.5e-3, 1e-2, 1.25e-2, 1.6e-2, 2e-2])
-cutoff_stables = np.array([1e-3, 1.5e-3, 2e-3, 2.5e-3, 3e-3])
-num_stables = np.array([3600, 7200, 10800, 14400, 18000])
-dist_stables = np.array([3600, 7200, 10800, 14400, 18000])
+cutoffs = np.array([0.2, 0.25, 0.3, 0.35, 0.4, 0.5])
+cutoff_stables = np.array([0.03, 0.07, 0.1, 0.13, 0.16, 0.19])
+num_stables = np.arange(1,6) * 3600
+dist_stables = np.arange(1,6) * 3600
 
 keep_idx_comps = np.nonzero(np.array([(cp.coords.shape[1] >= 100) for cp in canparts]))[0]
-num_comps = len(keep_idx_comps)
+num_comps = 0#len(keep_idx_comps)
 
 vary_cutoffs = np.zeros((len(cutoff_stables), len(cutoffs)))
 vary_dist = np.zeros((len(dist_stables), len(num_stables)))
 
-# time ranges
-ntbins = 100
-
-for k in keep_idx_comps:
-    print('compo #',k)
-    cpstat = stat.CanvasPartStatistics(canparts[k], n_tbins=400,
-                                    n_tbins_trans=ntbins,
-                                    compute_vars={'stability': 0, 'mean_stability': 0, 'entropy' : 0, 'transitions' : 0, 'attackdefense' : 0},
-                                    verbose=False, dont_keep_dir=True)
+for k in keep_idx_comps[0:400]:
+    num_comps += 1
+    print('compo #',k, ' id ', canparts[k].id)
+    cpstat = stat.CanvasPartStatistics(canparts[k], t_interval=300, sliding_window=14400,
+                                       compute_vars={'stability': 0, 'entropy' : 0, 'transitions' : 1, 'attackdefense' : 0, 'other' :0},
+                                       verbose=False, dont_keep_dir=True)
 
     # Vary first 2 parameters
-    num_stab = num_stables[3]
+    num_stab = num_stables[2]
     dist_stab = dist_stables[2]
     for i in range(0, len(cutoffs)):
         #print(i)
         for j in range(0, len(cutoff_stables)):
             #print(j)
             cpstat.transition_param = [cutoffs[i], cutoff_stables[j], num_stab, dist_stab]
-            cpstat.search_transitions(canparts[k], 1)
-            vary_cutoffs[j, i] += int(cpstat.num_transitions > 0) 
+            cpstat.search_transitions(canparts[k])
+            vary_cutoffs[j, i] += int(cpstat.n_transitions > 0) 
 
     # Vary last 2 parameters
     cut = cutoffs[2]
@@ -80,10 +70,13 @@ for k in keep_idx_comps:
         for j in range(0, len(dist_stables)):
             #print(j)
             cpstat.transition_param = [cut, cut_stab, num_stables[i], dist_stables[j]]
-            cpstat.search_transitions(canparts[k], 1)
-            vary_dist[j, i] += (cpstat.num_transitions > 0)
+            cpstat.search_transitions(canparts[k])
+            vary_dist[j, i] += (cpstat.n_transitions > 0)
             #print(vary_dist[j, i])
 
+    del canparts[k]
+    del cpstat
+    
 vary_cutoffs /= num_comps
 vary_dist /= num_comps
 
