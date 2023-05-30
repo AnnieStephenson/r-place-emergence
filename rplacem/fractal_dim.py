@@ -127,7 +127,8 @@ def calc_fractal_dim(box_size, num_boxes_touched):
     '''
     n_box_shp = num_boxes_touched.shape
     num_boxes_rshp = num_boxes_touched.reshape((len(box_size), n_box_shp[1]*n_box_shp[2]))
-    log_num_box = np.log(num_boxes_rshp)
+    with np.errstate(divide='ignore'):
+        log_num_box = np.log(num_boxes_rshp)
     log_num_box[np.where(log_num_box == -np.inf)] = 0
     coeffs = np.polyfit(np.log(box_size), log_num_box, 1)
     fractal_dim = -coeffs[0]
