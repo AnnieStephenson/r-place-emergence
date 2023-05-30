@@ -10,6 +10,7 @@ import rplacem.variables_rplace2022 as var
 import rplacem.utilities as util
 import rplacem.plot_utilities as plot
 import rplacem.entropy as entropy
+import rplacem.fractal_dim as fractal_dim
 import scipy
 import warnings
 import sparse as sp
@@ -281,8 +282,8 @@ def main_variables(cpart,
         previous_colors = cpart.white_image(2, images_number=cpst.sw_width) # image in the sw_width previous timesteps
     previous_stable_color = cpart.white_image(1)  # stable image in the previous timestep
     if save_memory:
-        time_spent_in_color_vst = np.empty((cpst.sw_width, cpart.num_pix(), 2), dtype=object) 
-        for i in np.ndindex(time_spent_in_color_vst.shape): 
+        time_spent_in_color_vst = np.empty((cpst.sw_width, cpart.num_pix(), 2), dtype=object)
+        for i in np.ndindex(time_spent_in_color_vst.shape):
             time_spent_in_color_vst[i] = []
     else:
         time_spent_in_color_vst = np.zeros((cpst.sw_width, cpart.num_pix(), var.NUM_COLORS))
@@ -367,7 +368,7 @@ def main_variables(cpart,
             show_progress(i/n_tlims, i_fraction_print, 0.1)
         timerange_str = 'time{:06d}to{:06d}'.format(int(t_lims[i-1]), int(t_lims[i]))
 
-        # Starting time of the sliding window. 
+        # Starting time of the sliding window.
         if attdef > 0:
             t_sw_start = t_lims[max(0, i - cpst.sw_width)]
             # Keep only changes within the window (reject older ones).
@@ -419,7 +420,7 @@ def main_variables(cpart,
         i_replace = i % cpst.sw_width # where to modify the "rolling" time_spent_in_color_vst array
         if save_memory:
             for j in np.arange(time_spent_in_color_vst.shape[1]):
-                substract_and_sparse_replace( time_spent_in_color_sw[j], time_spent_in_color_vst[i_replace, j], time_spent_in_color[j])
+                substract_and_sparse_replace(time_spent_in_color_sw[j], time_spent_in_color_vst[i_replace, j], time_spent_in_color[j])
         else:
             time_spent_in_color_sw -= time_spent_in_color_vst[i_replace]
             time_spent_in_color_vst[i_replace] = time_spent_in_color
@@ -457,7 +458,7 @@ def main_variables(cpart,
                                   cpst.frac_attack_changes_image,
                                   attdef > 1, (cpart_dir(out_dir_attdef) if attdef > 2 else ''))
 
-        # INSTANTANEOUS IMAGES
+        # INSTANTANEOUS IMAGES: includes entropy and fractal dimension calculations
         # Calculate the number of pixels in the current interval (stable or instantaneous) that differ from the reference image, or from the previous timestep
         if instant > 0 or tran > 0:
             cpst.diff_pixels_inst_vs_swref.val[i] = np.count_nonzero(current_color - ref_color)
@@ -469,6 +470,7 @@ def main_variables(cpart,
             cpst.diff_pixels_stable_vs_swref.val[i] = np.count_nonzero(stable_colors[:, 0] - ref_color[:])
             cpst.diff_pixels_inst_vs_stable.val[i] = np.count_nonzero(current_color - previous_stable_color)
         if instant > 0:
+            # ENTROPY
             cpst.diff_pixels_inst_vs_inst.val[i] = np.count_nonzero(current_color - previous_colors[(i-1) % cpst.sw_width])
 
             # Create the png and bmp files from the current image, and store their sizes
@@ -524,16 +526,24 @@ def main_variables(cpart,
                 util.pixels_to_image(cpst.second_stable_image[i], cpart_dir(out_dir_stab), 'SecondMostStableColor_' + timerange_str + '.png')
                 util.pixels_to_image(cpst.third_stable_image[i], cpart_dir(out_dir_stab), 'ThirdMostStableColor_' + timerange_str + '.png')
 
+    # FRACTAL DIMENSION
+    if instant > 1:
+        [cpst.fractal_dim_mask_median.val,
+         cpst.fractal_dim_mask_mean.val,
+         cpst.fractal_dim_dom.val,
+         cpst.fractal_dim_weighted.val] = fractal_dim.calc_from_image(cpst.true_image, shift_avg=False)
+
+
     # Continue the loop over some more time steps to get the forward-looking sliding window reference
     if tran > 0:
         for i in range(n_tlims, n_tlims + cpst.sw_width):
             i_replace = i % cpst.sw_width # where to modify the "rolling" time_spent_in_color_vst array
             if save_memory:
                 for j in np.arange(time_spent_in_color_vst.shape[1]):
-                    substract_and_sparse_replace( time_spent_in_color_sw[j], time_spent_in_color_vst[i_replace, j], None, replace=False)
+                    substract_and_sparse_replace(time_spent_in_color_sw[j], time_spent_in_color_vst[i_replace, j], None, replace=False)
             else:
                 time_spent_in_color_sw -= time_spent_in_color_vst[i_replace]
-            
+
             ref_color = calc_stable_cols(time_spent_in_color_sw)[:, 0]
             cpst.diff_pixels_inst_vs_swref_forwardlook.val[i - cpst.sw_width] = np.count_nonzero(previous_colors[i_replace] - ref_color)
 
@@ -545,8 +555,6 @@ def main_variables(cpart,
 
     if delete_dir and not dir_exist_already:
         os.rmdir(out_path)
-
-    return 1
 
 
 def num_changes_and_users(cpart, t_step, time_str,

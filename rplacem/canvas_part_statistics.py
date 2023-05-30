@@ -106,7 +106,7 @@ class CanvasPartStatistics(object):
     diff_pixels_inst_vs_stable : TimeSeries, n_pts = n_t_bins+1
         Number of pixels that differ between images:
         stable over the timestep, instantaneous at the end of this or the previous timestep ("inst"),
-        or the reference image over the sliding window ("swref") 
+        or the reference image over the sliding window ("swref")
         or over a forward-looking future sliding window ("swref_forwardlook")
             Set in comp.main_variables()
     frac_pixdiff_stable_vs_swref
@@ -128,11 +128,20 @@ class CanvasPartStatistics(object):
     entropy : TimeSeries, n_pts = n_t_bins+1
         Ratio of size of the png image file to the number of active pixels, at each time step
             Set in ratios_and_normalizations()
-    true_image: 1d array of size n_t_bins, of 2d numpy arrays.
+    true_image : 1d array of size n_t_bins, of 2d numpy arrays.
         Each element is a pixels image info (2d numpy array containing color indices)
         True image of the canvas part at the end of the time interval
             Needs compute_vars['entropy'] > 1
             Set in comp.main_variables()
+    fractal_dim_mask_median : TimeSeries, n_pts = n_t_bins+1
+        Median fractal dimension across all colors, ignoring zeros
+    fractal_dim_mask_mean : TimeSeries, n_pts = n_t_bins+1
+        Mean fractal dimension across all colors, ignoring zeros
+    fractal_dim_dom : TimeSeries, n_pts = n_t_bins+1
+        Dominant color fractal dimension
+    fractal_dim_weighted : TimeSeries, n_pts = n_t_bins+1
+        Weighted fractal dimension across all colors
+
 
     TRANSITIONS -- all need compute_vars['transitions'] > 0
     n_transitions : int
@@ -262,7 +271,7 @@ class CanvasPartStatistics(object):
 
     def __init__(self,
                  cpart,
-                 t_interval=300,                 
+                 t_interval=300,
                  tmax=var.TIME_TOTAL,
                  compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1},
                  sliding_window=14400,
@@ -353,9 +362,14 @@ class CanvasPartStatistics(object):
         self.n_cooldowncheat_changes = ts.TimeSeries()
         self.n_redundant_color_changes = ts.TimeSeries()
         self.n_redundant_coloranduser_changes = ts.TimeSeries()
-        
+
         self.size_compressed = ts.TimeSeries()
         self.size_uncompressed = ts.TimeSeries()
+
+        self.fractal_dim_mask_median = ts.TimeSeries()
+        self.fractal_dim_mask_mean = ts.TimeSeries()
+        self.fractal_dim_dom = ts.TimeSeries()
+        self.fractal_dim_weighted = ts.TimeSeries()
 
         self.transition_param = trans_param
         self.n_transitions = None
@@ -417,14 +431,14 @@ class CanvasPartStatistics(object):
 
     def ts_init(self, val):
         return ts.TimeSeries(val=val, cpstat=self)
-    
+
     def keep_all_basics(self):
         return self.compute_vars['entropy'] > 0 \
            and self.compute_vars['stability'] > 0 \
            and self.compute_vars['attackdefense']> 0 \
            and self.compute_vars['transitions'] > 0 \
            and self.compute_vars['other'] > 0
-    
+
     def ratios_and_normalizations(self):
         self.instability_norm = self.ts_init( (1 - self.stability.val) / self.t_norm )
         self.n_changes_norm = self.ts_init( util.divide_treatzero(self.n_changes.val / self.t_norm, self.area_vst.val, 0, 0) )
@@ -492,7 +506,7 @@ class CanvasPartStatistics(object):
 
             if trans > 1:
                 self.frac_diff_pixels_pre_vs_post_trans[j] = comp.count_image_differences(self.refimage_pretrans[j], self.refimage_posttrans[j], cpart) / self.area
-                
+
                 end_pretrans_sw_ind = min(self.transition_tinds[j][1] + 1, self.n_t_bins+1)
                 end_posttrans_sw_ind = min(self.transition_tinds[j][4] + self.sw_width + 1, self.n_t_bins+1)
                 self.refimage_intrans[j] = self.true_image[self.trans_start_tind[j]]
