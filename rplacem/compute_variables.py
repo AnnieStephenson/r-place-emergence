@@ -529,8 +529,6 @@ def main_variables(cpart,
     # FRACTAL DIMENSION
     if instant > 1:
         [cpst.fractal_dim_mask_median.val,
-         cpst.fractal_dim_mask_mean.val,
-         cpst.fractal_dim_dom.val,
          cpst.fractal_dim_weighted.val] = fractal_dim.calc_from_image(cpst.true_image, shift_avg=False)
 
 
