@@ -2,7 +2,10 @@ import numpy as np
 import pandas as pd
 
 
-def max_box_size(im_width, im_height):
+def max_box_size(im_width, im_height,
+                 comp_dim_frac=0.1,
+                 size_limit=10,
+                 size_min=3):
     '''
     Calculates the maximum box size for fractal dimension algorithm.
     The smallest maximum box size is 3 pixels, to enforce at least 3 points
@@ -10,12 +13,16 @@ def max_box_size(im_width, im_height):
     and 3 pixels).
     '''
 
-    # maximum box size is a quarter diameter
-    max_box_size = round(0.1*min(im_width, im_height))
+    # maximum box size is a percentage of the smaller dimension of the composition
+    max_box_size = round(comp_dim_frac*min(im_width, im_height))
 
     # require at least 3 points to fit line
-    if max_box_size < 3:
-        max_box_size = 3
+    if max_box_size < size_min:
+        max_box_size = size_min
+
+    # limit the max box size to 10
+    if max_box_size > size_limit:
+        max_box_size = size_limit
     return max_box_size
 
 
@@ -68,7 +75,7 @@ def get_box_inds(box_size, im_height, im_width, shift_avg=True):
     return box_inds_res
 
 
-def count_num_box_touch(true_image, shift_avg=True):
+def count_num_box_touch(true_image, shift_avg=True, shift_avg_len=3):
     '''
     Counts the  number of boxes touched by pixels of each color at each time step
     and at each box size. The box sizes are calculated within the function based
@@ -80,31 +87,33 @@ def count_num_box_touch(true_image, shift_avg=True):
 
     max_size = max_box_size(im_width, im_height)
     box_size = np.arange(1, max_size + 1)
+    num_boxes_touched = np.zeros((len(box_size), n_t_lims, 32), dtype=int)
     if shift_avg:
-        num_boxes_touched1 = np.zeros((len(box_size), n_t_lims, 32))
-        num_boxes_touched2 = np.zeros((len(box_size), n_t_lims, 32))
-        num_boxes_touched3 = np.zeros((len(box_size), n_t_lims, 32))
-        num_boxes_touched4 = np.zeros((len(box_size), n_t_lims, 32))
-    else:
-        num_boxes_touched = np.zeros((len(box_size), n_t_lims, 32), dtype=int)
-
+        num_boxes_touched1 = np.zeros((shift_avg_len, n_t_lims, 32))
+        num_boxes_touched2 = np.zeros((shift_avg_len, n_t_lims, 32))
+        num_boxes_touched3 = np.zeros((shift_avg_len, n_t_lims, 32))
+        num_boxes_touched4 = np.zeros((shift_avg_len, n_t_lims, 32))
+        shift_count = 0
     for k in range(len(box_size)):
-        box_inds = get_box_inds(box_size[k], im_height, im_width, shift_avg=shift_avg)
-        if shift_avg:
+        if shift_avg and k >= len(box_size)-shift_avg_len:
+            box_inds = get_box_inds(box_size[k], im_height, im_width, shift_avg=shift_avg)
             box_inds1, box_inds2, box_inds3, box_inds4 = box_inds
+        else:
+            box_inds = get_box_inds(box_size[k], im_height, im_width, shift_avg=False)
         for i in range(n_t_lims):
             for j in range(32):
                 color_bool = true_image[i] == j
-                if shift_avg:
-                    num_boxes_touched1[k, i, j] = num_box_touch_from_color_bool(color_bool, box_inds1)
-                    num_boxes_touched2[k, i, j] = num_box_touch_from_color_bool(color_bool, box_inds2)
-                    num_boxes_touched3[k, i, j] = num_box_touch_from_color_bool(color_bool, box_inds3)
-                    num_boxes_touched4[k, i, j] = num_box_touch_from_color_bool(color_bool, box_inds4)
+                if shift_avg and k >= len(box_size)-shift_avg_len:
+                    num_boxes_touched1[shift_count, i, j] = num_box_touch_from_color_bool(color_bool, box_inds1)
+                    num_boxes_touched2[shift_count, i, j] = num_box_touch_from_color_bool(color_bool, box_inds2)
+                    num_boxes_touched3[shift_count, i, j] = num_box_touch_from_color_bool(color_bool, box_inds3)
+                    num_boxes_touched4[shift_count, i, j] = num_box_touch_from_color_bool(color_bool, box_inds4)
                 else:
                     num_boxes_touched[k, i, j] = num_box_touch_from_color_bool(color_bool, box_inds)
-
+        if shift_avg and k >= len(box_size)-shift_avg_len:
+            shift_count += 1
     if shift_avg:
-        num_boxes_touched = (num_boxes_touched1 + num_boxes_touched2 + num_boxes_touched3 + num_boxes_touched4)/4
+        num_boxes_touched[len(box_size)-shift_avg_len:, :, :] = (num_boxes_touched1 + num_boxes_touched2 + num_boxes_touched3 + num_boxes_touched4)/4
 
     return num_boxes_touched, box_size
 
@@ -128,9 +137,9 @@ def calc_fractal_dim(box_size, num_boxes_touched):
     n_box_shp = num_boxes_touched.shape
     num_boxes_rshp = num_boxes_touched.reshape((len(box_size), n_box_shp[1]*n_box_shp[2]))
     with np.errstate(divide='ignore'):
-        log_num_box = np.log(num_boxes_rshp)
+        log_num_box = np.log10(num_boxes_rshp)
     log_num_box[np.where(log_num_box == -np.inf)] = 0
-    coeffs = np.polyfit(np.log(box_size), log_num_box, 1)
+    coeffs = np.polyfit(np.log10(box_size), log_num_box, 1)
     fractal_dim = -coeffs[0]
     fractal_dim = fractal_dim.reshape((n_box_shp[1], n_box_shp[2]))
     return fractal_dim
@@ -166,26 +175,27 @@ def get_dom_colors(true_image):
     return dom_color_frac, dom_colors, color_frac
 
 
-def calc_fractal_dim_values(dom_colors, color_frac, fractal_dim):
+def calc_fractal_dim_values(dom_colors, color_frac, fractal_dim,
+                            calc_mean_weighted_only=True):
     '''
     Calculates fractal dimension summary variables
     '''
-    fractal_dim_mean = np.mean(fractal_dim, axis=1)
     fractal_dim_mask = np.ma.masked_equal(fractal_dim, 0)
-    fractal_dim_mask_mean = np.ma.mean(fractal_dim_mask, axis=1)
     fractal_dim_mask_median = np.ma.median(fractal_dim_mask, axis=1)
-    fractal_dim_dom = fractal_dim[np.arange(fractal_dim.shape[0]), dom_colors[:, 0]]
     fractal_dim_weighted = np.sum(fractal_dim*color_frac, axis=1)
+    fractal_vals_res = [fractal_dim_mask_median, fractal_dim_weighted]
 
-    return [fractal_dim_mean,
-            fractal_dim_mask,
-            fractal_dim_mask_mean,
-            fractal_dim_mask_median,
-            fractal_dim_dom,
-            fractal_dim_weighted]
+    if not calc_mean_weighted_only:
+        fractal_dim_mean = np.mean(fractal_dim, axis=1)
+        fractal_dim_mask_mean = np.ma.median(fractal_dim_mask, axis=1)
+        fractal_dim_dom = fractal_dim[np.arange(fractal_dim.shape[0]), dom_colors[:, 0]]
+        fractal_vals_res.extend(fractal_dim_mean, fractal_dim_mask, fractal_dim_mask_mean,
+                                fractal_dim_dom)
+
+    return fractal_vals_res
 
 
-def calc_from_image(true_image, shift_avg=True):
+def calc_from_image(true_image, shift_avg=True, calc_mean_weighted_only=True):
     '''
     Calculates and returns selected fractal dimension summary variables
     given only the input image over time
@@ -200,11 +210,8 @@ def calc_from_image(true_image, shift_avg=True):
     dom_color_frac, dom_colors, color_frac = get_dom_colors(true_image)
 
     # calcualte fractal dimension summary values
-    [fractal_dim_mean,
-     fractal_dim_mask,
-     fractal_dim_mask_mean,
-     fractal_dim_mask_median,
-     fractal_dim_dom,
-     fractal_dim_weighted] = calc_fractal_dim_values(dom_colors, color_frac, fractal_dim)
+    [fractal_dim_mask_mean,
+     fractal_dim_weighted] = calc_fractal_dim_values(dom_colors, color_frac, fractal_dim,
+                                                     calc_mean_weighted_only=calc_mean_weighted_only)
 
-    return fractal_dim_mask_mean, fractal_dim_mask_median, fractal_dim_dom, fractal_dim_weighted
+    return fractal_dim_mask_mean, fractal_dim_weighted

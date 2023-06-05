@@ -135,10 +135,6 @@ class CanvasPartStatistics(object):
             Set in comp.main_variables()
     fractal_dim_mask_median : TimeSeries, n_pts = n_t_bins+1
         Median fractal dimension across all colors, ignoring zeros
-    fractal_dim_mask_mean : TimeSeries, n_pts = n_t_bins+1
-        Mean fractal dimension across all colors, ignoring zeros
-    fractal_dim_dom : TimeSeries, n_pts = n_t_bins+1
-        Dominant color fractal dimension
     fractal_dim_weighted : TimeSeries, n_pts = n_t_bins+1
         Weighted fractal dimension across all colors
 
@@ -367,8 +363,6 @@ class CanvasPartStatistics(object):
         self.size_uncompressed = ts.TimeSeries()
 
         self.fractal_dim_mask_median = ts.TimeSeries()
-        self.fractal_dim_mask_mean = ts.TimeSeries()
-        self.fractal_dim_dom = ts.TimeSeries()
         self.fractal_dim_weighted = ts.TimeSeries()
 
         self.transition_param = trans_param
