@@ -100,7 +100,6 @@ def count_num_box_touch(true_image, shift_avg=True, shift_avg_len=3):
             box_inds1, box_inds2, box_inds3, box_inds4 = box_inds
         else:
             box_inds = get_box_inds(box_size[k], im_height, im_width, shift_avg=False)
-        print(len(box_inds))
         for i in range(n_t_lims):
             for j in range(32):
                 color_bool = true_image[i] == j
@@ -113,7 +112,6 @@ def count_num_box_touch(true_image, shift_avg=True, shift_avg_len=3):
                     num_boxes_touched[k, i, j] = num_box_touch_from_color_bool(color_bool, box_inds)
         if shift_avg and k >= len(box_size)-shift_avg_len:
             shift_count += 1
-            print(shift_count)
     if shift_avg:
         num_boxes_touched[len(box_size)-shift_avg_len:, :, :] = (num_boxes_touched1 + num_boxes_touched2 + num_boxes_touched3 + num_boxes_touched4)/4
 
