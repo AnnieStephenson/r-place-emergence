@@ -17,11 +17,11 @@ pixel_changes_all = util.get_all_pixel_changes()
 atlas, num = util.load_atlas()
 
 # intro
-fromatlas = True
+fromatlas = False
 cp_fromfile = False
 cps_fromfile = False
 
-id = '000006' #'twoztm',#'twwgx2',#'000006' # only if fromatlas
+id = '000006' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas
 x1 = 0 # only if not fromatlas
 x2 = 1999
 y1 = 0
@@ -46,9 +46,13 @@ if cp_fromfile:
 
 else:
     if not fromatlas:
-        canpart = cp.CanvasPart(border_path=[[[x1, y1], [x1, y2], [x2, y2], [x2, y1]]],
-                                pixel_changes_all=pixel_changes_all,
-                                verbose=False, save=True)
+        atlas_info_separated = cp.get_atlas_border(id=id, atlas=atlas)
+        canvas_comps = []
+        for ainfo in atlas_info_separated:
+            # actual canvas composition here
+            #print(ainfo.id, ainfo.border_path, ainfo.border_path_times)
+            canvas_comps.append( cp.CanvasPart(atlas_info=ainfo, pixel_changes_all=pixel_changes_all, verbose=False, save=True) )
+        canpart = canvas_comps[0]
     else:
         canpart = cp.CanvasPart(id=id,
                                 pixel_changes_all=pixel_changes_all,

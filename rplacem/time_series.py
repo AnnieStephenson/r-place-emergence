@@ -122,7 +122,7 @@ class TimeSeries(object):
         cumul_sum = np.cumsum(self.val)  # cumsum[i] is the sum of values in indices [0, i] with i included
         mean_sliding[0] = self.val[0]
         mean_sliding[1:(sw+1)] = cumul_sum[0:sw] / np.arange(1, sw+1)
-        mean_sliding[(sw+1):] = (cumul_sum[sw:] - cumul_sum[:-sw]) / float(sw)  # CHECK THAT BEG IDX
+        mean_sliding[(sw+1):] = (cumul_sum[sw:-1] - cumul_sum[:(-sw-1)]) / float(sw)
 
         self.ratio_to_sw_mean = self.val / mean_sliding
 

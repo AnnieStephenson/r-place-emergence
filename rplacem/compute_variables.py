@@ -149,12 +149,13 @@ def cumulative_attack_timefrac(time_spent_in_col, ref_color, inds_active_pix, st
     computes the sum of the times that every pixel spent in another color than that of ref_color.
     Normalized by the total time summed over all pixels
     '''
-    time_spent = time_spent_in_col[inds_active_pix, :]
-    ref_cols = ref_color[inds_active_pix]
-    time_spent_in_refcol = time_spent[ np.arange(0, time_spent.shape[0]), ref_cols]
     if len(inds_active_pix) == 0:
         res = 0
     else:
+        time_spent = time_spent_in_col[inds_active_pix, :]
+        ref_cols = ref_color[inds_active_pix]
+        time_spent_in_refcol = time_spent[ np.arange(0, time_spent.shape[0]), ref_cols]
+
         res = 1 - np.sum(time_spent_in_refcol) / (stepwidth * len(inds_active_pix))
     return max(res, 0)
 
@@ -290,6 +291,10 @@ def main_variables(cpart,
     time_spent_in_color_sw = np.zeros((cpart.num_pix(), var.NUM_COLORS)) # summed over the sliding window
     last_time_installed_sw = None if attdef == 0 else initialize_start_time_grid(cpart, t_lims[0], add_color_dim=True)
     last_time_removed_sw = None if attdef == 0 else np.copy(last_time_installed_sw)
+    users_vst = np.empty(cpst.sw_width, dtype=object)
+    for i in np.ndindex(users_vst.shape):
+        users_vst[i] = np.array([], dtype=np.int32)
+    users_sw_unique = np.array([], dtype=np.int32)
 
     # Output
     cpst.stability = cpst.ts_init(np.full(n_tlims, 1., dtype=np.float32))
@@ -313,6 +318,9 @@ def main_variables(cpart,
     cpst.n_cooldowncheat_changes = cpst.ts_init( np.zeros(n_tlims) )
     cpst.n_redundant_color_changes = cpst.ts_init( np.zeros(n_tlims) )
     cpst.n_redundant_coloranduser_changes = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.n_users_new_vs_previoustime = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.n_users_new_vs_sw = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.n_users_sw = cpst.ts_init( np.zeros(n_tlims) )
 
     # output paths
     out_path = os.path.join(var.FIGS_PATH, cpart.out_name())
@@ -340,14 +348,17 @@ def main_variables(cpart,
         if stab > 2:
             util.make_dir(fig_cpart_dir(out_dir_stab), renew=True)
 
-    if attdef > 1:
+    if tran > 0:
+        cpst.refimage_sw_flat = cpart.white_image(2, images_number=n_tlims)
+
+    if attdef > 1 or tran > 1:
         cpst.refimage_sw = cpart.white_image(3, images_number=n_tlims)
         cpst.attack_defense_image = cpart.white_image(3, images_number=n_tlims)
         if attdef > 2:
             util.make_dir(fig_cpart_dir(out_dir_attdef), renew=True)
             util.make_dir(fig_cpart_dir(out_dir_attdefIsing), renew=True)
 
-    if instant > 1:
+    if instant > 0 or tran > 1:
         cpst.true_image = cpart.white_image(3, images_number=n_tlims)
         if instant > 2:
             util.make_dir(fig_cpart_dir(out_dir_time), renew=True)
@@ -376,7 +387,7 @@ def main_variables(cpart,
             last_time_removed_sw = np.maximum(last_time_removed_sw, t_sw_start)
 
         # Get indices of all pixels that are active in this time step.
-        inds_coor_active = np.array(cpart.active_coord_inds(t_lims[i-1], t_lims[i]), dtype=np.int64)
+        inds_coor_active = cpart.active_coord_inds(t_lims[i-1], t_lims[i])
         cpst.area_vst.val[i] = len(inds_coor_active)
         # Get indices of pixel changes in this time step, without or with the condition of being in an "active" pixel at this time
         t_inds = cpart.intimerange_pixchanges_inds(t_lims[i-1], t_lims[i])
@@ -457,6 +468,18 @@ def main_variables(cpart,
                                   cpst.n_users.val, cpst.n_bothattdef_users.val, cpst.n_defense_users.val,
                                   cpst.frac_attack_changes_image,
                                   attdef > 1, (cpart_dir(out_dir_attdef) if attdef > 2 else ''))
+            
+            # Compare number of unique users to that in the previous timestep or sliding window
+            users_now = user[t_inds_active]
+            i_prev = (i-1) % cpst.sw_width
+            users_prev = users_vst[i_prev]
+            cpst.n_users_new_vs_previoustime.val[i] = len(np.intersect1d(users_now, users_prev)) # count unique elements in common in the two arrays
+            cpst.n_users_new_vs_sw.val[i] = len(np.intersect1d(users_now, users_sw_unique))
+
+            # Number of unique users in a sliding window
+            users_vst[i_replace] = users_now
+            users_sw_unique = np.unique(np.hstack(users_vst))
+            cpst.n_users_sw.val[i] = len(users_sw_unique)
 
         # INSTANTANEOUS IMAGES: includes entropy and fractal dimension calculations
         # Calculate the number of pixels in the current interval (stable or instantaneous) that differ from the reference image, or from the previous timestep
@@ -496,11 +519,13 @@ def main_variables(cpart,
                             protocol=pickle.HIGHEST_PROTOCOL)
 
         # create instantaneous images.
-        if instant > 1:
+        if instant > 0 or tran > 1:
             cpst.true_image[i] = np.copy(pix_tmp)
 
         # Create attack/defense images.
-        if attdef > 1 or cpst.compute_vars['transitions'] > 1:
+        if tran > 0:
+            cpst.refimage_sw_flat[i] = ref_color
+        if attdef > 1 or tran > 1:
             cpst.refimage_sw[i, coor_offset[1], coor_offset[0]] = ref_color
             if attdef > 2:
                 timerange_str_ref = 'time{:06d}to{:06d}'.format(int(t_sw_start), int(t_lims[i]))
@@ -527,10 +552,9 @@ def main_variables(cpart,
                 util.pixels_to_image(cpst.third_stable_image[i], cpart_dir(out_dir_stab), 'ThirdMostStableColor_' + timerange_str + '.png')
 
     # FRACTAL DIMENSION
-    if instant > 1:
+    if instant > 0:
         [cpst.fractal_dim_mask_median.val,
          cpst.fractal_dim_weighted.val] = fractal_dim.calc_from_image(cpst.true_image, shift_avg=False)
-
 
     # Continue the loop over some more time steps to get the forward-looking sliding window reference
     if tran > 0:

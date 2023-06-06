@@ -44,7 +44,7 @@ num_comps = 0#len(keep_idx_comps)
 vary_cutoffs = np.zeros((len(cutoff_stables), len(cutoffs)))
 vary_dist = np.zeros((len(dist_stables), len(num_stables)))
 
-for k in keep_idx_comps[0:400]:
+for k in keep_idx_comps[0:1000]:
     num_comps += 1
     print('compo #',k, ' id ', canparts[k].id)
     cpstat = stat.CanvasPartStatistics(canparts[k], t_interval=300, sliding_window=14400,
@@ -52,8 +52,8 @@ for k in keep_idx_comps[0:400]:
                                        verbose=False, dont_keep_dir=True)
 
     # Vary first 2 parameters
-    num_stab = num_stables[2]
-    dist_stab = dist_stables[2]
+    num_stab = num_stables[1]
+    dist_stab = dist_stables[3]
     for i in range(0, len(cutoffs)):
         #print(i)
         for j in range(0, len(cutoff_stables)):

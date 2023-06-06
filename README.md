@@ -23,3 +23,6 @@ In addition to installing in a standard way (pip install ```module```) the modul
 python setup.py build_ext -i
 ```
 and then add sweetsourcod_builddirectory/sweetsourcod/ to your PYTHONPATH
+```
+export PYTHONPATH=$PYTHONPATH:~/r-place-emergence/sweetsourcod/:~/r-place-emergence/sweetsourcod/sweetsourcod/
+```

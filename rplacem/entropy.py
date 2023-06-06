@@ -41,7 +41,7 @@ def calc_compressed_size(pixels, flattening='hilbert_sweetsourcod', compression=
     '''
     if flattening[0:7] == 'hilbert':
         # for any hilbert method, have to set up pixel padding and define exponent of 2
-        power2 = math.ceil(math.log2(pixels.shape[0]))
+        power2 = math.ceil(math.log2(max(pixels.shape[0], pixels.shape[1])))
         pixels_pad = np.zeros((2**power2, 2**power2))
         pixels_pad[:pixels.shape[0], :pixels.shape[1]] = pixels
 
