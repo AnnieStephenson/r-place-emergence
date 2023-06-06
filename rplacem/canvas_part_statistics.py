@@ -72,6 +72,8 @@ class CanvasPartStatistics(object):
         time range on which to compute the variables. 
         Must be before the time of the first pixel change in the composition.
             Set in __init__()
+    tmin_compo: float
+        minimum time of the composition, will be used for display and selecting relevant timerange to study composition
     sw_width_sec: float
         Size [in seconds] of the sliding window over which the sliding reference image is computed
     sw_width: int
@@ -344,6 +346,7 @@ class CanvasPartStatistics(object):
         self.area = len(cpart.coords[0])
         self.area_rectangle = cpart.width(0) * cpart.width(1)
         self.tmin = cpart.minimum_time()
+        self.tmin_compo = cpart.minimum_time(atlas_tmin=True)
         self.tmax = tmax
         self.t_interval = t_interval # seconds
         self.n_t_bins = math.ceil((self.tmax - self.tmin) / self.t_interval)
@@ -533,8 +536,10 @@ class CanvasPartStatistics(object):
 
     def search_transitions(self, cpart):
         par = self.transition_param
-        transitions = tran.find_transitions(self.t_lims, self.frac_pixdiff_inst_vs_swref.val, self.frac_pixdiff_inst_vs_swref_forwardlook.val,
-                                             cutoff=par[0], cutoff_stable=par[1], len_stableregion=par[2], distfromtrans_stableregion=par[3])
+        transitions = tran.find_transitions(self.t_lims, 
+                                            self.frac_pixdiff_inst_vs_swref.val, self.frac_pixdiff_inst_vs_swref_forwardlook.val,
+                                            tmin_compo=self.tmin_compo,
+                                            cutoff=par[0], cutoff_stable=par[1], len_stableregion=par[2], distfromtrans_stableregion=par[3])
         self.transition_tinds = transitions[0]
         self.transition_times = transitions[1]
         self.n_transitions = len(transitions[1])
@@ -555,8 +560,9 @@ class CanvasPartStatistics(object):
 
             end_pretrans_sw_ind = min(self.transition_tinds[j][1], int(var.TIME_WHITEONLY))
             end_posttrans_sw_ind = min(self.transition_tinds[j][4] + self.sw_width, self.n_t_bins)
-            self.frac_diff_pixels_pre_vs_post_trans[j] = np.count_nonzero(self.refimage_sw_flat[end_pretrans_sw_ind] 
-                                                                        - self.refimage_sw_flat[end_posttrans_sw_ind]) / self.area
+            active_coords = cpart.active_coord_inds(self.t_lims[end_pretrans_sw_ind], self.t_lims[end_posttrans_sw_ind])
+            self.frac_diff_pixels_pre_vs_post_trans[j] = np.count_nonzero(self.refimage_sw_flat[end_pretrans_sw_ind][active_coords] 
+                                                                        - self.refimage_sw_flat[end_posttrans_sw_ind][active_coords]) / self.area
 
             if trans > 1:
                 self.refimage_pretrans[j] = self.refimage_sw[end_pretrans_sw_ind]
@@ -642,6 +648,11 @@ class CanvasPartStatistics(object):
         self.returntime_median_overln2.desc_short = 'median pixel recovery time from attack [s] / ln(2)'
         self.returntime_median_overln2.label = 'returntime_median_overln2'
         self.returntime_median_overln2.savename = filepath('median_pixel_recovery_time')
+
+        self.returntime_percentile90_overln2.desc_long = '90th percentile of time for pixels to recover from attack [s] / ln(2)'
+        self.returntime_percentile90_overln2.desc_short = '90th perc. pixel recovery time from attack [s] / ln(2)'
+        self.returntime_percentile90_overln2.label = 'returntime_percentile90_overln2'
+        self.returntime_percentile90_overln2.savename = filepath('pixel_recovery_time_90thpercentile')
 
         self.returntime_mean.desc_long = 'Mean time for pixels to recover from attack [s]'
         self.returntime_mean.desc_short = 'mean pixel recovery time from attack [s]'

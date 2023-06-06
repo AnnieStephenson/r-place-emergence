@@ -209,7 +209,7 @@ def calc_from_image(cpst, shift_avg=True, calc_mean_weighted_only=True):
     # calculate dominant colors for fractal dimension summary values
     _, dom_colors, color_frac = get_dom_colors(cpst.true_image)
 
-    # calcualte fractal dimension summary values
+    # calculate fractal dimension summary values
     [fractal_dim_mask_mean,
      fractal_dim_weighted] = calc_fractal_dim_values(dom_colors, color_frac, fractal_dim,
                                                      calc_mean_weighted_only=calc_mean_weighted_only)

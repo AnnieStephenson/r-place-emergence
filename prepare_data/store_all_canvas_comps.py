@@ -17,7 +17,7 @@ def store_compos(beg, end):
     print('start looping over compositions')
     for i in range(int(beg),int(end)):
         print(i, atlas[i]['id'])
-        atlas_info_separated = cp.get_atlas_border(id_index=i, atlas=atlas, addtime_before=10*3600, addtime_after=7*3600)
+        atlas_info_separated = cp.get_atlas_border(id_index=i, atlas=atlas, addtime_before=7*3600, addtime_after=7*3600)
         for ainfo in atlas_info_separated:
             # actual canvas composition here
             #print(ainfo.id, ainfo.border_path, ainfo.border_path_times)
@@ -38,13 +38,14 @@ args = parser.parse_args()
 store_compos(args.beginning, args.end)
 
 '''
-util.merge_pickles([ 'data/canvas_compositions_files0to1599.pickle',
-                'data/canvas_compositions_files1600to2599.pickle',
-                'data/canvas_compositions_files2600to3999.pickle',
-                'data/canvas_compositions_files4000to5799.pickle',
-                'data/canvas_compositions_files5800to7799.pickle',
-                'data/canvas_compositions_files7800to9799.pickle',
-                'data/canvas_compositions_files9800to9956.pickle',# actually til 9957
+util.merge_pickles([ 'data/canvas_compositions_files0to999.pickle',
+                'data/canvas_compositions_files1000to1999.pickle',
+                'data/canvas_compositions_files2000to2999.pickle',
+                'data/canvas_compositions_files3000to3999.pickle',
+                'data/canvas_compositions_files4000to4999.pickle',
+                'data/canvas_compositions_files5000to6999.pickle',
+                'data/canvas_compositions_files7000to8999.pickle',
+                'data/canvas_compositions_files9000to10630.pickle',
                 ],
                 'canvas_compositions_all.pickle')
 '''

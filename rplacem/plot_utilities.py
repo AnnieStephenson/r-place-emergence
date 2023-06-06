@@ -318,6 +318,8 @@ def draw_1d(xdata,
 
 def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5, save=True):
 
+    itmin = np.argmax(cpstat.t_lims >= cpstat.tmin_compo)
+
     fig, axes = plt.subplots(nrows, ncols, sharex=True, figsize=figsize)
 
     t_series_vars = [[cpstat.frac_pixdiff_inst_vs_stable_norm, 0, None],
@@ -334,7 +336,7 @@ def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5, save=Tr
                      [cpstat.fractal_dim_weighted, None, None],
                      #[cpstat.frac_cooldowncheat_changes, 0, None],
                      #[cpstat.frac_bothattdef_users, 0, None],
-                     [cpstat.returntime_median_overln2, 0, None],
+                     [cpstat.returntime_percentile90_overln2, 0, None],
                      [cpstat.returntime_mean, 0, None],
                      [cpstat.cumul_attack_timefrac, 0, None],
                      #[cpstat.n_users_norm, 0, None],
@@ -342,10 +344,10 @@ def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5, save=Tr
                     ]
 
     for i, ax in enumerate(axes.T.flat):
-        ax.plot(cpstat.t_lims, t_series_vars[i][0].val)
+        ax.plot(cpstat.t_lims[itmin:], t_series_vars[i][0].val[itmin:])
         ax.patch.set_alpha(0)
 
-        ax.set_xlim([cpstat.t_lims[0], cpstat.t_lims[-1]])
+        ax.set_xlim([cpstat.t_lims[itmin], cpstat.t_lims[-1]])
         ax.tick_params(axis='x', direction='in')
 
         reject_end = int(t_series_vars[0][0].n_pts * 6./300.) # reject ending white period, and the very beginning

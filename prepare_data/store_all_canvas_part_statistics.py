@@ -24,7 +24,7 @@ def store_comp_stats(beg, end):
     periodsave = 100
 
     for p in range(0, int((end-beg)/periodsave)):
-        with open(os.path.join(var.DATA_PATH, 'canvas_compositions_files0to99.pickle'), 'rb') as f:
+        with open(os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle'), 'rb') as f:
             print('open file')
             canvas_compositions = (pickle.load(f))[(beg+p*periodsave):min(end, beg+(p+1)*periodsave)]
             print('close file')
@@ -38,37 +38,14 @@ def store_comp_stats(beg, end):
             cancomp = canvas_compositions[i]
             #print('beginning:  RAM memory % used:', psutil.virtual_memory()[2],   '   ',psutil.virtual_memory()[3]/1000000000)
             print('CanvasComp # ' + str(beg+p*periodsave+i) + ' , id '+ str(cancomp.info.id) + ' , #pixch = ', len(cancomp.pixel_changes))
-            
-            '''
-            canvas_comp_stat = stat.CanvasPartStatistics(cancomp,
-                                                        n_tbins_trans=150,
-                                                        tmax=var.TIME_TOTAL,
-                                                        compute_vars={'stability': 0, 
-                                                                    'mean_stability': 0, 
-                                                                    'entropy' : 0, 
-                                                                    'transitions' : 1, 
-                                                                    'attackdefense' : 0},
-                                                        trans_param=[8e-3, 2e-3, 18000, 14400],
-                                                        verbose=False,
-                                                        renew=False,
-                                                        dont_keep_dir=True)
 
-            if canvas_comp_stat.num_transitions>0:
-                print('This composition features >=1 transitions')
-                compute_v = {'stability': 1, 'mean_stability': 2, 'entropy' : 1, 'transitions' : 2, 'attackdefense' : 1}
-            else:
-                compute_v = {'stability': 1, 'mean_stability': 2, 'entropy' : 1, 'transitions' : 0, 'attackdefense' : 0.5}
-            '''
-
-            if cancomp.has_loc_jump: #should fix that in canvas compositions...
-                continue
             #print('mid1:  RAM memory % used:', psutil.virtual_memory()[2],   '   ',psutil.virtual_memory()[3]/1000000000)
             canvas_comp_stat = stat.CanvasPartStatistics(cancomp,
                                                         t_interval=300,
                                                         tmax=var.TIME_TOTAL,
                                                         compute_vars={'stability': 1, 'entropy' : 1, 'transitions' : 1, 'attackdefense' : 1, 'other' : 1},
                                                         trans_param=[0.4, 0.15, 2*3600, 4*3600],
-                                                        sliding_window=14400,
+                                                        sliding_window=3*3600,
                                                         timeunit=300, # 5 minutes
                                                         verbose=False,
                                                         renew=True,

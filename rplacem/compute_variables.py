@@ -249,6 +249,8 @@ def main_variables(cpart,
     # Preliminaries
     t_lims = cpst.t_lims
     n_tlims = len(t_lims)
+    tmincomp = cpst.tmin_compo
+    itmin = np.argmax(t_lims >= tmincomp)
     attdef = cpst.compute_vars['attackdefense']
     stab = cpst.compute_vars['stability']
     instant = cpst.compute_vars['entropy']
@@ -295,9 +297,10 @@ def main_variables(cpart,
     for i in np.ndindex(users_vst.shape):
         users_vst[i] = np.array([], dtype=np.int32)
     users_sw_unique = np.array([], dtype=np.int32)
+    stable_colors = np.empty((cpart.num_pix(), var.NUM_COLORS))
 
     # Output
-    cpst.stability = cpst.ts_init(np.full(n_tlims, 1., dtype=np.float32))
+    cpst.stability = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.diff_pixels_stable_vs_swref = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_swref = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_swref_forwardlook = cpst.ts_init(np.zeros(n_tlims))
@@ -321,6 +324,8 @@ def main_variables(cpart,
     cpst.n_users_new_vs_previoustime = cpst.ts_init( np.zeros(n_tlims) )
     cpst.n_users_new_vs_sw = cpst.ts_init( np.zeros(n_tlims) )
     cpst.n_users_sw = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.fractal_dim_weighted = cpst.ts_init( np.full(n_tlims, 2) )
+    cpst.fractal_dim_mask_median = cpst.ts_init( np.full(n_tlims, 2) )
 
     # output paths
     out_path = os.path.join(var.FIGS_PATH, cpart.out_name())
@@ -396,14 +401,14 @@ def main_variables(cpart,
         # CORE COMPUTATIONS. Magic happens here
 
         # Misc. pixel changes variables
-        if other > 0:
+        if other > 0 and i >= itmin - 1:
             cpst.n_moderator_changes.val[i] = np.count_nonzero(moderator[t_inds_active])
             cpst.n_cooldowncheat_changes.val[i] = np.count_nonzero(cooldown_cheat[t_inds_active])
             cpst.n_redundant_color_changes.val[i] = np.count_nonzero(redundant_color[t_inds_active])
             cpst.n_redundant_coloranduser_changes.val[i] = np.count_nonzero(redundant_coloranduser[t_inds_active])
 
         # Store the image of the previous timestep
-        if stab > 0 and instant > 0:
+        if stab > 0 and instant > 0 and i >= itmin - 1:
             previous_stable_color = np.copy(stable_colors[:, 0]) if i > 1 else cpart.white_image(1)
 
         # Calculate the time each pixel spent in what color.
@@ -415,7 +420,7 @@ def main_variables(cpart,
                                                        last_time_installed_sw, last_time_removed_sw)
 
         # STABILITY
-        if stab > 0:
+        if stab > 0 and i >= itmin - 1:
             # Get the color indices in descending order of which color they spent the most time in
             # stable_colors is of shape (n_pixels, n_colors), containing color indices ordered in decreasing occupation times
             stable_colors = calc_stable_cols(time_spent_in_color)
@@ -440,17 +445,23 @@ def main_variables(cpart,
         # Calculate the new reference image
         ref_color = calc_stable_cols(time_spent_in_color_sw)[:, 0]
 
+        if i < itmin - 1: # skip times where the composition is not on
+            continue
+
         # ATTACK/DEFENSE VS REFERENCE IMAGE
         if attdef > 0:
             # Calculate the (normalized) cumulative attack time over all pixels in this timestep
             cpst.cumul_attack_timefrac.val[i] = cumulative_attack_timefrac(time_spent_in_color, ref_color,
                                                                        inds_coor_active, cpst.t_interval)
             # Calculate return time, as the time each pixel spent in the non-reference color during the last attack
-            mask_attack = np.full(current_color.shape, False)
-            mask_attack[np.where(current_color != ref_color)] = True # indices where pixels are in an attack color
-            cpst.returntime[i][~mask_attack] = last_time_installed_sw[ref_color[~mask_attack], ~mask_attack] \
-                                              - last_time_removed_sw[ref_color[~mask_attack], ~mask_attack]
-            cpst.returntime[i][mask_attack] = t_lims[i] - last_time_removed_sw[ref_color[mask_attack], mask_attack]
+            mask_attdef = np.full(current_color.shape, False)
+            mask_attdef[np.intersect1d(inds_coor_active, np.where(current_color == ref_color)[0])] = True # indices where pixels are in a defense color
+            cpst.returntime[i][mask_attdef] = last_time_installed_sw[ref_color[mask_attdef], mask_attdef] \
+                                              - last_time_removed_sw[ref_color[mask_attdef], mask_attdef]
+            
+            mask_attdef[:] = False
+            mask_attdef[np.intersect1d(inds_coor_active, np.where(current_color != ref_color)[0])] = True # indices where pixels are in an attack color
+            cpst.returntime[i][mask_attdef] = t_lims[i] - last_time_removed_sw[ref_color[mask_attdef], mask_attdef]
 
             if attdef > 1:
                 diff_image = current_color - ref_color
@@ -533,7 +544,7 @@ def main_variables(cpart,
                 util.pixels_to_image(cpst.attack_defense_image[i], cpart_dir(out_dir_attdefIsing), 'Attack_vs_defense_' + timerange_str + '.png')
 
         # Create images containing the (sub)dominant color only.
-        if stab > 1:
+        if stab > 1 and i >= itmin:
             cpst.stable_image[i, coor_offset[1], coor_offset[0]] = stable_colors[:, 0]
             cpst.second_stable_image[i, coor_offset[1], coor_offset[0]] = stable_colors[:, 1]
             cpst.third_stable_image[i, coor_offset[1], coor_offset[0]] = stable_colors[:, 2]
@@ -554,7 +565,7 @@ def main_variables(cpart,
     # FRACTAL DIMENSION
     if instant > 0:
         [cpst.fractal_dim_mask_median.val,
-         cpst.fractal_dim_weighted.val] = fractal_dim.calc_from_image(cpst.true_image, shift_avg=False)
+         cpst.fractal_dim_weighted.val] = fractal_dim.calc_from_image(cpst, shift_avg=True)
 
     # Continue the loop over some more time steps to get the forward-looking sliding window reference
     if tran > 0:

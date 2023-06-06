@@ -2,11 +2,10 @@ import numpy as np
 import pickle
 import os
 import rplacem.variables_rplace2022 as var
-import rplacem.canvas_part_statistics as stat
 import rplacem.transitions as tran
 
 # grab canvas_part_statistics object
-file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_0_to_200.pickle') 
+file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_0to99.pickle') 
 with open(file_path, 'rb') as f:
     cpstats = pickle.load(f)[0:100]
 
@@ -36,8 +35,8 @@ def variables_from_cpstat(cps):
     cps.entropy.set_ratio_to_sw_average()
     cps.fractal_dim_weighted.set_ratio_to_sw_average()
 
-    return (np.array([0,0,0,0,0,0,0,0,1,1], dtype=np.bool),
-            np.array([cps.frac_pixdiff_inst_vs_swref,
+    take_ratio_to_average = np.array([0,0,0,0,0,0,0,0,1,1,0,0,0], dtype=bool)
+    vars = np.array([cps.frac_pixdiff_inst_vs_swref,
                      cps.frac_pixdiff_inst_vs_stable_norm,
                      cps.n_changes_norm,
                      cps.frac_attack_changes,
@@ -47,9 +46,16 @@ def variables_from_cpstat(cps):
                      cps.instability_norm,
                      cps.entropy,
                      cps.fractal_dim_weighted,
+                     cps.frac_users_new_vs_sw,
+                     cps.n_users_sw_norm,
+                     cps.changes_per_user_sw
                      #cps.cumul_attack_timefrac,
                     ])
-            )
+    if len(take_ratio_to_average) != len(vars):
+        raise ValueError('ERROR: vars and take_ratio_to_average must be of same length!')
+        return 0
+    
+    return(take_ratio_to_average, vars)
 
 n_cpstatvars = variables_from_cpstat(cpstats[0])[1].shape[0]
 n_trainingvars = n_cpstatvars * n_traintimes
@@ -86,9 +92,9 @@ def keep_in_sample(cpstat, it, t, trans_starttimes):
     '''
     return (cpstat.frac_pixdiff_inst_vs_swref.val[it] < trans_param[0] and # only keep times at which the composition is relatively stable 
             (cpstat.n_transitions == 0 or np.all(np.logical_or(t < trans_starttimes, it >= cpstat.transition_tinds[:, 3]))) and # exclude times with transition periods (can be redundant with line above)
-            t >= cpstat.sw_width_sec and # larger times than the sliding window and watchrange widths
-            t >= watchrange + cpstat.tmin and
-            t < var.TIME_WHITEONLY and # exclude white-only period
+            t >= cpstat.sw_width_sec + cpstat.tmin_compo and # larger times than the sliding window and watchrange widths, and only when the composition is active (tmin_compo)
+            t >= watchrange + cpstat.tmin_compo and
+            t <= var.TIME_WHITEONLY and # exclude white-only period
             cpstat.area_vst.val[it] > 0 and # non-zero active area
             np.any(np.logical_and(t >= cpstat.stable_borders_timeranges[:, 0] + watchrange, t <= cpstat.stable_borders_timeranges[:, 1]))
             )
@@ -100,13 +106,17 @@ outputval = []
 varnames = []
 eventtime = []
 
+ntimes=0
+
 for icps, cps in enumerate(cpstats):
+    if cps.area < 50:
+        continue
     print('cpstat #', icps, ' id ',cps.id)
+
     cps.fill_timeseries_info()
     # all variables from this cpstat
     allvars = variables_from_cpstat(cps)
     trans_starttimes = tran.transition_start_time_simple(cps)
-
 
     # enter names for all training variables
     if icps == 0: 
@@ -116,11 +126,13 @@ for icps, cps in enumerate(cpstats):
                                 ((str(watch_timeidx[i]) + str(watch_timeidx[i+1]-1)) if (i < n_traintimes-1) else '-0-0'))
 
     for it, t in enumerate(cps.t_lims):
+        ntimes += 1
         if keep_in_sample(cps, it, t, trans_starttimes):
             vars_thistime = []
-            for ratio_to_av, v in allvars[0], allvars[1]:
+            for ratio_to_av, v in zip(allvars[0], allvars[1]):
                 vals = get_vals_from_var(v.ratio_to_sw_mean if ratio_to_av else v.val, it)
                 vars_thistime.extend(vals)
+            # input variables
             inputvals.append(vars_thistime)
 
             # earlyness output
@@ -130,6 +142,7 @@ for icps, cps in enumerate(cpstats):
             eventtime.append(t)
             #print(icps, it, t, outputval[-1], cps.frac_pixdiff_inst_vs_swref.val[it], cps.frac_pixdiff_inst_vs_swref_forwardlook.val[it], inputvals[-1][0:7] )
 
+print(ntimes)
 
 varnames = np.array(varnames)
 inputvals = np.array(inputvals)

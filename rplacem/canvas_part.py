@@ -591,7 +591,7 @@ class CanvasPart(object):
             self.quarter2_coordinds = np.where((self.coords[0]>=1000) & (self.coords[1]<1000))
             self.quarter34_coordinds = np.where(self.coords[1]>=1000)
 
-    def minimum_time(self):
+    def minimum_time(self, atlas_tmin=False):
         '''
         Returns first time that the composition is on
         '''
@@ -602,8 +602,10 @@ class CanvasPart(object):
                 tmin_quarters = var.TIME_ENLARGE1
             else:
                 tmin_quarters = var.TIME_ENLARGE2
-        tmin_atlas = np.min(self.info.border_path_times[:, 0])
-        return max(tmin_atlas, tmin_quarters)
+        if atlas_tmin:
+            return max(np.min(self.info.border_path_times[:, 0]), tmin_quarters)
+        else:
+            return tmin_quarters
     
     def stable_borderpath_timeranges(self):
         '''

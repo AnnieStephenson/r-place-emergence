@@ -1,15 +1,22 @@
 import numpy as np
 from xgboost import XGBRegressor
 from sklearn.model_selection import train_test_split
+import os
+import pickle
+import rplacem.variables_rplace2022 as var
 
-# Prepare your input data as numpy arrays
-X = np.random.randint(0, high=20, size=(1000,4))
-y = np.mean(X, axis=1)
-print(X)
-print(y)
+# Prepare input data as numpy arrays
+file_path = os.path.join(var.DATA_PATH, 'training_data.pickle')
+with open(file_path, 'r') as f:
+    [inputvals, outputval] = pickle.load(f)
+
+#X = np.random.randint(0, high=20, size=(1000,4))
+#y = np.mean(X, axis=1)
+print(inputvals, inputvals.shape)
+print(outputval, outputval.shape)
 
 # Split the data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2)
+X_train, X_test, y_train, y_test = train_test_split(inputvals, outputval, test_size=0.2, random_state=2)
 
 # Set XGBoost regressor parameters
 params = {
