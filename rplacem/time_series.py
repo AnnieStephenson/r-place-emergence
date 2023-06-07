@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import rplacem.variables_rplace2022 as var
 import rplacem.plot_utilities as plot
-
+import rplacem.utilities as util
 
 class TimeSeries(object):
     '''
@@ -20,6 +20,8 @@ class TimeSeries(object):
         This is filled only if set_t_pts() is run (if record_all==True in __init__())
     tmin: float
         minimum time (first element of t_pts)
+    tmin_disp: float
+        minimum time from which to display
     t_interval: float
         time interval (in seconds) between two times of t_pts
     sw_width_mean: int
@@ -83,10 +85,12 @@ class TimeSeries(object):
             self.n_pts = len(val)
             if cpstat is None:
                 self.tmin = tmin
+                self.tmin_disp = tmin
                 self.t_interval = t_interval
                 self.sw_width_mean = sw_width_mean
             else:
                 self.tmin = cpstat.tmin
+                self.tmin_disp = cpstat.tmin_compo
                 self.t_interval = cpstat.t_interval
                 self.sw_width_mean = cpstat.sw_width
             self.sw_width_ews = sw_width_ews
@@ -122,9 +126,9 @@ class TimeSeries(object):
         cumul_sum = np.cumsum(self.val)  # cumsum[i] is the sum of values in indices [0, i] with i included
         mean_sliding[0] = self.val[0]
         mean_sliding[1:(sw+1)] = cumul_sum[0:sw] / np.arange(1, sw+1)
-        mean_sliding[(sw+1):] = (cumul_sum[sw:] - cumul_sum[:-sw]) / float(sw)  # CHECK THAT BEG IDX
+        mean_sliding[(sw+1):] = (cumul_sum[sw:-1] - cumul_sum[:(-sw-1)]) / float(sw)
 
-        self.ratio_to_sw_mean = self.val / mean_sliding
+        self.ratio_to_sw_mean = util.divide_treatzero(self.val, mean_sliding, 1, 1)
 
     def set_t_pts(self):
         self.t_pts = np.arange(self.tmin, self.tmin + self.n_pts * self.t_interval - 1e-4, self.t_interval)
@@ -153,14 +157,14 @@ class TimeSeries(object):
         autocorrelation = x.rolling(window=self.sw_width_ews, min_periods=1).apply(lambda y: y.autocorr())
         self.autocorrelation = np.array(autocorrelation)
 
-    def plot1d(self, xlog=False, xmin=None, ylog=False, ymin=None, ymax=None, save=True, hline=None, vline=None, ibeg_remove=0, iend_remove=0):
+    def plot1d(self, xlog=False, ylog=False, ymin=None, ymax=None, save=True, hline=None, vline=None, ibeg_remove=0, iend_remove=0):
         if self.t_pts is None:
             self.set_t_pts()
 
         iend = self.n_pts - iend_remove
         plot.draw_1d(self.t_pts[ibeg_remove:iend], self.val[ibeg_remove:iend],
                      xlab='Time [s]', ylab=self.desc_short,
-                     xlog=xlog, xmin=xmin,
+                     xlog=xlog, xmin=self.tmin_disp,
                      ylog=ylog, ymin=ymin, ymax=ymax,
                      hline=hline, vline=vline,
                      save=(self.savename if save else '')

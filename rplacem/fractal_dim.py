@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-
+import rplacem.time_series as ts
 
 def max_box_size(im_width, im_height,
                  comp_dim_frac=0.1,
@@ -195,21 +195,21 @@ def calc_fractal_dim_values(dom_colors, color_frac, fractal_dim,
     return fractal_vals_res
 
 
-def calc_from_image(true_image, shift_avg=True, calc_mean_weighted_only=True):
+def calc_from_image(cpst, shift_avg=True, calc_mean_weighted_only=True):
     '''
     Calculates and returns selected fractal dimension summary variables
     given only the input image over time
     '''
     # get the number of boxes touched per box size
-    num_boxes_touched, box_size = count_num_box_touch(true_image, shift_avg=shift_avg)
+    num_boxes_touched, box_size = count_num_box_touch(cpst.true_image, shift_avg=shift_avg)
 
     # calculate the fractal dimension for each color
     fractal_dim = calc_fractal_dim(box_size, num_boxes_touched)
 
     # calculate dominant colors for fractal dimension summary values
-    dom_color_frac, dom_colors, color_frac = get_dom_colors(true_image)
+    _, dom_colors, color_frac = get_dom_colors(cpst.true_image)
 
-    # calcualte fractal dimension summary values
+    # calculate fractal dimension summary values
     [fractal_dim_mask_mean,
      fractal_dim_weighted] = calc_fractal_dim_values(dom_colors, color_frac, fractal_dim,
                                                      calc_mean_weighted_only=calc_mean_weighted_only)

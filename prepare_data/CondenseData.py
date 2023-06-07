@@ -6,7 +6,7 @@ import shutil
 import numpy as np
 import glob,os
 
-datapath = os.path.join(os.getcwd(),'data/')
+datapath = os.path.join(os.getcwd(),'data/original_data/')
 fname_base = '2022_place_canvas_history-0000000000'
 minimal_second = 45850 #number of seconds before start in the first day
 

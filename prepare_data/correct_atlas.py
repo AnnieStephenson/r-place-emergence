@@ -1,7 +1,7 @@
 import shutil
 
 # Read in the file
-with open('../data/atlas.json', 'r') as file :
+with open('../data/atlas_cp.json', 'r') as file :
   filedata = file.read()
 
 # Replace the target string

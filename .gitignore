@@ -104,6 +104,8 @@ test/*.pickle
 # large data files
 data/userIDsFromIdx.json
 data/userDict.json
+data/oldcompstats/
+data/atlas_cp.json
 
 # additional scripts
 my_scripts/
