@@ -69,7 +69,7 @@ class CanvasPartStatistics(object):
         time normalisation (t_interval / t_unit).
             Set in __init__()
     tmin, tmax: floats
-        time range on which to compute the variables. 
+        time range on which to compute the variables.
         Must be before the time of the first pixel change in the composition.
             Set in __init__()
     tmin_compo: float
@@ -209,7 +209,7 @@ class CanvasPartStatistics(object):
             Set in ratios_and_normalizations()
     frac_users_new_vs_previoustime
     frac_users_new_vs_sw : TimeSeries, n_pts = n_t_bins+1
-        Fraction of unique users in this timestep that were also active in the last timestep, 
+        Fraction of unique users in this timestep that were also active in the last timestep,
         or in the preceding sliding window
             Set in ratios_and_normalizations()
     n_users_new_vs_previoustime
@@ -218,7 +218,7 @@ class CanvasPartStatistics(object):
         Kept if compute_vars['attackdefense'] > 1
             Set in comp.main_variables()
     changes_per_user_sw : TimeSeries, n_pts = n_t_bins+1
-        number of pixel changes per unique user active within the preceding 
+        number of pixel changes per unique user active within the preceding
         sliding window (including the present timestep)
             Set in ratios_and_normalizations()
     frac_attackonly_users
@@ -306,7 +306,8 @@ class CanvasPartStatistics(object):
                  renew=True,
                  dont_keep_dir=False,
                  flattening='hilbert_pkg',
-                 compression='LZ77'
+                 compression='LZ77',
+                 use_start_pixels=False
                  ):
         '''
         cpart : CanvasPart object
@@ -341,16 +342,21 @@ class CanvasPartStatistics(object):
         dirpath = os.path.join(var.FIGS_PATH, str(cpart.out_name()))
         dir_exists = util.make_dir(dirpath, renew)
 
+        if use_start_pixels:
+            start_pixels = cpart.start_pixels()
+        else:
+            start_pixels = None
+
         self.compute_vars = compute_vars
         self.verbose = verbose
         self.area = len(cpart.coords[0])
         self.area_rectangle = cpart.width(0) * cpart.width(1)
-        self.tmin = cpart.minimum_time()
-        self.tmin_compo = cpart.minimum_time(atlas_tmin=True)
-        self.tmax = tmax
+        self.tmin, self.tmax = cpart.min_max_time(atlas_tmin=True)  # added atlas_tmin=True because we don't want to start looking at the beginning of quadrant for each comp
+        self.tmin_compo, _ = cpart.min_max_time(atlas_tmin=True)
+        #self.tmax = tmax
         self.t_interval = t_interval # seconds
         self.n_t_bins = math.ceil((self.tmax - self.tmin) / self.t_interval)
-        self.t_lims = np.arange(self.tmin, tmax + self.t_interval, self.t_interval)
+        self.t_lims = self.calc_t_lims()
         self.t_unit = timeunit
         self.t_norm = self.t_interval / self.t_unit
         self.sw_width = int(sliding_window/self.t_interval)
@@ -380,6 +386,7 @@ class CanvasPartStatistics(object):
         self.n_users_total = None
         self.n_bothattdef_users = ts.TimeSeries()
         self.n_defense_users = ts.TimeSeries()
+        self.n_attack_users = ts.TimeSeries()
         self.returntime = None
         self.cumul_attack_timefrac = ts.TimeSeries()
 
@@ -406,7 +413,8 @@ class CanvasPartStatistics(object):
         # Magic happens here
         comp.main_variables(cpart, self, print_progress=self.verbose, delete_dir=dont_keep_dir,
                             flattening=flattening,
-                            compression=compression)
+                            compression=compression,
+                            start_pixels=start_pixels)
 
         # ratio variables and normalizations
         self.ratios_and_normalizations()
@@ -431,7 +439,7 @@ class CanvasPartStatistics(object):
                 self.refimage_pretrans = None
                 self.refimage_posttrans = None
         else:
-            self.n_transitions == 0            
+            self.n_transitions == 0
 
         # find continuous time ranges over which the border_path of the composition does not change significantly
         self.stable_borders_timeranges = cpart.stable_borderpath_timeranges()
@@ -441,6 +449,7 @@ class CanvasPartStatistics(object):
             self.returntime = None
             self.n_defense_changes = ts.TimeSeries()
             self.n_defense_users = ts.TimeSeries()
+            self.n_attack_users = ts.TimeSeries()
             self.n_bothattdef_users = ts.TimeSeries()
             self.n_users_sw = ts.TimeSeries()
             self.n_users_new_vs_previoustime = ts.TimeSeries()
@@ -454,11 +463,24 @@ class CanvasPartStatistics(object):
             self.diff_pixels_inst_vs_inst = ts.TimeSeries()
             self.diff_pixels_inst_vs_stable = ts.TimeSeries()
         if compute_vars['entropy'] < 2:
-            self.true_image = None       
+            self.true_image = None
 
         # remove directory if it did not exist before and if dont_keep_dir
         if (not dir_exists) and dont_keep_dir:
             shutil.rmtree(dirpath)
+
+    def calc_t_lims(self, eps=0.01):
+        '''
+        Calculate the t_lims. The last t_lim is t_max, even
+        if that means altering the size of the last interval between times
+        '''
+
+        # Subtract eps to make sure the final value stays under tmax + t_interval
+        t_lims = np.arange(self.tmin, self.tmax + self.t_interval - eps, self.t_interval)
+
+        # Final value should be tmax, even if it means the last time interval is not equal to the rest
+        t_lims[-1] = self.tmax
+        return t_lims
 
     def checks_warnings(self):
         if np.any(np.diff(self.t_lims) < 0):
@@ -536,7 +558,7 @@ class CanvasPartStatistics(object):
 
     def search_transitions(self, cpart):
         par = self.transition_param
-        transitions = tran.find_transitions(self.t_lims, 
+        transitions = tran.find_transitions(self.t_lims,
                                             self.frac_pixdiff_inst_vs_swref.val, self.frac_pixdiff_inst_vs_swref_forwardlook.val,
                                             tmin_compo=self.tmin_compo,
                                             cutoff=par[0], cutoff_stable=par[1], len_stableregion=par[2], distfromtrans_stableregion=par[3])
@@ -549,7 +571,7 @@ class CanvasPartStatistics(object):
         self.refimage_posttrans = cpart.white_image(3, images_number=self.n_transitions)
         self.refimage_intrans = cpart.white_image(3, images_number=self.n_transitions) if trans > 1 else None
         self.frac_diff_pixels_pre_vs_post_trans = np.empty(self.n_transitions)
-        
+
         self.trans_start_time = np.empty(self.n_transitions) if self.keep_all_basics() else None
         self.trans_start_tind = np.empty(self.n_transitions, dtype=np.int64) if self.keep_all_basics() else None
 
@@ -561,7 +583,7 @@ class CanvasPartStatistics(object):
             end_pretrans_sw_ind = min(self.transition_tinds[j][1], int(var.TIME_WHITEONLY))
             end_posttrans_sw_ind = min(self.transition_tinds[j][4] + self.sw_width, self.n_t_bins)
             active_coords = cpart.active_coord_inds(self.t_lims[end_pretrans_sw_ind], self.t_lims[end_posttrans_sw_ind])
-            self.frac_diff_pixels_pre_vs_post_trans[j] = np.count_nonzero(self.refimage_sw_flat[end_pretrans_sw_ind][active_coords] 
+            self.frac_diff_pixels_pre_vs_post_trans[j] = np.count_nonzero(self.refimage_sw_flat[end_pretrans_sw_ind][active_coords]
                                                                         - self.refimage_sw_flat[end_posttrans_sw_ind][active_coords]) / self.area
 
             if trans > 1:
