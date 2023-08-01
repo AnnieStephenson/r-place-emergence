@@ -8,6 +8,7 @@ import json
 import shutil
 from PIL import Image
 import pickle
+import logging
 
 
 def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
@@ -96,7 +97,8 @@ def save_movie(image_path,
                fps=1,
                movie_tool='moviepy',
                codec='libx264',
-               video_type='mp4'):
+               video_type='mp4',
+               logger=None):
     '''
     Save movie of .png images in the path.
 
@@ -121,7 +123,7 @@ def save_movie(image_path,
         if 'imsc' not in sys.modules:
             import moviepy.video.io.ImageSequenceClip as imsc
         clip = imsc.ImageSequenceClip(image_files, fps=fps)
-        clip.write_videofile(movie_file, codec=codec)
+        clip.write_videofile(movie_file, codec=codec, logger=logger)
 
     if movie_tool == 'ffmpeg-python':
         # frames may not be in order

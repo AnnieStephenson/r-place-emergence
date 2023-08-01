@@ -6,6 +6,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import rplacem.variables_rplace2022 as var
 import rplacem.utilities as util
+import copy
+
 
 class AtlasInfo(object):
     '''
@@ -25,16 +27,16 @@ class AtlasInfo(object):
     '''
 
     def __init__(self,
-                 id='', 
-                 border_path=[[[]]], 
+                 id='',
+                 border_path=[[[]]],
                  border_path_times=np.array([[0, var.TIME_TOTAL]]),
-                 border_path_orig=[[[]]], 
+                 border_path_orig=[[[]]],
                  border_path_times_orig=np.array([[0, var.TIME_TOTAL]]),
-                 description='', 
+                 description='',
                  atlasname='',
                  links=''
                  ):
-        
+
         self.id = id
 
         self.border_path = np.array(border_path, np.int16)
@@ -49,6 +51,7 @@ class AtlasInfo(object):
         self.description = description
         self.atlasname = atlasname
         self.links = links
+
 
 class CanvasPart(object):
     '''
@@ -569,20 +572,52 @@ class CanvasPart(object):
         ''' number of pixels of the canvas part that are active at some time '''
         return self.coords.shape[1]
 
-    def white_image(self, dimension=2, images_number=1):
+    def white_image(self, dimension=2, images_number=None):
         ''' Creates a white image of the size of the canvas part.
         It can be a 1D array of the length of the coordinates;
         or a 2D array being the actual pixels/image of the part;
         or a 3D array containing [images_number] of these 2D images. '''
         if dimension == 1:
-                return np.full(self.num_pix(), var.WHITE, dtype=np.int8)
+            return np.full(self.num_pix(), var.WHITE, dtype=np.int8)
         if dimension == 2:
-            if images_number == 1:
+            if images_number is None:
                 return np.full((self.width(1), self.width(0)), var.WHITE, dtype=np.int8)
             else:
                 return np.full((images_number, self.num_pix()), var.WHITE, dtype=np.int8)
         if dimension == 3:
+            if images_number is None:
+                images_number = 1
             return np.full((images_number, self.width(1), self.width(0)), var.WHITE, dtype=np.int8)
+
+    def start_pixels(self):
+        '''Create the image of the canvas part at an arbitrary time
+        Useful to use as starting pixels when calculating the main variables in
+        CanvasPartStatistics'''
+
+        tmin = self.min_max_time(atlas_tmin=True)[0]
+
+        inds = np.where(self.pixel_changes['seconds'] < tmin)[0]
+
+        # 4. and make a copy of pixel_changes that only takes the changes from those indices and columms: coord_index, times, color
+        pixch = np.zeros(len(inds),
+                         dtype=np.dtype([('seconds', np.float64),
+                                         ('coord_index', np.uint16 if len(self.coords[0]) < 65530 else np.uint32),
+                                         ('color', np.uint8)]))
+        pixch['seconds'] = tmin-self.pixel_changes['seconds'][inds]
+        pixch['coord_index'] = self.pixel_changes['coord_index'][inds]
+        pixch['color'] = self.pixel_changes['color'][inds]
+
+        # 5. sort the new pixelchanges by seconds, do unique to get index, and take only smallest index
+        tdiff_pixch_sort = np.sort(pixch, order='seconds')
+        _, smallest_inds = np.unique(tdiff_pixch_sort['coord_index'], return_index=True)
+        pixch_current = tdiff_pixch_sort[smallest_inds]
+
+        # 6. then get pixel changes
+        current_colors = 31*np.ones(self.coords.shape[1], dtype='int8')
+        current_colors[pixch_current['coord_index']] = pixch_current['color']
+
+        return current_colors
+
 
     def set_quarters_coord_inds(self, rerun=False):
         ''' Set the attributes quarter1_coordinds, quarter2_coordinds, quarter34_coordinds '''
@@ -591,7 +626,7 @@ class CanvasPart(object):
             self.quarter2_coordinds = np.where((self.coords[0]>=1000) & (self.coords[1]<1000))
             self.quarter34_coordinds = np.where(self.coords[1]>=1000)
 
-    def minimum_time(self, atlas_tmin=False):
+    def min_max_time(self, atlas_tmin=False):
         '''
         Returns first time that the composition is on
         '''
@@ -603,10 +638,13 @@ class CanvasPart(object):
             else:
                 tmin_quarters = var.TIME_ENLARGE2
         if atlas_tmin:
-            return max(np.min(self.info.border_path_times[:, 0]), tmin_quarters)
+            tmin = max(np.min(self.info.border_path_times[:, 0]), tmin_quarters)
+            tmax = min(np.max(self.info.border_path_times[:, 1]), var.TIME_WHITEONLY) # TODO: add option to extend to end of canvas
         else:
-            return tmin_quarters
-    
+            tmin = tmin_quarters
+            tmax = var.TIME_TOTAL
+        return tmin, tmax
+
     def stable_borderpath_timeranges(self):
         '''
         Returns list of continuous timeranges in which the border_path changes at most of 10%
@@ -624,7 +662,7 @@ class CanvasPart(object):
                     stab_timeranges.append(times)
 
         return np.array(stab_timeranges)
-    
+
     def save_object(self):
         '''
         save the whole CanvasPart object in a pickle file
@@ -692,7 +730,7 @@ def get_atlas_border(id_index=-1, id='', atlas=None, addtime_before=0, addtime_a
                     id_index = i
                     break
             if id_index == -1:
-                raise ValueError('ERROR: given id has not been found in atlas!')    
+                raise ValueError('ERROR: given id has not been found in atlas!')
     elif id != '':
         raise ValueError('ERROR: only one of the id_index or id should be given as argument!')
 
@@ -701,8 +739,8 @@ def get_atlas_border(id_index=-1, id='', atlas=None, addtime_before=0, addtime_a
     times = []
     vals = []
     for k,v in paths.items():
-        if (k == 'T:0-1') and (len(paths.keys()) == 1): # if there is only one path and it has weird time tag, set it to widest timerange
-            times.append([0., var.TIME_TOTAL])
+        if (k == 'T:0-1' or k == 'T') and (len(paths.keys()) == 1): # if there is only one path and it has weird time tag, set it to widest timerange
+            times.append([0., var.TIME_TOTAL]) # TODO: should cause issues if comp is in other than 1st quadrant
             vals.append(v)
             break
         t0t1_list = k.split(',')
@@ -712,24 +750,25 @@ def get_atlas_border(id_index=-1, id='', atlas=None, addtime_before=0, addtime_a
             t0t1 = t0t1.split('-')
             t0 = t0t1[0]
             t1 = t0t1[1] if len(t0t1) > 1 else t0
-            times.append([1800*(int(t0)-1), 1800*int(t1)])
+            times.append([1800*(int(t0)-1), 1800*int(t1)]) # TODO: why subtract 1 from the initial t0?
             vals.append(v)
-
-    # textual info from atlas  
+    # textual info from atlas
     description = atlas[id_index]['description']
     atlasname = atlas[id_index]['name']
     links = atlas[id_index]['links']
     id = atlas[id_index]['id']
 
     times = np.array(times, dtype=np.float64)
+
     # sort paths and times by increasing time ranges
     sort_idx = times[:,0].argsort() # sort according to first column
     times = times[sort_idx]
-    for i in range(0, len(vals)): # not a numpy array yet, so the for loop is needed
-        vals[i] = vals[sort_idx[i]]
+    vals_copy = copy.deepcopy(vals) # create a copy to avoid modifying original array as you sort
+    for i in range(0, len(vals)): # not a numpy array yet, so the for loop is needed #
+        vals[i] = vals_copy[sort_idx[i]]
 
     # separate border paths so that each piece is continuous in time and each piece is adjacent in space
-    (paths, paths_time) = avoid_location_jump(border_path=vals, border_path_times=times)    
+    (paths, paths_time) = avoid_location_jump(border_path=vals, border_path_times=times)
     n_paths = len(paths)
 
     if(len(paths) > 1):
@@ -748,10 +787,11 @@ def get_atlas_border(id_index=-1, id='', atlas=None, addtime_before=0, addtime_a
             bpt[-1][1] = min(var.TIME_TOTAL, bpt[-1][1] + addtime_after)
         #print(j, bp, bpt)
         # AtlasInfo with the new border_path
-        atlas_info_out.append( AtlasInfo(id=str(id) + ('' if n_paths == 1 else ('_part'+str(j+1))), 
-                                         border_path=bp, border_path_times=bpt, 
+        atlas_info_out.append( AtlasInfo(id=str(id) + ('' if n_paths == 1 else ('_part'+str(j+1))),
+                                         border_path=bp, border_path_times=bpt,
                                          border_path_orig=vals, border_path_times_orig=times,
-                                         description=description, atlasname=atlasname, links=links)
+                                         description=description, atlasname=atlasname,
+                                         links=links)
                               )
 
     return atlas_info_out
@@ -769,7 +809,7 @@ def compare_border_paths(b1, b2):
     xmax = max(b1[:,0].max(), b2[:,0].max())
     ymin = min(b1[:,1].min(), b2[:,1].min())
     ymax = max(b1[:,1].max(), b2[:,1].max())
-    
+
     mask1 = np.zeros((ymax-ymin+1, xmax-xmin+1))
     mask2 = np.zeros((ymax-ymin+1, xmax-xmin+1))
     cv2.fillPoly(mask1, pts=np.int32( [np.add(b1, np.array([ -int(xmin), -int(ymin)]) )] ), color=[1])
@@ -781,7 +821,7 @@ def compare_border_paths(b1, b2):
 
 def avoid_location_jump(border_path, border_path_times):
     '''
-    Returns a list of lists of border paths, where there is no location within a given list of border paths.
+    Returns a list of lists of border paths, where there is no location jump within a given list of border paths.
     Also removes the time holes for border paths that are similar enough.
     '''
     if len(border_path) < 2:
@@ -789,14 +829,14 @@ def avoid_location_jump(border_path, border_path_times):
     else:
         border_path_list = [[border_path[0]]]
         border_path_times_list = [[border_path_times[0]]]
-        
+
         # add border paths in continuity with previous ones, or in brand new list of border paths
         for i in range(1, len(border_path)):
             frac_common_pix = 0
             decrement = len(border_path_list) - 1
             while frac_common_pix == 0 and decrement >= 0:
-                # compare this border path to the most recent one of already recorded list of border paths 
-                frac_common_pix = compare_border_paths(border_path[i], border_path_list[decrement][-1])
+                # compare this border path to the most recent one of already recorded list of border paths
+                frac_common_pix = compare_border_paths(border_path[i], border_path_list[decrement][-1]) # TODO: technically should compare all borderpaths to all borderpaths?
                 decrement -= 1
             if decrement == -1 and frac_common_pix == 0: # no pixel in common with a previous border path was found: brand new border_path list
                 border_path_list.append([border_path[i]])
@@ -811,7 +851,7 @@ def avoid_location_jump(border_path, border_path_times):
                 bp = border_path_list[i][j]
                 bp_prev = border_path_list[i][j-1]
                 # if border path is the same than previous one, remove it and merge timeranges
-                if bp == bp_prev: 
+                if bp == bp_prev:
                     border_path_list[i].pop(j)
                     border_path_times_list[i][j-1] = [border_path_times_list[i][j-1][0], border_path_times_list[i][j][1]]
                     border_path_times_list[i].pop(j)
@@ -833,8 +873,8 @@ def get_is_rectangle(border):
         and (border[0][2][0] == border[0][3][0] or border[0][2][1] == border[0][3][1])
         and (border[0][3][0] == border[0][0][0] or border[0][3][1] == border[0][0][1])
             ):
-            isrect = True   
-    return isrect     
+            isrect = True
+    return isrect
 
 def correct_almost_rectangles(border):
     ''' If a single border_path almost (within 2 pixels) draws a rectangle, transform it into being a rectangle'''
@@ -844,9 +884,9 @@ def correct_almost_rectangles(border):
         (abs(border[1][0] - border[2][0]) > 10 or abs(border[1][1] - border[2][1]) > 10) # second dimension larger than 10
 
         and (abs(border[0][0] - border[1][0]) <= 2 or abs(border[0][1] - border[1][1]) <= 2) # max 2 pixels of deviation from rectangle
-        and (abs(border[1][0] - border[2][0]) <= 2 or abs(border[1][1] - border[2][1]) <= 2) 
-        and (abs(border[2][0] - border[3][0]) <= 2 or abs(border[2][1] - border[3][1]) <= 2) 
-        and (abs(border[3][0] - border[0][0]) <= 2 or abs(border[3][1] - border[0][1]) <= 2) 
+        and (abs(border[1][0] - border[2][0]) <= 2 or abs(border[1][1] - border[2][1]) <= 2)
+        and (abs(border[2][0] - border[3][0]) <= 2 or abs(border[2][1] - border[3][1]) <= 2)
+        and (abs(border[3][0] - border[0][0]) <= 2 or abs(border[3][1] - border[0][1]) <= 2)
         ):
 
         x1 = np.min(np.array(border)[:,0])

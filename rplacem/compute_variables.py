@@ -110,7 +110,6 @@ def calc_time_spent_in_color(cpart, seconds, color, pixch_coord_inds,
     For each timestep, it contains the time that each pixel spent in each color
     Also updates last_time_installed_sw pointer.
     '''
-
     # Get variables from canvas_part and set shorter names
     coord_range = np.arange(0, cpart.num_pix())
     time_spent_in_color = np.zeros((cpart.num_pix(), var.NUM_COLORS), dtype='float64')
@@ -260,7 +259,7 @@ def main_variables(cpart,
         save_memory = (cpart.num_pix() > 3e5) # do the slower memory-saving method when the canvaspart is larger than 300,000 pixels
 
     # Some warnings for required conditions of use of the function
-    if (not np.isclose(t_lims[0], cpart.minimum_time(), atol=1e-4)) and start_pixels is None:
+    if (not np.isclose(t_lims[0], cpart.min_max_time(atlas_tmin=True)[0], atol=1e-4)) and start_pixels is None: # TODO: check that we both agree to adding atlas_min=True here
         warnings.warn('t_lims parameter should start with the minimum time of the CanvasPart, or the start_pixels should be provided, for standard functioning.')
     if delete_dir and (instant > 2 or stab > 2 or attdef > 2):
         warnings.warn('Some images were required to be stored, but with delete_dir=True, the full directory will be removed! ')
@@ -313,6 +312,7 @@ def main_variables(cpart,
     cpst.n_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.n_bothattdef_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.n_defense_users = cpst.ts_init(np.zeros(n_tlims))
+    cpst.n_attack_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.frac_attack_changes_image = np.full((n_tlims, cpart.width(1), cpart.width(0)), 1, dtype=np.float16) if attdef > 1 else None
     cpst.size_uncompressed = cpst.ts_init(np.zeros(n_tlims))
     cpst.size_compressed = cpst.ts_init(np.zeros(n_tlims))
@@ -458,7 +458,7 @@ def main_variables(cpart,
             mask_attdef[np.intersect1d(inds_coor_active, np.where(current_color == ref_color)[0])] = True # indices where pixels are in a defense color
             cpst.returntime[i][mask_attdef] = last_time_installed_sw[ref_color[mask_attdef], mask_attdef] \
                                               - last_time_removed_sw[ref_color[mask_attdef], mask_attdef]
-            
+
             mask_attdef[:] = False
             mask_attdef[np.intersect1d(inds_coor_active, np.where(current_color != ref_color)[0])] = True # indices where pixels are in an attack color
             cpst.returntime[i][mask_attdef] = t_lims[i] - last_time_removed_sw[ref_color[mask_attdef], mask_attdef]
@@ -475,11 +475,15 @@ def main_variables(cpart,
             num_changes_and_users(cpart, i, timerange_str,
                                   user, pixch_coord_inds, pixch_2Dcoor_offset, color,
                                   t_inds_active, ref_color,
-                                  cpst.n_changes.val, cpst.n_defense_changes.val,
-                                  cpst.n_users.val, cpst.n_bothattdef_users.val, cpst.n_defense_users.val,
+                                  cpst.n_changes.val,
+                                  cpst.n_defense_changes.val,
+                                  cpst.n_users.val,
+                                  cpst.n_bothattdef_users.val,
+                                  cpst.n_defense_users.val,
+                                  cpst.n_attack_users.val,
                                   cpst.frac_attack_changes_image,
                                   attdef > 1, (cpart_dir(out_dir_attdef) if attdef > 2 else ''))
-            
+
             # Compare number of unique users to that in the previous timestep or sliding window
             users_now = user[t_inds_active]
             i_prev = (i-1) % cpst.sw_width
@@ -594,10 +598,20 @@ def num_changes_and_users(cpart, t_step, time_str,
                           user, pixch_coord_inds, pixch_2Dcoor_offset, color,
                           t_inds_active, ref_image,
                           num_changes, num_defense_changes,
-                          num_users, num_attackdefense_users, num_defenseonly_users,
+                          num_users, num_attackdefense_users,
+                          num_defenseonly_users,
+                          num_attackonly_users,
                           pixels_fracattack,
                           save_ratio_pixels, save_ratio_images=''):
     '''
+    num_changes_and_users(cpart, i, timerange_str,
+                                  user, pixch_coord_inds, pixch_2Dcoor_offset, color,
+                                  t_inds_active, ref_color,
+                                  cpst.n_changes.val, cpst.n_defense_changes.val,
+                                  cpst.n_users.val, cpst.n_bothattdef_users.val,
+                                  cpst.n_defense_users.val, cpst.n_attack_users.val,
+                                  cpst.frac_attack_changes_image,
+                                  attdef > 1, (cpart_dir(out_dir_attdef) if attdef > 2 else ''))
     Modifies multiple variables dealing with the number of pixel changes and users
     and their relation to the provided reference (stable) image
 
@@ -636,6 +650,7 @@ def num_changes_and_users(cpart, t_step, time_str,
     attackdefense_users = np.intersect1d(attack_users, defense_users)
     num_attackdefense_users[t_step] = len(attackdefense_users)
     num_defense_users = len(defense_users)
+    num_attackonly_users[t_step] = len(attack_users) - num_attackdefense_users[t_step]
     num_defenseonly_users[t_step] = num_defense_users - num_attackdefense_users[t_step]
 
     # count attack and defense changes for each pixel of the canvas
