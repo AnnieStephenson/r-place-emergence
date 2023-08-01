@@ -69,11 +69,8 @@ class CanvasPartStatistics(object):
         time normalisation (t_interval / t_unit).
             Set in __init__()
     tmin, tmax: floats
-        time range on which to compute the variables.
-        Must be before the time of the first pixel change in the composition.
+        time range of the composition, on which to compute the variables.
             Set in __init__()
-    tmin_compo: float
-        minimum time of the composition, will be used for display and selecting relevant timerange to study composition
     sw_width_sec: float
         Size [in seconds] of the sliding window over which the sliding reference image is computed
     sw_width: int
@@ -227,7 +224,7 @@ class CanvasPartStatistics(object):
         fraction of n_users that contributed pixels that are consistent refimage_sw,
         or not (attackonly), or fraction of users that did both (bothattdef)
             Set in ratios_and_normalizations()
-    n_defense_users
+    n_defenseonly_users
     n_attack_users
     n_bothattdef_users :
         Same as above, but without dividing by n_users.
@@ -307,7 +304,6 @@ class CanvasPartStatistics(object):
                  dont_keep_dir=False,
                  flattening='hilbert_pkg',
                  compression='LZ77',
-                 use_start_pixels=False
                  ):
         '''
         cpart : CanvasPart object
@@ -342,18 +338,16 @@ class CanvasPartStatistics(object):
         dirpath = os.path.join(var.FIGS_PATH, str(cpart.out_name()))
         dir_exists = util.make_dir(dirpath, renew)
 
-        if use_start_pixels:
-            start_pixels = cpart.start_pixels()
-        else:
-            start_pixels = None
-
         self.compute_vars = compute_vars
         self.verbose = verbose
         self.area = len(cpart.coords[0])
         self.area_rectangle = cpart.width(0) * cpart.width(1)
-        self.tmin, self.tmax = cpart.min_max_time(atlas_tmin=True)  # added atlas_tmin=True because we don't want to start looking at the beginning of quadrant for each comp
-        self.tmin_compo, _ = cpart.min_max_time(atlas_tmin=True)
-        #self.tmax = tmax
+        self.tmin, self.tmax = cpart.min_max_time(tmax_global=tmax)
+        if self.tmin > 1e-4:
+            start_pixels = cpart.start_pixels()
+        else:
+            start_pixels = None
+
         self.t_interval = t_interval # seconds
         self.n_t_bins = math.ceil((self.tmax - self.tmin) / self.t_interval)
         self.t_lims = self.calc_t_lims()
@@ -385,7 +379,7 @@ class CanvasPartStatistics(object):
         self.n_users = ts.TimeSeries()
         self.n_users_total = None
         self.n_bothattdef_users = ts.TimeSeries()
-        self.n_defense_users = ts.TimeSeries()
+        self.n_defenseonly_users = ts.TimeSeries()
         self.n_attack_users = ts.TimeSeries()
         self.returntime = None
         self.cumul_attack_timefrac = ts.TimeSeries()
@@ -448,7 +442,7 @@ class CanvasPartStatistics(object):
         if compute_vars['attackdefense'] < 2:
             self.returntime = None
             self.n_defense_changes = ts.TimeSeries()
-            self.n_defense_users = ts.TimeSeries()
+            self.n_defenseonly_users = ts.TimeSeries()
             self.n_attack_users = ts.TimeSeries()
             self.n_bothattdef_users = ts.TimeSeries()
             self.n_users_sw = ts.TimeSeries()
@@ -525,9 +519,9 @@ class CanvasPartStatistics(object):
 
         # attack-defense ratios
         self.frac_attack_changes = self.ts_init( util.divide_treatzero(self.n_changes.val - self.n_defense_changes.val, self.n_changes.val, 0.5, 0.5) )
-        self.frac_defenseonly_users = self.ts_init( util.divide_treatzero(self.n_defense_users.val - self.n_bothattdef_users.val, self.n_users.val, 0.5, 0.5) )
+        self.frac_defenseonly_users = self.ts_init( util.divide_treatzero(self.n_defenseonly_users.val - self.n_bothattdef_users.val, self.n_users.val, 0.5, 0.5) )
         self.frac_bothattdef_users = self.ts_init( util.divide_treatzero(self.n_bothattdef_users.val, self.n_users.val, 0.5, 0.5) )
-        self.frac_attackonly_users = self.ts_init( util.divide_treatzero(self.n_users.val - self.n_defense_users.val - self.n_bothattdef_users.val, self.n_users.val, 0.5, 0.5) )
+        self.frac_attackonly_users = self.ts_init( util.divide_treatzero(self.n_users.val - self.n_defenseonly_users.val - self.n_bothattdef_users.val, self.n_users.val, 0.5, 0.5) )
         # for entropy
         self.entropy = self.ts_init( util.divide_treatzero(self.size_compressed.val, self.area_vst.val) )
         self.entropy_bmpnorm = self.ts_init( util.divide_treatzero(self.size_compressed.val, self.size_uncompressed.val, 0, 0) )
@@ -560,7 +554,7 @@ class CanvasPartStatistics(object):
         par = self.transition_param
         transitions = tran.find_transitions(self.t_lims,
                                             self.frac_pixdiff_inst_vs_swref.val, self.frac_pixdiff_inst_vs_swref_forwardlook.val,
-                                            tmin_compo=self.tmin_compo,
+                                            tmin=self.tmin,
                                             cutoff=par[0], cutoff_stable=par[1], len_stableregion=par[2], distfromtrans_stableregion=par[3])
         self.transition_tinds = transitions[0]
         self.transition_times = transitions[1]

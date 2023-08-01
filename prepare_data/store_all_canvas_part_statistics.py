@@ -1,29 +1,30 @@
-import numpy as np
-import rplacem.canvas_part as cp
 import rplacem.canvas_part_statistics as stat
-import rplacem.utilities as util
 import rplacem.variables_rplace2022 as var
-import matplotlib.pyplot as plt
-import sys
 import os
-import glob
-import json
-import seaborn as sns
 import pickle
-import timeit
-import psutil
 import gc
-import cProfile
+import math
+import numpy as np
+import rplacem.utilities as util
 
-_, atlas_num = util.load_atlas()
-
+n_compositions = 12795
+'''
+with open(os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle'), 'rb') as f:
+    print('open file')
+    n_compositions = len(pickle.load(f))
+    print('close file')
+    f.close()
+    del f
+print(n_compositions)
+'''
 
 def store_comp_stats(beg, end):
     beg = int(beg)
-    end = min(int(end), atlas_num)
     periodsave = 100
 
-    for p in range(0, int((end-beg)/periodsave)):
+    end = min(int(end), n_compositions)
+
+    for p in range(0, math.ceil((end-beg)/periodsave)):
         with open(os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle'), 'rb') as f:
             print('open file')
             canvas_compositions = (pickle.load(f))[(beg+p*periodsave):min(end, beg+(p+1)*periodsave)]
@@ -33,7 +34,7 @@ def store_comp_stats(beg, end):
         canvas_comp_stat_list = []
 
         for i in range(0, periodsave):
-            if beg+p*periodsave+i > end:
+            if beg+p*periodsave+i >= end:
                 break
             cancomp = canvas_compositions[i]
             #print('beginning:  RAM memory % used:', psutil.virtual_memory()[2],   '   ',psutil.virtual_memory()[3]/1000000000)
@@ -83,13 +84,12 @@ parser.add_argument("-b", "--beginning", default=0)
 parser.add_argument("-e", "--end", default=1e6)
 args = parser.parse_args()
 
-store_comp_stats(args.beginning, args.end)
+#store_comp_stats(args.beginning, args.end)
 
-'''
-beg = np.array([i*100 for i in range(0,2)]) #until 9900
-end = beg+99
-end[-1] = atlas_num - 1
-filelist = [ os.path.join(var.DATA_PATH, 'canvas_composition_statistics_%sto%s.pickle' %(b, e)) for b,e in zip(list(beg),list(end))]
+
+beg = np.array([i*100 for i in range(0,128)])
+end_list = beg+99
+end_list[-1] = n_compositions - 1
+filelist = [ os.path.join(var.DATA_PATH, 'canvas_composition_statistics_%sto%s.pickle' %(b, e)) for b,e in zip(list(beg),list(end_list))]
 print(filelist)
 util.merge_pickles(filelist, os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all.pickle' )) #canvas_composition_statistics_all.pickle
-'''

@@ -84,7 +84,7 @@ cpstat.frac_pixdiff_inst_vs_inst_norm.plot1d(ymin=0)
 cpstat.frac_pixdiff_inst_vs_swref.plot1d(ymin=0)
 cpstat.frac_pixdiff_inst_vs_swref_forwardlook.plot1d(ymin=0)
 
-itmin = np.argmax(cpstat.t_lims >= cpstat.tmin_compo)
+itmin = np.argmax(cpstat.t_lims >= cpstat.tmin)
 plt.figure()
 plt.plot(cpstat.t_lims[itmin:], cpstat.frac_pixdiff_inst_vs_stable_norm.val[itmin:], label='inst. vs stable / 5 min')
 #plt.plot(cpstat.t_lims[itmin:], cpstat.frac_pixdiff_inst_vs_inst_norm.val[itmin:], label='inst. vs inst. / 5 min')

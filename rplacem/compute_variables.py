@@ -248,8 +248,8 @@ def main_variables(cpart,
     # Preliminaries
     t_lims = cpst.t_lims
     n_tlims = len(t_lims)
-    tmincomp = cpst.tmin_compo
-    itmin = np.argmax(t_lims >= tmincomp)
+    tmin = cpst.tmin
+    itmin = np.argmax(t_lims >= tmin)
     attdef = cpst.compute_vars['attackdefense']
     stab = cpst.compute_vars['stability']
     instant = cpst.compute_vars['entropy']
@@ -311,8 +311,8 @@ def main_variables(cpart,
     cpst.n_defense_changes = cpst.ts_init(np.zeros(n_tlims))
     cpst.n_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.n_bothattdef_users = cpst.ts_init(np.zeros(n_tlims))
-    cpst.n_defense_users = cpst.ts_init(np.zeros(n_tlims))
-    cpst.n_attack_users = cpst.ts_init(np.zeros(n_tlims))
+    cpst.n_defenseonly_users = cpst.ts_init(np.zeros(n_tlims))
+    cpst.n_attackonly_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.frac_attack_changes_image = np.full((n_tlims, cpart.width(1), cpart.width(0)), 1, dtype=np.float16) if attdef > 1 else None
     cpst.size_uncompressed = cpst.ts_init(np.zeros(n_tlims))
     cpst.size_compressed = cpst.ts_init(np.zeros(n_tlims))
@@ -479,8 +479,8 @@ def main_variables(cpart,
                                   cpst.n_defense_changes.val,
                                   cpst.n_users.val,
                                   cpst.n_bothattdef_users.val,
-                                  cpst.n_defense_users.val,
-                                  cpst.n_attack_users.val,
+                                  cpst.n_defenseonly_users.val,
+                                  cpst.n_attackonly_users.val,
                                   cpst.frac_attack_changes_image,
                                   attdef > 1, (cpart_dir(out_dir_attdef) if attdef > 2 else ''))
 
@@ -609,7 +609,7 @@ def num_changes_and_users(cpart, t_step, time_str,
                                   t_inds_active, ref_color,
                                   cpst.n_changes.val, cpst.n_defense_changes.val,
                                   cpst.n_users.val, cpst.n_bothattdef_users.val,
-                                  cpst.n_defense_users.val, cpst.n_attack_users.val,
+                                  cpst.n_defenseonly_users.val, cpst.n_attackonly_users.val,
                                   cpst.frac_attack_changes_image,
                                   attdef > 1, (cpart_dir(out_dir_attdef) if attdef > 2 else ''))
     Modifies multiple variables dealing with the number of pixel changes and users

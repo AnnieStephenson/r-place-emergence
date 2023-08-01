@@ -64,7 +64,7 @@ def merge_similar_transitions(transitions, require_same_posttrans=False):
 
 def find_transitions(t_lims, 
                      testvar_pre, testvar_post,
-                     tmin_compo=0,
+                     tmin=0,
                      cutoff=0.3, 
                      cutoff_stable=0.1,
                      len_stableregion=5*3600,
@@ -114,7 +114,7 @@ def find_transitions(t_lims,
     
     # transition and pre and post-transition stability conditions
     trans_cond = (np.array(testvar_pre) > cutoff)
-    testvar_pre_cond = np.array((np.array(testvar_pre) < cutoff_stable) & (t_lims >= tmin_compo))
+    testvar_pre_cond = np.array((np.array(testvar_pre) < cutoff_stable) & (t_lims >= tmin))
     testvar_post_cond = (np.array(testvar_post) < cutoff_stable) 
 
     # get the beg and end of sequences of at least len_stableregion indices that pass conditions
