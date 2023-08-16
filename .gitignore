@@ -107,6 +107,9 @@ data/userDict.json
 data/oldcompstats/
 data/atlas_cp.json
 
+# output of ML
+data/ML*.json
+
 # additional scripts
 my_scripts/
 

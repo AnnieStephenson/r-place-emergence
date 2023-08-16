@@ -20,8 +20,6 @@ class TimeSeries(object):
         This is filled only if set_t_pts() is run (if record_all==True in __init__())
     tmin: float
         minimum time (first element of t_pts)
-    tmin_disp: float
-        minimum time from which to display
     t_interval: float
         time interval (in seconds) between two times of t_pts
     sw_width_mean: int
@@ -85,12 +83,10 @@ class TimeSeries(object):
             self.n_pts = len(val)
             if cpstat is None:
                 self.tmin = tmin
-                self.tmin_disp = tmin
                 self.t_interval = t_interval
                 self.sw_width_mean = sw_width_mean
             else:
                 self.tmin = cpstat.tmin
-                self.tmin_disp = cpstat.tmin_compo
                 self.t_interval = cpstat.t_interval
                 self.sw_width_mean = cpstat.sw_width
             self.sw_width_ews = sw_width_ews
@@ -164,7 +160,7 @@ class TimeSeries(object):
         iend = self.n_pts - iend_remove
         plot.draw_1d(self.t_pts[ibeg_remove:iend], self.val[ibeg_remove:iend],
                      xlab='Time [s]', ylab=self.desc_short,
-                     xlog=xlog, xmin=self.tmin_disp,
+                     xlog=xlog, xmin=self.tmin,
                      ylog=ylog, ymin=ymin, ymax=ymax,
                      hline=hline, vline=vline,
                      save=(self.savename if save else '')

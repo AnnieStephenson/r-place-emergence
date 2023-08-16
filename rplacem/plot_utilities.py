@@ -318,7 +318,7 @@ def draw_1d(xdata,
 
 def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5, save=True):
 
-    itmin = np.argmax(cpstat.t_lims >= cpstat.tmin_compo)
+    itmin = np.argmax(cpstat.t_lims >= cpstat.tmin)
 
     fig, axes = plt.subplots(nrows, ncols, sharex=True, figsize=figsize)
 

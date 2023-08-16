@@ -18,6 +18,8 @@ class AtlasInfo(object):
     id
     border_path
     border_path_times
+    border_path_orig
+    border_path_times_orig
     description
     atlasname
     links
@@ -61,7 +63,7 @@ class CanvasPart(object):
     attributes
     ----------
     id : str
-        When specified, 'id' is the string from the atlas file that identifies a particular composition.
+        'id' is the string from the atlas file that identifies a particular composition, or an empty string when it is not from the atlas
             Set in __init__()
     is_rectangle : bool
         True if the boundaries of the canvas part are exactly rectangular (and that there is only one boundary for the whole time).
@@ -531,12 +533,15 @@ class CanvasPart(object):
     def out_name(self):
         ''' Returns standard name used to identify the composition (used in output paths).
         Is unique, except for user-defined border_path areas that are not rectangles.'''
-        if self.info.id != '':
+        if self.is_from_atlas():
             return str(self.info.id)
         elif self.is_rectangle:
             return 'rectangle_'+str(self.xmin)+'.'+str(self.ymin)+'_to_'+str(self.xmax)+'.'+str(self.ymax)
         else:
             return 'area_within_'+str(self.xmin)+'.'+str(self.ymin)+'_to_'+str(self.xmax)+'.'+str(self.ymax)
+        
+    def is_from_atlas(self):
+        return (self.info.id != '')
 
     def pixchanges_coords(self):
         ''' Returns the 2d array of the (x, y) coordinates of all pixel changes.
@@ -594,26 +599,26 @@ class CanvasPart(object):
         Useful to use as starting pixels when calculating the main variables in
         CanvasPartStatistics'''
 
-        tmin = self.min_max_time(atlas_tmin=True)[0]
+        tmin = self.min_max_time()[0]
 
-        inds = np.where(self.pixel_changes['seconds'] < tmin)[0]
+        # indices of pixch for which t<tmin, in reverse order (they are already time-sorted)
+        inds = np.flip( np.where(self.pixel_changes['seconds'] < tmin)[0] )
 
-        # 4. and make a copy of pixel_changes that only takes the changes from those indices and columms: coord_index, times, color
+        # make a copy of pixel_changes that only takes the changes from indices: inds, and columms: coord_index, time, color
         pixch = np.zeros(len(inds),
                          dtype=np.dtype([('seconds', np.float64),
                                          ('coord_index', np.uint16 if len(self.coords[0]) < 65530 else np.uint32),
                                          ('color', np.uint8)]))
-        pixch['seconds'] = tmin-self.pixel_changes['seconds'][inds]
+        pixch['seconds'] = self.pixel_changes['seconds'][inds] # sorted from tmin to t=0
         pixch['coord_index'] = self.pixel_changes['coord_index'][inds]
         pixch['color'] = self.pixel_changes['color'][inds]
 
-        # 5. sort the new pixelchanges by seconds, do unique to get index, and take only smallest index
-        tdiff_pixch_sort = np.sort(pixch, order='seconds')
-        _, smallest_inds = np.unique(tdiff_pixch_sort['coord_index'], return_index=True)
-        pixch_current = tdiff_pixch_sort[smallest_inds]
+        # Use unique to get index of the latest pixel change for each pixel coord
+        _, smallest_inds = np.unique(pixch['coord_index'], return_index=True)
+        pixch_current = pixch[smallest_inds]
 
-        # 6. then get pixel changes
-        current_colors = 31*np.ones(self.coords.shape[1], dtype='int8')
+        # Then get pixel changes
+        current_colors = self.white_image(dimension=1)
         current_colors[pixch_current['coord_index']] = pixch_current['color']
 
         return current_colors
@@ -626,23 +631,33 @@ class CanvasPart(object):
             self.quarter2_coordinds = np.where((self.coords[0]>=1000) & (self.coords[1]<1000))
             self.quarter34_coordinds = np.where(self.coords[1]>=1000)
 
-    def min_max_time(self, atlas_tmin=False):
+    def tmin_quadrant(self):
         '''
-        Returns first time that the composition is on
+        Returns the minimum time of the quadrant on which this composition is
         '''
         self.set_quarters_coord_inds()
-        tmin_quarters = 0
+
+        tmin = 0
         if len(self.quarter1_coordinds[0]) == 0:
             if len(self.quarter2_coordinds[0]) > 0:
-                tmin_quarters = var.TIME_ENLARGE1
+                tmin = var.TIME_ENLARGE1
             else:
-                tmin_quarters = var.TIME_ENLARGE2
-        if atlas_tmin:
-            tmin = max(np.min(self.info.border_path_times[:, 0]), tmin_quarters)
-            tmax = min(np.max(self.info.border_path_times[:, 1]), var.TIME_WHITEONLY) # TODO: add option to extend to end of canvas
+                tmin = var.TIME_ENLARGE2
+
+        return tmin
+
+    def min_max_time(self, tmax_global=var.TIME_WHITEONLY):
+        '''
+        Returns first and last time that the composition is on
+        '''
+
+        if self.is_from_atlas():
+            tmin = max(np.min(self.info.border_path_times[:, 0]), self.tmin_quadrant())
+            tmax = min(np.max(self.info.border_path_times[:, 1]), tmax_global)
         else:
-            tmin = tmin_quarters
-            tmax = var.TIME_TOTAL
+            tmin = self.tmin_quadrant()
+            tmax = tmax_global
+
         return tmin, tmax
 
     def stable_borderpath_timeranges(self):
@@ -750,7 +765,7 @@ def get_atlas_border(id_index=-1, id='', atlas=None, addtime_before=0, addtime_a
             t0t1 = t0t1.split('-')
             t0 = t0t1[0]
             t1 = t0t1[1] if len(t0t1) > 1 else t0
-            times.append([1800*(int(t0)-1), 1800*int(t1)]) # TODO: why subtract 1 from the initial t0?
+            times.append([1800*(int(t0)-1), 1800*int(t1)])
             vals.append(v)
     # textual info from atlas
     description = atlas[id_index]['description']
