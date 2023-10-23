@@ -219,6 +219,7 @@ def main_variables(cpart,
                    print_progress=False,
                    flattening='hilbert_pkg',
                    compression='LZ77',
+                   ref_im_const=None,
                    save_memory=None
                    ):
     '''
@@ -237,6 +238,9 @@ def main_variables(cpart,
         Remove directory after running, if it did not exist before
     print_progress : boolean, optional
         If True, prints a progress statement
+    ref_im_const : None or 2d array
+        If None, then the reference image used is calculated from the sliding window. If array, then the reference image
+        is the array passed for this variable.
     save_memory : boolean (by default, it is None and then initialized within the function)
         If True, an approach about 2.5x slower is used to store time_spent_in_color using much less RAM
 
@@ -259,7 +263,7 @@ def main_variables(cpart,
         save_memory = (cpart.num_pix() > 3e5) # do the slower memory-saving method when the canvaspart is larger than 300,000 pixels
 
     # Some warnings for required conditions of use of the function
-    if (not np.isclose(t_lims[0], cpart.min_max_time(atlas_tmin=True)[0], atol=1e-4)) and start_pixels is None: # TODO: check that we both agree to adding atlas_min=True here
+    if (not np.isclose(t_lims[0], cpart.min_max_time()[0], atol=1e-4)) and start_pixels is None: # TODO: check that we both agree to adding atlas_min=True here
         warnings.warn('t_lims parameter should start with the minimum time of the CanvasPart, or the start_pixels should be provided, for standard functioning.')
     if delete_dir and (instant > 2 or stab > 2 or attdef > 2):
         warnings.warn('Some images were required to be stored, but with delete_dir=True, the full directory will be removed! ')
@@ -278,7 +282,10 @@ def main_variables(cpart,
     coor_offset = cpart.coords_offset()  # for transformation from 1D to 2D pixels
 
     # Initialize variables for first time iteration
-    ref_color = cpart.white_image(1)  # reference image (stable over the sliding window)
+    if ref_im_const is None:
+        ref_color = cpart.white_image(1)  # reference image (stable over the sliding window)
+    else:
+        ref_color = ref_im_const
     current_color = cpart.white_image(1) if start_pixels is None else start_pixels
     if instant > 0 or tran > 0:
         previous_colors = cpart.white_image(2, images_number=cpst.sw_width) # image in the sw_width previous timesteps
@@ -316,6 +323,7 @@ def main_variables(cpart,
     cpst.frac_attack_changes_image = np.full((n_tlims, cpart.width(1), cpart.width(0)), 1, dtype=np.float16) if attdef > 1 else None
     cpst.size_uncompressed = cpst.ts_init(np.zeros(n_tlims))
     cpst.size_compressed = cpst.ts_init(np.zeros(n_tlims))
+    cpst.size_compr_stab_im = cpst.ts_init(np.zeros(n_tlims))
     cpst.cumul_attack_timefrac = cpst.ts_init(np.zeros(n_tlims))
     cpst.n_moderator_changes = cpst.ts_init( np.zeros(n_tlims) )
     cpst.n_cooldowncheat_changes = cpst.ts_init( np.zeros(n_tlims) )
@@ -443,7 +451,10 @@ def main_variables(cpart,
         time_spent_in_color_sw += time_spent_in_color
 
         # Calculate the new reference image
-        ref_color = calc_stable_cols(time_spent_in_color_sw)[:, 0]
+        if ref_im_const is None:
+            ref_color = calc_stable_cols(time_spent_in_color_sw)[:, 0]
+        else:
+            ref_color = ref_im_const
 
         if i < itmin - 1: # skip times where the composition is not on
             continue
@@ -560,11 +571,14 @@ def main_variables(cpart,
             inds_to_change2 = np.where(stable_timefrac[:, 2] < 1e-9)
             modify_some_pixels(cpst.third_stable_image, cpst.second_stable_image, i, inds_to_change2)
 
-            # Save images.
             if stab > 2:
+                # Save images.
                 util.pixels_to_image(cpst.stable_image[i], cpart_dir(out_dir_stab), 'MostStableColor_' + timerange_str + '.png')
                 util.pixels_to_image(cpst.second_stable_image[i], cpart_dir(out_dir_stab), 'SecondMostStableColor_' + timerange_str + '.png')
                 util.pixels_to_image(cpst.third_stable_image[i], cpart_dir(out_dir_stab), 'ThirdMostStableColor_' + timerange_str + '.png')
+
+                # Calculate entropy of most stable image
+                cpst.size_compr_stab_im.val[i] = entropy.calc_compressed_size(cpst.stable_image[i], flattening=flattening, compression=compression)
 
     # FRACTAL DIMENSION
     if instant > 0:

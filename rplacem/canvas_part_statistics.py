@@ -99,6 +99,11 @@ class CanvasPartStatistics(object):
         Most stable image (and second and third most stable images) in each time bin
             Needs compute_vars['stability'] > 1
             Set in comp.main_variables()
+    size_compr_stab_im : TimeSeries, n_pts = n_t_bins+1
+        size of the compressed stable image
+    entropy_stab_im : TimeSeries, n_pts = n_t_bins+1
+        Ratio of size of the size of the compressed stable image pixel array to the number of active pixels, at each time step
+        Set in ratios_and_normalizations()
 
     ENTROPY -- all need compute_vars['entropy'] > 0
     diff_pixels_stable_vs_swref
@@ -304,6 +309,7 @@ class CanvasPartStatistics(object):
                  dont_keep_dir=False,
                  flattening='hilbert_pkg',
                  compression='LZ77',
+                 keep_ref_im_const=False
                  ):
         '''
         cpart : CanvasPart object
@@ -330,6 +336,8 @@ class CanvasPartStatistics(object):
             Size of the bins for the return time output histogram
         t_interval : float, in seconds
             width of the time bins
+        keep_ref_im_const : boolean
+            If True, then uses the most stable image over the specified time range as the reference image, rather than a sliding window reference image.
         '''
 
         self.id = cpart.out_name()
@@ -366,6 +374,7 @@ class CanvasPartStatistics(object):
         self.area_vst = ts.TimeSeries()
 
         self.stability = ts.TimeSeries()
+        self.size_compr_stab_im = ts.TimeSeries()
         self.stable_image = None
         self.second_stable_image = None
         self.third_stable_image = None
@@ -398,17 +407,24 @@ class CanvasPartStatistics(object):
 
         self.fractal_dim_mask_median = ts.TimeSeries()
         self.fractal_dim_weighted = ts.TimeSeries()
+        self.ssim_stab_ref = ts.TimeSeries()
 
         self.transition_param = trans_param
         self.n_transitions = None
 
         self.checks_warnings()
 
+        if keep_ref_im_const:
+            ref_im_const = self.calc_ref_image_tot(cpart)
+        else:
+            ref_im_const = None
+
         # Magic happens here
         comp.main_variables(cpart, self, print_progress=self.verbose, delete_dir=dont_keep_dir,
                             flattening=flattening,
                             compression=compression,
-                            start_pixels=start_pixels)
+                            start_pixels=start_pixels,
+                            ref_im_const=ref_im_const)
 
         # ratio variables and normalizations
         self.ratios_and_normalizations()
@@ -476,6 +492,30 @@ class CanvasPartStatistics(object):
         t_lims[-1] = self.tmax
         return t_lims
 
+    def calc_ref_image_tot(self, cpart):
+        t_lims = self.t_lims
+        t_inds = cpart.intimerange_pixchanges_inds(t_lims[0], t_lims[-1])
+        seconds = cpart.pixel_changes['seconds']
+        color = cpart.pixel_changes['color']
+        pixch_coord_inds = cpart.pixel_changes['coord_index']
+        current_color = cpart.start_pixels()
+        last_time_installed_sw = comp.initialize_start_time_grid(cpart, t_lims[0], add_color_dim=True)
+        last_time_removed_sw = np.copy(last_time_installed_sw)
+
+        time_spent_in_color_tot_time = comp.calc_time_spent_in_color(cpart,
+                                                                     seconds[t_inds],
+                                                                     color[t_inds],
+                                                                     pixch_coord_inds[t_inds],
+                                                                     t_lims[0],
+                                                                     t_lims[-1],
+                                                                     current_color,
+                                                                     last_time_installed_sw,
+                                                                     last_time_removed_sw)
+
+        ref_im_tot = comp.calc_stable_cols(time_spent_in_color_tot_time)[:, 0]
+
+        return ref_im_tot
+
     def checks_warnings(self):
         if np.any(np.diff(self.t_lims) < 0):
             warnings.warn('The array of time limits t_lims should contain increasing values. It will be modified to fit this requirement.')
@@ -524,6 +564,7 @@ class CanvasPartStatistics(object):
         self.frac_attackonly_users = self.ts_init( util.divide_treatzero(self.n_users.val - self.n_defenseonly_users.val - self.n_bothattdef_users.val, self.n_users.val, 0.5, 0.5) )
         # for entropy
         self.entropy = self.ts_init( util.divide_treatzero(self.size_compressed.val, self.area_vst.val) )
+        self.entropy_stab_im = self.ts_init(util.divide_treatzero(self.size_compr_stab_im.val, self.area_vst.val))
         self.entropy_bmpnorm = self.ts_init( util.divide_treatzero(self.size_compressed.val, self.size_uncompressed.val, 0, 0) )
         self.entropy.val[0] = 0
         self.entropy_bmpnorm.val[0] = 0
