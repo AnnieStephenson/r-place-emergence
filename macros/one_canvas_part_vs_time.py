@@ -48,6 +48,7 @@ if cp_fromfile:
         file_path = os.path.join(var.DATA_PATH, 'CanvasPart_rectangle_'+str(x1)+'.'+str(y1)+'_to_'+str(x2)+'.'+str(y2)+'.pickle') 
         with open(file_path, 'rb') as f:
             canpart = pickle.load(f)
+            f.close()
 
 else:
     if fromatlas:

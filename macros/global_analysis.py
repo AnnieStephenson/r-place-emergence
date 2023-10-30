@@ -56,7 +56,7 @@ print('time of enlargment 4 = ', np.min(pixel_changes_all['seconds'][np.where(pi
 print('time of enlargment 3 = ', np.min(pixel_changes_all['seconds'][np.where(pixel_changes_all['ycoor'] > 499)]))
 print('time of enlargment 5 = ', np.min(pixel_changes_all['seconds'][np.where(pixel_changes_all['xcoor'] < -1000)]))
 print('time of enlargment 6 = ', np.min(pixel_changes_all['seconds'][np.where(pixel_changes_all['xcoor'] > 999)]))
-'''
+
 ############ NUM PIXEL CHANGES VS TIME
 t_interval = 300
 nbins = math.ceil(var.TIME_TOTAL/t_interval)
@@ -119,7 +119,7 @@ plot.draw_1dhist(perusercount,
                  outfile='PixelChangesPerUser_noModerator.pdf',
                  linecolor='blue')
 print('mean and median of #pixel changes of single users = ', np.mean(perusercount), np.median(perusercount))
-                        
+'''                   
 
 ############ HEAT MAP
 heat, xedges,yedges = np.histogram2d(pixel_changes_all['xcoor'], (var.CANVAS_MINMAX[-1,1,1]+var.CANVAS_MINMAX[-1,1,0])-pixel_changes_all['ycoor'], 
@@ -130,23 +130,26 @@ plot.draw_2dmap(heat,xedges,yedges,
                 clabel=' # of pixel changes', zmax=1500,
                 outfile='HeatMap.png')
 
-sys.exit()
 
 ############ TIME DEPENDENT HEAT MAP
-t_interval = 1800 # 30min
+t_interval = 1200 # 20min
 nbins = math.ceil(var.TIME_TOTAL/t_interval)
 bins = np.arange(0,t_interval*(nbins+1),t_interval)
 tindices = timeslices_ind(pixel_changes_all, bins)
 xcoor_tsliced = np.split(pixel_changes_all['xcoor'], tindices[1:])
-ycoor_tsliced = np.split(1999-pixel_changes_all['ycoor'], tindices[1:])
+ycoor_tsliced = np.split((var.CANVAS_MINMAX[-1,1,1]+var.CANVAS_MINMAX[-1,1,0])-pixel_changes_all['ycoor'], tindices[1:])
 for i in range(0,nbins):
-    heatvst, xedges,yedges = np.histogram2d(xcoor_tsliced[i], ycoor_tsliced[i], bins=[range(0,2001),range(0,2001)])
+    heatvst, xedges,yedges = np.histogram2d(xcoor_tsliced[i], ycoor_tsliced[i],
+                                            bins=[range(var.CANVAS_MINMAX[-1,0,0], var.CANVAS_MINMAX[-1,0,1]+2), 
+                                                  range(var.CANVAS_MINMAX[-1,1,0], var.CANVAS_MINMAX[-1,1,1]+2)])
     heatvst = heatvst.T
     plot.draw_2dmap(heatvst,xedges,yedges, logz=False,
                     clabel=' # of pixel changes / 30min',
                     zmax=10,
                     outfile=os.path.join('timeDepHeatMap','HeatMap_time{:06d}to{:06d}.png'.format(int(i*t_interval), int((i+1)*t_interval))))
 util.save_movie('figs/timeDepHeatMap',fps=3)
+
+sys.exit()
 
 ############ NUM CHANGES PER PIXEL
 numchanges = heat.flatten()
