@@ -1,5 +1,6 @@
 import rplacem.plot_utilities as plot
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import pickle
 import matplotlib.pyplot as plt
 import numpy as np

@@ -3,13 +3,12 @@ import os
 import sys
 import numpy as np
 import glob
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import json
 import shutil
 from PIL import Image
 import pickle
-import logging
-
 
 def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
     '''
@@ -29,8 +28,8 @@ def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
     # save pixel changes as a structured array
     pixel_changes_all = np.zeros(len(pixel_changes_all_npz['seconds']),
                                  dtype=np.dtype([('seconds', np.float64),
-                                                 ('xcoor', np.uint16),
-                                                 ('ycoor', np.uint16),
+                                                 ('xcoor', np.int16),
+                                                 ('ycoor', np.int16),
                                                  ('user', np.uint32),
                                                  ('color', np.uint8),
                                                  ('moderator', np.bool_)])

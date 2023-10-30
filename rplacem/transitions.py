@@ -2,7 +2,8 @@ import numpy as np
 import rplacem.canvas_part as cp
 import rplacem.compute_variables as comp
 import rplacem.utilities as util
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import math
 from scipy import optimize
 
@@ -125,7 +126,7 @@ def find_transitions(t_lims,
     # keep only transitions that are surrounded by close-enough stable periods
     full_transition_tmp = []
     for tr in seq_trans:
-        if t_lims[tr[0]+1] >= var.TIME_WHITEONLY: # exclude the arrival of white-only pixelchanges from transitions
+        if t_lims[tr[0]+1] >= var.TIME_WHITEOUT: # exclude the arrival of white-only pixelchanges from transitions
             continue
         # stable sequences close enough and before transition
         pretrans_stable_seq = np.where((seq_pretrans[:, 1] <= tr[0])

@@ -5,7 +5,8 @@ import rplacem.canvas_part_statistics as cpst
 import rplacem.utilities as ut
 import pytest
 import pickle
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import os
 
 atlas_id_index = '000297'

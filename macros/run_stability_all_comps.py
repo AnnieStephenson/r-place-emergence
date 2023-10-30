@@ -2,7 +2,8 @@ import numpy as np
 import os
 import rplacem.canvas_part as cp
 import rplacem.compute_variables as comp
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -15,8 +16,8 @@ with open(file_path, 'rb') as f:
 
 # time intervals
 time_bins = 80
-time_interval = var.TIME_WHITEONLY / time_bins  # seconds
-time_ranges = np.arange(0, var.TIME_WHITEONLY+time_interval-1e-4, time_interval)
+time_interval = var.TIME_WHITEOUT / time_bins  # seconds
+time_ranges = np.arange(0, var.TIME_WHITEOUT+time_interval-1e-4, time_interval)
 
 mean_stability = []
 stability_vs_time = []
@@ -27,7 +28,7 @@ for i in range(0, len(canvas_parts)):
     if i%100 == 0:
         print(i)
     # mean stability
-    mean_stability.append( comp.stability(canvas_parts[i],np.asarray([0, var.TIME_WHITEONLY]), False,False,False,True)[0][0] )
+    mean_stability.append( comp.stability(canvas_parts[i],np.asarray([0, var.TIME_WHITEOUT]), False,False,False,True)[0][0] )
 
     # time dependent stability
     stability_vs_time.append( [comp.stability(canvas_parts[i], time_ranges, False,False,False,True)[0]] )

@@ -4,7 +4,8 @@ import os
 import matplotlib.pyplot as plt
 import rplacem.canvas_part_statistics as stat
 import rplacem.compute_variables as comp
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 
 def find_all_transitions(keep_idx_compos, ntbins, canparts, v, x, y, z):
     ''' Find and count transitions for compositions of indices keep_idx_compos, using parameters v, x, y ,z '''

@@ -4,7 +4,8 @@ from matplotlib.ticker import ScalarFormatter
 import mpl_toolkits.axes_grid1.inset_locator as insloc
 import seaborn as sns
 import os, copy
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import rplacem.utilities as util
 import numpy as np
 import math
@@ -199,7 +200,7 @@ def draw_2dmap(h2d, xedges, yedges,
     fig = plt.figure()
     addspace = 0.75
     fig.subplots_adjust(left=0,right=1,bottom=0,top=addspace)
-    fig.set_size_inches(10,10/addspace, forward=True)
+    fig.set_size_inches(10*(1.5 if (var.year==2023) else 1), 10/addspace, forward=True)
     fig.tight_layout(pad=0.)
 
     if not logz:

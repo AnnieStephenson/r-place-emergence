@@ -1,5 +1,6 @@
 import rplacem.canvas_part_statistics as stat
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import os
 import pickle
 import gc
