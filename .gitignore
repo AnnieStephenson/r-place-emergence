@@ -95,20 +95,23 @@ ENV/
 *.bmp
 
 figs/
-figs/*.pickle
-data/*.pickle
+data/2022/*.pickle
+data/2023/*.pickle
 test/*.pickle
 *.root
 *.npz
 
 # large data files
-data/userIDsFromIdx.json
-data/userDict.json
+data/2022/userIDsFromIdx.json
+data/2023/userIDsFromIdx.json
+data/2022/userDict.json
+data/2023/userDict.json
 data/oldcompstats/
 data/atlas_cp.json
 
 # output of ML
-data/ML*.json
+data/2022/ML*.json
+data/2023/ML*.json
 
 # additional scripts
 my_scripts/
@@ -116,3 +119,7 @@ my_scripts/
 # modules
 sweetsourcod_source/
 sweetsourcod/
+
+# other docs
+survey/
+paper/

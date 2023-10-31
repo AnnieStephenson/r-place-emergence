@@ -8,41 +8,47 @@ import rplacem.compute_variables as comp
 import matplotlib.colors as pltcolors
 import rplacem.utilities as util
 import rplacem.plot_utilities as plot
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-pixel_changes_all = util.get_all_pixel_changes()
-atlas, num = util.load_atlas()
-
 # intro
-fromatlas = True
-cp_fromfile = False
+fromatlas = False
+cp_fromfile = True
+cp_fromatlasfile = False
 cps_fromfile = False
 
-id = '000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas
-x1 = 0 # only if not fromatlas
-x2 = 1999
-y1 = 0
-y2 = 1999
+if not cp_fromfile:
+    pixel_changes_all = util.get_all_pixel_changes()
+    atlas, num = util.load_atlas()
 
-if not fromatlas:
-    cp_fromfile = False
-    cps_fromfile = False
+id = '000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
+
+x1 = var.CANVAS_MINMAX[-1, 0, 0]
+x2 = var.CANVAS_MINMAX[-1, 0, 1]
+y1 = var.CANVAS_MINMAX[-1, 1, 0]
+y2 = var.CANVAS_MINMAX[-1, 1, 1]
 
 # Get CanvasPart
 if cp_fromfile:
-    file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
-    with open(file_path, 'rb') as f:
-        canvas_parts = pickle.load(f)
-      
-    for canp in canvas_parts:
-        if canp.id != id:
-            continue
-        else:
-            canpart = canp
-            break
+    if cp_fromatlasfile:
+        file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
+        with open(file_path, 'rb') as f:
+            canvas_parts = pickle.load(f)
+        
+        for canp in canvas_parts:
+            if canp.id != id:
+                continue
+            else:
+                canpart = canp
+                break
+    else:
+        file_path = os.path.join(var.DATA_PATH, 'CanvasPart_rectangle_'+str(x1)+'.'+str(y1)+'_to_'+str(x2)+'.'+str(y2)+'.pickle') 
+        with open(file_path, 'rb') as f:
+            canpart = pickle.load(f)
+            f.close()
 
 else:
     if fromatlas:
@@ -54,9 +60,11 @@ else:
             canvas_comps.append( cp.CanvasPart(atlas_info=ainfo, pixel_changes_all=pixel_changes_all, verbose=False, save=True) )
         canpart = canvas_comps[0]
     else:
-        canpart = cp.CanvasPart(id=id,
+        # here, assume the whole canvas is wanted
+        info = cp.AtlasInfo(border_path=[[[x1, y1], [x1, y2], [x2, y2], [x2, y1]]])
+        canpart = cp.CanvasPart(atlas_info=info,
                                 pixel_changes_all=pixel_changes_all,
-                                verbose=False, save=True)
+                                verbose=True, save=True)
 
 # Get CanvasPartStatistics
 if cps_fromfile:
@@ -72,10 +80,20 @@ if cps_fromfile:
             break
 
 else: 
-    cpstat = stat.CanvasPartStatistics(canpart, t_interval=300, 
-                                        compute_vars={'stability': 3, 'entropy' :3, 'transitions' : 3, 'attackdefense' : 3, 'other' : 1},
-                                        sliding_window=3*3600,
-                                        verbose=False, dont_keep_dir=False)
+    cpstat = stat.CanvasPartStatistics(canpart, t_interval=300, #tmax=20000,
+                                        compute_vars={'stability': 1, 'entropy' :3, 'transitions' : 1, 'attackdefense' : 1, 'other' : 1},
+                                        sliding_window=3*3600, #3h?
+                                        verbose=True, dont_keep_dir=False, compression='DEFLATE_BMP_PNG', flattening='ravel')
+    
+savecpstat = True
+if savecpstat:
+    file_path = os.path.join(var.DATA_PATH, 'CanvasPartStatistics_'+ canpart.out_name() + '.pickle')
+    with open(file_path, 'wb') as handle:
+        pickle.dump(cpstat,
+                    handle,
+                    protocol=pickle.HIGHEST_PROTOCOL)
+
+sys.exit()
 
 cpstat.fill_timeseries_info()
 

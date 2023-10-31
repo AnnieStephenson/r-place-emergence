@@ -1,7 +1,8 @@
 import numpy as np
 import os
 import pandas as pd
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import rplacem.plot_utilities as plot
 import rplacem.utilities as util
 

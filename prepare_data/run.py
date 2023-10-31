@@ -1,25 +1,36 @@
 import ray
 import CondenseData as cond
 
+year=2023
+maxfilenum = 52 if (year == 2023) else 78
+
+condenser = cond.DataCondenser(year) #.remote(year)
 
 '''
-#8 minutes for all ray jobs on Guillaume's machine
-ray.init()
+ray.init(ignore_reinit_error=True)
 print('new ray job')
-ray.get([cond.condense_part.remote(i*4,(i+1)*4) for i in range(0,6)])
+ray.get([condenser.condense_part.remote(i*4,(i+1)*4) for i in range(0,6)])
 print('new ray job')
-ray.get([cond.condense_part.remote(24 + i*4, 24 + (i+1)*4) for i in range(0,6)])
+ray.get([condenser.condense_part.remote(24 + i*4, 24 + (i+1)*4) for i in range(0,6)])
 print('new ray job')
-ray.get([cond.condense_part.remote(48 + i*4, 48 + (i+1)*4) for i in range(0,6)])
-print('new ray job')
-ray.get([cond.condense_part.remote(72 + i*4, 72 + (i+1)*4) for i in range(0,2)])
+if maxfilenum == 52:
+    ray.get([condenser.condense_part.remote(48, 51), condenser.condense_part.remote(51, 53)])
+else:
+    ray.get([condenser.condense_part.remote(48 + i*4, 48 + (i+1)*4) for i in range(0,6)])
+if maxfilenum > 72:
+    print('new ray job')
+    ray.get([condenser.condense_part.remote(72 + i*4, 72 + (i+1)*4) for i in range(0,2)])
 '''
 
-#cond.Merging()
+#print('merging')
+#condenser.Merging()
 
-#cond.Sorting()
+#print('sorting')
+#condenser.Sorting()
 
-#cond.remove_duplicates()
+#print('remove duplicates')
+#condenser.remove_duplicates()
+#condenser.tag_hidden_mod_changes()
 
-cond.misc_checks()
-#cond.clean_data_dir()
+#condenser.misc_checks()
+#condenser.clean_data_dir()

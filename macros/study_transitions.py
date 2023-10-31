@@ -2,13 +2,14 @@ import numpy as np
 import os
 import rplacem.canvas_part as cp
 import rplacem.compute_variables as comp
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import rplacem.transitions as tr
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
 import rplacem.compute_variables as comp
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as var
 
 # get time-dependent stability for all compos
 file_path_stab = os.path.join(var.DATA_PATH, 'stability_all_canvas_compositions.pickle')
@@ -27,10 +28,10 @@ print(canpart.coords)
 
 time_bins_stab = 80
 time_bins_trans = 50
-time_interval_stab = var.TIME_WHITEONLY / time_bins_stab  # seconds
-time_interval_trans = var.TIME_WHITEONLY / time_bins_trans  # seconds
-time_ranges_stab = np.arange(0, var.TIME_WHITEONLY+time_interval_stab-1e-4, time_interval_stab)
-time_ranges_trans = np.arange(0, var.TIME_WHITEONLY+time_interval_trans-1e-4, time_interval_trans)
+time_interval_stab = var.TIME_WHITEOUT / time_bins_stab  # seconds
+time_interval_trans = var.TIME_WHITEOUT / time_bins_trans  # seconds
+time_ranges_stab = np.arange(0, var.TIME_WHITEOUT+time_interval_stab-1e-4, time_interval_stab)
+time_ranges_trans = np.arange(0, var.TIME_WHITEOUT+time_interval_trans-1e-4, time_interval_trans)
 
 j = 0
 #tr.find_all_transitions(keep_idx_comps, stability_vs_time, time_ranges_stab, canparts, 0.88, 0.985, 3, 3, True)

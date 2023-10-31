@@ -1,6 +1,7 @@
 import numpy as np
 import os, sys
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import numpy as np
 import rplacem.canvas_part as cp
 import rplacem.plot_utilities as plot
@@ -10,7 +11,7 @@ import matplotlib.colors as pltcolors
 import seaborn as sns
 import rplacem.utilities as util
 import math
-import pickle
+import pickle, json
 
 def timeslices_ind(pixchanges, tbins):
     '''
@@ -26,7 +27,36 @@ def timeslices_ind(pixchanges, tbins):
 
 # Grab full dataset
 pixel_changes_all = util.get_all_pixel_changes()
+# N CHANGES
+print(np.max(pixel_changes_all['seconds']))
+# N USERS
+print(np.max(pixel_changes_all['user']))
+# N CHANGES
+print(len(pixel_changes_all))
+
 '''
+############ TIMES OF (DIS)APPEARANCE OF COLORS
+used_colors = []
+for p in pixel_changes_all:
+    c = p['color']
+    if c not in used_colors:
+        used_colors.append(c)
+        print(p['seconds'], 'is the time of first appeareance of color', var.IDX_TO_COLOR[str(c)])
+
+for c in range(32):
+    print('min and max time of color', var.IDX_TO_COLOR[str(c)], 'is', 
+          min(pixel_changes_all['seconds'][np.where(pixel_changes_all['color'] == c)]), 
+          max(pixel_changes_all['seconds'][np.where(pixel_changes_all['color'] == c)])
+          )
+    
+############ TIMES OF ENLARGMENT OF CANVAS
+print('time of enlargment 1 = ', np.min(pixel_changes_all['seconds'][np.where(pixel_changes_all['xcoor'] > 499)]))
+print('time of enlargment 2 = ', np.min(pixel_changes_all['seconds'][np.where(pixel_changes_all['xcoor'] < -500)]))
+print('time of enlargment 4 = ', np.min(pixel_changes_all['seconds'][np.where(pixel_changes_all['ycoor'] < -500)]))
+print('time of enlargment 3 = ', np.min(pixel_changes_all['seconds'][np.where(pixel_changes_all['ycoor'] > 499)]))
+print('time of enlargment 5 = ', np.min(pixel_changes_all['seconds'][np.where(pixel_changes_all['xcoor'] < -1000)]))
+print('time of enlargment 6 = ', np.min(pixel_changes_all['seconds'][np.where(pixel_changes_all['xcoor'] > 999)]))
+
 ############ NUM PIXEL CHANGES VS TIME
 t_interval = 300
 nbins = math.ceil(var.TIME_TOTAL/t_interval)
@@ -34,19 +64,28 @@ plot.draw_1dhist(pixel_changes_all['seconds'][ np.where(pixel_changes_all['moder
                  xrange=[0,nbins*t_interval], bins=[nbins], 
                  xlab='time [s]',
                  ylab='# of pixel changes / 5 min',
-                 outfile='TimeOfPixelChanges_noModerator.pdf')
+                 outfile='TimeOfPixelChanges_noModerator.pdf',
+                 linecolor='blue')
 
 plot.draw_1dhist(pixel_changes_all['seconds'][ np.where(pixel_changes_all['moderator'] == 1) ], 
                  xrange=[0,nbins*t_interval], bins=[nbins], 
                  xlab='time [s]',
                  ylab='# of pixel changes / 5 min',
-                 outfile='TimeOfPixelChanges_moderatorEvents.pdf')
+                 outfile='TimeOfPixelChanges_moderatorEvents.pdf',
+                 linecolor='blue')
+print('total number of moderator changes = ', np.count_nonzero(pixel_changes_all['moderator']))
+
+############ PRINT USER TAGS OF MODERATORS
+user_idx2tag = json.load(open(os.path.join(var.DATA_PATH, 'userIDsFromIdx.json')))
+#print([user_idx2tag[str(u)] for u in np.unique(pixel_changes_all['user'][pixel_changes_all['moderator'] == 1])])
+print(len(np.unique(pixel_changes_all['user'][pixel_changes_all['moderator'] == 1])))
 
 plot.draw_1dhist(pixel_changes_all['seconds'], 
                  xrange=[0,nbins*t_interval], bins=[nbins], 
                  xlab='time [s]',
                  ylab='# of pixel changes / 5 min',
-                 outfile='TimeOfPixelChanges.pdf')
+                 outfile='TimeOfPixelChanges.pdf',
+                 linecolor='blue')
 
 ############ NUM ACTIVE USERS VS TIME
 t_interval = 10800
@@ -62,7 +101,8 @@ plot.draw_1dhist(nusers_pertbin,
                  xlab='time [s]',
                  ylab='# active users / 3h',
                  outfile='ActiveUsersNumber_VsTime.pdf',
-                 alreadyhist=True)
+                 alreadyhist=True,
+                 linecolor='blue')
 
 
 ############ NUM PIXEL CHANGES PER SINGLE USER
@@ -70,38 +110,46 @@ nmaxusers = max(pixel_changes_all['user'])
 _,perusercount = np.unique(pixel_changes_all['user'][np.where(pixel_changes_all['moderator'] == 0)],
                            return_counts=True)
 plot.draw_1dhist(perusercount, 
-                 bins=range(1,1001),
+                 bins=range(1, (1001 if var.year == 2022 else 1801)),
                  xlog=True,
                  ylog=True, 
                  scientific_labels=False,
                  xlab='# pixel changes / user',
                  ylab='# users',
-                 outfile='PixelChangesPerUser_noModerator.pdf')
+                 outfile='PixelChangesPerUser_noModerator.pdf',
+                 linecolor='blue')
 print('mean and median of #pixel changes of single users = ', np.mean(perusercount), np.median(perusercount))
-
+'''                   
 
 ############ HEAT MAP
-heat, xedges,yedges = np.histogram2d(pixel_changes_all['xcoor'], 1999-pixel_changes_all['ycoor'], bins=[range(0,2001),range(0,2001)])
+heat, xedges,yedges = np.histogram2d(pixel_changes_all['xcoor'], (var.CANVAS_MINMAX[-1,1,1]+var.CANVAS_MINMAX[-1,1,0])-pixel_changes_all['ycoor'], 
+                                     bins=[range(var.CANVAS_MINMAX[-1,0,0], var.CANVAS_MINMAX[-1,0,1]+2), 
+                                           range(var.CANVAS_MINMAX[-1,1,0], var.CANVAS_MINMAX[-1,1,1]+2)])
 heat = heat.T
 plot.draw_2dmap(heat,xedges,yedges,
                 clabel=' # of pixel changes', zmax=1500,
                 outfile='HeatMap.png')
 
+
 ############ TIME DEPENDENT HEAT MAP
-t_interval = 1800 # 30min
+t_interval = 1200 # 20min
 nbins = math.ceil(var.TIME_TOTAL/t_interval)
 bins = np.arange(0,t_interval*(nbins+1),t_interval)
 tindices = timeslices_ind(pixel_changes_all, bins)
 xcoor_tsliced = np.split(pixel_changes_all['xcoor'], tindices[1:])
-ycoor_tsliced = np.split(1999-pixel_changes_all['ycoor'], tindices[1:])
+ycoor_tsliced = np.split((var.CANVAS_MINMAX[-1,1,1]+var.CANVAS_MINMAX[-1,1,0])-pixel_changes_all['ycoor'], tindices[1:])
 for i in range(0,nbins):
-    heatvst, xedges,yedges = np.histogram2d(xcoor_tsliced[i], ycoor_tsliced[i], bins=[range(0,2001),range(0,2001)])
+    heatvst, xedges,yedges = np.histogram2d(xcoor_tsliced[i], ycoor_tsliced[i],
+                                            bins=[range(var.CANVAS_MINMAX[-1,0,0], var.CANVAS_MINMAX[-1,0,1]+2), 
+                                                  range(var.CANVAS_MINMAX[-1,1,0], var.CANVAS_MINMAX[-1,1,1]+2)])
     heatvst = heatvst.T
     plot.draw_2dmap(heatvst,xedges,yedges, logz=False,
                     clabel=' # of pixel changes / 30min',
                     zmax=10,
                     outfile=os.path.join('timeDepHeatMap','HeatMap_time{:06d}to{:06d}.png'.format(int(i*t_interval), int((i+1)*t_interval))))
 util.save_movie('figs/timeDepHeatMap',fps=3)
+
+sys.exit()
 
 ############ NUM CHANGES PER PIXEL
 numchanges = heat.flatten()
@@ -133,7 +181,6 @@ print('mean and median of # changes per pixel = ', np.mean(numchanges), np.media
 plot.draw_colorhist(pixel_changes_all['color'], outfile='color_distribution_pixelchanges.pdf', ylog=False)
 
 
-sys.exit()
 
 ############ CALCULATE TIME DIFFERENCES BETWEEN PIXEL CHANGES FROM SAME USER
 
@@ -323,7 +370,7 @@ plt.xlabel('pixel change time')
 plt.ylabel('time interval between two pixel changes of same user')
 plt.colorbar(label='number of pixel changes (norm. by time interval)')
 plt.savefig(os.path.join(var.FIGS_PATH, 'Time_vs_timedifference_pixelchanges_normalized.png'), bbox_inches='tight')
-'''
+
 
 ############# COMPUTE SPACE CORRELATIONS OF PIXEL CHANGES FROM SAME USER
 print('compute space correlations')

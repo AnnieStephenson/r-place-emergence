@@ -6,7 +6,8 @@ import seaborn as sns
 from PIL import Image
 import shutil
 import math
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import rplacem.utilities as util
 import rplacem.plot_utilities as plot
 import rplacem.entropy as entropy
@@ -14,7 +15,7 @@ import rplacem.fractal_dim as fractal_dim
 import scipy
 import warnings
 import sparse as sp
-
+from collections import deque
 
 
 def calc_num_pixel_changes(cpart,
@@ -87,19 +88,21 @@ def initialize_start_time_grid(cpart, t_start, add_color_dim=False):
     '''
     Initialize to the start of the time interval.
     We neglect the time before the supplementary canvas
-    quarters open by setting last_time_changed for those coordinates
+    sections open by setting last_time_changed for those coordinates
     to either the interval start time or the time the coordinates
     become available, whichever happens later.
     '''
     if add_color_dim:
         res = np.full((var.NUM_COLORS, cpart.num_pix()), t_start, dtype='float64')
-        res[:, cpart.quarter2_coordinds] = max(t_start, var.TIME_ENLARGE1)
-        res[:, cpart.quarter34_coordinds] = max(t_start, var.TIME_ENLARGE2)
+        for e in range(1, var.N_ENLARGE):
+            res[:, cpart.canvassection_coordinds[e]] = max(t_start, var.TIME_ENLARGE[e])
     else:
         res = np.full(cpart.num_pix(), t_start, dtype='float64')
-        res[cpart.quarter2_coordinds] = max(t_start, var.TIME_ENLARGE1)
-        res[cpart.quarter34_coordinds] = max(t_start, var.TIME_ENLARGE2)
+        for e in range(1, var.N_ENLARGE):
+            res[cpart.canvassection_coordinds[e]] = max(t_start, var.TIME_ENLARGE[e])
     return res
+
+
 
 
 def calc_time_spent_in_color(cpart, seconds, color, pixch_coord_inds,
@@ -178,20 +181,92 @@ def calc_stability(stable_timefrac, inds_active, compute_average):
 def calc_stable_cols(time_spent_in_col):
     return np.flip(np.argsort(time_spent_in_col, axis=1), axis=1)
 
-def substract_and_sparse_replace(a_sw, a_vst, a_replacement, replace=True):
+def substract_and_sparse_replace(time_spent_in_color_sw, time_spent_in_color_vst, time_spent_in_color, i_replace, 
+                                 pos_in_timespentvst, active_colors_vst, startidx_timespent, endidx_timespent,
+                                 rec_len_regime, rec_lengths, rec_timespent_num, sw_width,
+                                 replace=True):
     '''
-    modifies [a_sw] into [a_sw - a_vst], where [a_sw] is 1d numpy array and [a_vst] is 1d coo sparse array
-    then modifies [a_vst] by a sparse version of [a_replacement]
+    Substracts the [time_spent_in_color] from [time_spent_in_color_sw]
+    Replaces [time_spent_in_color_vst] at position [i_replace] by [time_spent_in_color]
+    Also keeps track of [active_colors_vst] at index [i_replace], [pos_in_timespentvst], [rec_len_regime], [rec_timespent_num], [startidx_timespent], [endidx_timespent]
     '''
-    a_sw[a_vst[0]] -= a_vst[1]
+
+    # boolean array of pixels active at the timestep that must be removed or added
+    active_pix_removed = active_colors_vst[i_replace]
+    num_cols_removed = np.count_nonzero(active_pix_removed, axis=1) # shape (n_pixels)
     if replace:
-        a_vst[0] = np.where(a_replacement != 0)[0]
-        a_vst[1] = a_replacement[a_vst[0]]
+        active_pix_added = (time_spent_in_color >= 1e-3)
+        num_cols_added = np.count_nonzero(active_pix_added, axis=1) # shape (n_pixels)
+
+    # loop on the different 'regimes' of length of time_spent_in_color_vst
+    for reg in [0, 1, 2]:
+        pix_thisreg = (rec_len_regime == reg)
+
+        if not np.any(pix_thisreg):
+            continue
+
+        # Here, substract old elements from time_spent_in_color_sw (time_spent summed in sliding window)
+        for i_rmv in np.arange(np.max(num_cols_removed[pix_thisreg])): # max 32 iterations (1 per removed color)
+            # indices of pixels that needs at least i_rmv removed, and have the right length of recorded timespent (reg)
+            enough_removedcols = np.where((num_cols_removed >= i_rmv + 1) & pix_thisreg)[0]
+            # substract from time_spent_in_color_sw
+            time_spent_in_color_sw[enough_removedcols, 
+                                   nth_true_element(active_pix_removed[enough_removedcols], i_rmv)] -= time_spent_in_color_vst[reg][pos_in_timespentvst[enough_removedcols],
+                                                                                                        (startidx_timespent[enough_removedcols] + i_rmv) % rec_lengths[reg]]
+        
+        if not replace:
+            continue
+        # Here, add new elements in time_spent_in_color_vst, corresponding to the active colors in the new timestep
+        for i_add in np.arange(np.max(num_cols_added[pix_thisreg])): # max 32 iterations (1 per removed color)
+            # indices of pixels that needs at least i_add added, and have the right length of recorded timespent (reg)
+            enough_addedcols = np.where((num_cols_added >= i_add + 1) & (rec_len_regime == reg))[0]
+            # add to time_spent_in_color_vst
+            time_spent_in_color_vst[reg][pos_in_timespentvst[enough_addedcols], 
+                                        (endidx_timespent[enough_addedcols] + i_add) % rec_lengths[reg]] = time_spent_in_color[enough_addedcols, 
+                                                                                                                               nth_true_element(active_pix_added[enough_addedcols], i_add)]
+
+    # deplace pointer for the start and end of useful values in time_spent_in_color_vst
+    startidx_timespent += num_cols_removed
+    startidx_timespent = startidx_timespent % rec_lengths[rec_len_regime]
+    if not replace:
+        return
+    endidx_timespent += num_cols_added
+    endidx_timespent = endidx_timespent % rec_lengths[rec_len_regime]
+
+    # number of useful values, indicator of need to use larger array
+    rec_timespent_num += num_cols_added - num_cols_removed
+
+    # renew the boolean array active_colors
+    active_colors_vst[i_replace] = active_pix_added
+
+    # add length to rec_timesepent_len when endidx > startidx + rec_length
+    # the condition is based on the number of added colors in the next step (i_replace + 1)
+    for j in np.where(rec_timespent_num > rec_lengths[rec_len_regime] - np.count_nonzero(active_colors_vst[(i_replace+1) % sw_width], axis=1))[0]:
+        time_spent_in_color_vst[rec_len_regime[j]+1] = np.append(time_spent_in_color_vst[rec_len_regime[j]+1], 
+                                                                    [np.concatenate(( time_spent_in_color_vst[rec_len_regime[j]][pos_in_timespentvst[j]], 
+                                                                                    np.zeros((rec_lengths[rec_len_regime[j]+1]-rec_lengths[rec_len_regime[j]])) ),
+                                                                                    axis=0 )],
+                                                                    axis=0 )
+        pos_in_timespentvst[j] = time_spent_in_color_vst[rec_len_regime[j]+1].shape[0] - 1 # contains an array [1,2,...,n_pixels] where(reg==0), else contains position for this pixel in time_spent_vst[reg>0]
+        rec_len_regime[j] += 1
+    #print('There are now',time_spent_in_color_vst[0].shape[0],'pixels in reg',0)
+    #print('There are now',time_spent_in_color_vst[1].shape[0],'pixels in reg',1)
+    #print('There are now',time_spent_in_color_vst[2].shape[0],'pixels in reg',2)
+
+
+def nth_true_element(a, toget):
+    '''
+    From array [a] of shape (d1 -- pixels, d2 -- colors) , get the [toget]'th True element along dimension d2.
+    Outputs array of dim d1.
+    '''
+    cols_toadd_all = np.where(a)
+    inds_newpixel = np.where(np.hstack(([1], np.diff(cols_toadd_all[0]))))[0]
+    return cols_toadd_all[1][ inds_newpixel + toget ]
 
 def show_progress(timefrac, timeflag, frequency=0.1):
     if timefrac > timeflag * frequency:
         timeflag += 1
-        print('Ran {:.2f}% of the steps'.format(100 * timefrac), end='\r')
+        print('Ran {:.2f}% of the steps'.format(100 * timefrac))#, end='\r')
     return 1
 
 def calc_stable_timefrac(cpart, t_step, t_lims,
@@ -204,10 +279,10 @@ def calc_stable_timefrac(cpart, t_step, t_lims,
         '''
 
         res = np.take_along_axis(time_spent_in_color, stable_colors, axis=1)
-        # Normalize by the total time the canvas quarter was on.
-        res[cpart.quarter1_coordinds] /= t_lims[t_step] - t_lims[t_step-1]
-        res[cpart.quarter2_coordinds] /= t_lims[t_step] - max(t_lims[t_step-1], var.TIME_ENLARGE1)
-        res[cpart.quarter34_coordinds] /= t_lims[t_step] - max(t_lims[t_step-1], var.TIME_ENLARGE2)
+
+        # Normalize by the total time the canvas section was on.
+        for e in range(var.N_ENLARGE):
+            res[cpart.canvassection_coordinds[e]] /= t_lims[t_step] - max(t_lims[t_step-1], var.TIME_ENLARGE[e])
 
         return res
 
@@ -260,7 +335,8 @@ def main_variables(cpart,
     tran = cpst.compute_vars['transitions']
     other = cpst.compute_vars['other']
     if save_memory is None:
-        save_memory = (cpart.num_pix() > 3e5) # do the slower memory-saving method when the canvaspart is larger than 300,000 pixels
+        save_memory = True 
+        #save_memory = (cpart.num_pix() > 3e5) # do the slower memory-saving method when the canvaspart is larger than 300,000 pixels
 
     # Some warnings for required conditions of use of the function
     if (not np.isclose(t_lims[0], cpart.min_max_time()[0], atol=1e-4)) and start_pixels is None: # TODO: check that we both agree to adding atlas_min=True here
@@ -269,7 +345,7 @@ def main_variables(cpart,
         warnings.warn('Some images were required to be stored, but with delete_dir=True, the full directory will be removed! ')
 
     # Canvas part data
-    cpart.set_quarters_coord_inds()
+    cpart.set_canvassection_coordinds(rerun=True) # TODO: can remove rerun=True after rerunning canvas part
     seconds = cpart.pixel_changes['seconds']  # add np.array()?
     color = cpart.pixel_changes['color']
     user = cpart.pixel_changes['user']
@@ -291,9 +367,18 @@ def main_variables(cpart,
         previous_colors = cpart.white_image(2, images_number=cpst.sw_width) # image in the sw_width previous timesteps
     previous_stable_color = cpart.white_image(1)  # stable image in the previous timestep
     if save_memory:
-        time_spent_in_color_vst = np.empty((cpst.sw_width, cpart.num_pix(), 2), dtype=object)
-        for i in np.ndindex(time_spent_in_color_vst.shape):
-            time_spent_in_color_vst[i] = []
+        active_colors_vst = np.zeros((cpst.sw_width, cpart.num_pix(), var.NUM_COLORS), dtype=bool)
+        rec_lengths = np.array([int(cpst.sw_width * 1.7), int(cpst.sw_width * 5), cpst.sw_width * var.NUM_COLORS])
+        rec_len_regime = np.zeros((cpart.num_pix()), dtype=np.int8)
+        rec_timespent_num = np.zeros((cpart.num_pix()), dtype=np.int16) 
+        time_spent_in_color_vst = np.empty((3), dtype=object)
+        time_spent_in_color_vst[0] = np.zeros((cpart.num_pix(), rec_lengths[0]), dtype=np.float32)
+        for i in np.arange(1, 3): # will be filled when necessary
+            time_spent_in_color_vst[i] = np.zeros((0, rec_lengths[i]), dtype=np.float32)
+        pos_in_timespentvst = np.arange(cpart.num_pix(), dtype=np.int32)
+        startidx_timespent = np.zeros((cpart.num_pix()), dtype=np.int32)
+        endidx_timespent = np.zeros((cpart.num_pix()), dtype=np.int32)
+
     else:
         time_spent_in_color_vst = np.zeros((cpst.sw_width, cpart.num_pix(), var.NUM_COLORS))
     time_spent_in_color_sw = np.zeros((cpart.num_pix(), var.NUM_COLORS)) # summed over the sliding window
@@ -376,7 +461,7 @@ def main_variables(cpart,
         if instant > 2:
             util.make_dir(fig_cpart_dir(out_dir_time), renew=True)
 
-    # Start with a white image for time time 0
+    # Start with a white image for time 0
     if ((compression == 'DEFLATE_BMP_PNG') or (instant > 2)):
         if (compression == 'DEFLATE_BMP_PNG') and (flattening != 'ravel'):
             warnings.warn(('Compression algorithm DEFLATE with BMP to PNG can only handle ravel flattening. Using ravel'
@@ -440,15 +525,17 @@ def main_variables(cpart,
             # calculate the stability value in the time interval
             cpst.stability.val[i] = calc_stability(stable_timefrac, inds_coor_active, True)
 
-        # Store time_spent_in_color for this timestep, in a sparse array
-        i_replace = i % cpst.sw_width # where to modify the "rolling" time_spent_in_color_vst array
-        if save_memory:
-            for j in np.arange(time_spent_in_color_vst.shape[1]):
-                substract_and_sparse_replace(time_spent_in_color_sw[j], time_spent_in_color_vst[i_replace, j], time_spent_in_color[j])
-        else:
-            time_spent_in_color_sw -= time_spent_in_color_vst[i_replace]
-            time_spent_in_color_vst[i_replace] = time_spent_in_color
-        time_spent_in_color_sw += time_spent_in_color
+        if stab > 0 or tran > 0 or attdef > 0:
+            # Store time_spent_in_color for this timestep, in a sparse array
+            i_replace = i % cpst.sw_width # where to modify the "rolling" time_spent_in_color_vst array
+            if save_memory:
+                substract_and_sparse_replace(time_spent_in_color_sw, time_spent_in_color_vst, time_spent_in_color, i_replace, 
+                                             pos_in_timespentvst, active_colors_vst, startidx_timespent, endidx_timespent, 
+                                             rec_len_regime, rec_lengths, rec_timespent_num, cpst.sw_width)
+            else:
+                time_spent_in_color_sw -= time_spent_in_color_vst[i_replace]
+                time_spent_in_color_vst[i_replace] = time_spent_in_color
+            time_spent_in_color_sw += time_spent_in_color
 
         # Calculate the new reference image
         if ref_im_const is None:
@@ -458,6 +545,7 @@ def main_variables(cpart,
 
         if i < itmin - 1: # skip times where the composition is not on
             continue
+        
 
         # ATTACK/DEFENSE VS REFERENCE IMAGE
         if attdef > 0:
@@ -509,7 +597,7 @@ def main_variables(cpart,
 
         # INSTANTANEOUS IMAGES: includes entropy and fractal dimension calculations
         # Calculate the number of pixels in the current interval (stable or instantaneous) that differ from the reference image, or from the previous timestep
-        if instant > 0 or tran > 0:
+        if tran > 0:
             cpst.diff_pixels_inst_vs_swref.val[i] = np.count_nonzero(current_color - ref_color)
         if tran > 0:
             if i >= cpst.sw_width:
@@ -581,7 +669,7 @@ def main_variables(cpart,
                 cpst.size_compr_stab_im.val[i] = entropy.calc_compressed_size(cpst.stable_image[i], flattening=flattening, compression=compression)
 
     # FRACTAL DIMENSION
-    if instant > 0:
+    if instant > 3:
         [cpst.fractal_dim_mask_median.val,
          cpst.fractal_dim_weighted.val] = fractal_dim.calc_from_image(cpst, shift_avg=True)
 
@@ -590,8 +678,9 @@ def main_variables(cpart,
         for i in range(n_tlims, n_tlims + cpst.sw_width):
             i_replace = i % cpst.sw_width # where to modify the "rolling" time_spent_in_color_vst array
             if save_memory:
-                for j in np.arange(time_spent_in_color_vst.shape[1]):
-                    substract_and_sparse_replace(time_spent_in_color_sw[j], time_spent_in_color_vst[i_replace, j], None, replace=False)
+                substract_and_sparse_replace(time_spent_in_color_sw, time_spent_in_color_vst, None, i_replace, 
+                                             pos_in_timespentvst, active_colors_vst, startidx_timespent, None,
+                                             rec_len_regime, rec_lengths, None, None, replace=False)
             else:
                 time_spent_in_color_sw -= time_spent_in_color_vst[i_replace]
 

@@ -3,7 +3,8 @@ import numpy as np
 import rplacem.canvas_part as cp
 import json
 import pickle
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import rplacem.utilities as util
 
 atlas, atlas_num = util.load_atlas()

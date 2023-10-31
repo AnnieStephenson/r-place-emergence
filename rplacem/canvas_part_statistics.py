@@ -1,6 +1,7 @@
 import numpy as np
 import os
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import rplacem.compute_variables as comp
 import rplacem.utilities as util
 import rplacem.transitions as tran
@@ -472,7 +473,6 @@ class CanvasPartStatistics(object):
             self.diff_pixels_inst_vs_swref_forwardlook = ts.TimeSeries()
             self.diff_pixels_inst_vs_inst = ts.TimeSeries()
             self.diff_pixels_inst_vs_stable = ts.TimeSeries()
-        if compute_vars['entropy'] < 2:
             self.true_image = None
 
         # remove directory if it did not exist before and if dont_keep_dir
@@ -615,7 +615,7 @@ class CanvasPartStatistics(object):
                 self.trans_start_time[j] = tran.transition_start_time(self, j)[1] # take the mean here, but could be the median (among variables)
                 self.trans_start_tind[j] = np.argmax(self.t_lims >= self.trans_start_time[j])
 
-            end_pretrans_sw_ind = min(self.transition_tinds[j][1], int(var.TIME_WHITEONLY))
+            end_pretrans_sw_ind = min(self.transition_tinds[j][1], int(var.TIME_WHITEOUT))
             end_posttrans_sw_ind = min(self.transition_tinds[j][4] + self.sw_width, self.n_t_bins)
             active_coords = cpart.active_coord_inds(self.t_lims[end_pretrans_sw_ind], self.t_lims[end_posttrans_sw_ind])
             self.frac_diff_pixels_pre_vs_post_trans[j] = np.count_nonzero(self.refimage_sw_flat[end_pretrans_sw_ind][active_coords]

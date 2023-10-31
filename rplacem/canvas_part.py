@@ -4,7 +4,8 @@ import pickle
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import rplacem.utilities as util
 import copy
 
@@ -47,8 +48,11 @@ class AtlasInfo(object):
         self.border_path_times_orig = border_path_times_orig
 
         # check if path is fully inside canvas
-        self.border_path[self.border_path < 0] = 0
-        self.border_path[self.border_path > 1999] = 1999
+        if self.border_path.shape[2] > 0:
+            self.border_path[:,:,0][self.border_path[:,:,0] < var.CANVAS_MINMAX[-1, 0, 0]] = var.CANVAS_MINMAX[-1, 0, 0]
+            self.border_path[:,:,0][self.border_path[:,:,0] > var.CANVAS_MINMAX[-1, 0, 1]] = var.CANVAS_MINMAX[-1, 0, 1]
+            self.border_path[:,:,1][self.border_path[:,:,1] < var.CANVAS_MINMAX[-1, 1, 0]] = var.CANVAS_MINMAX[-1, 1, 0]
+            self.border_path[:,:,1][self.border_path[:,:,1] > var.CANVAS_MINMAX[-1, 1, 1]] = var.CANVAS_MINMAX[-1, 1, 1]
 
         self.description = description
         self.atlasname = atlasname
@@ -94,10 +98,11 @@ class CanvasPart(object):
         description, name, list of website and subreddit links, of the composition, from the atlas.json.
         Empty in general for non-compositions.
             Set in _get_atlas_border()
-    quarter1_coordinds, quarter2_coordinds, quarter34_coordinds:
+    canvassection_coordinds: list of 1d np arrays
         the indices (referring to the self.coords array) that point to coordinates
-        in the 1st, 2nd, or 3rd and 4th quarters (which were not all "on" from the beginning).
-            Set in set_quarters_coord_inds(), at the responsibility of the user.
+        in the different sections of the canvas (which were not all "on" from the beginning).
+        Each element of the list is an array of coordinates for each section.
+            Set in set_canvassection_coordinds(), at the responsibility of the user.
     has_loc_jump : bool
         True if the canvas part 'jumps' from one location to another. If at least one pixel coordinate is active
         during the time that the cavnas_part is active, then there is no jump and has_loc_jump is set to False. This condition
@@ -132,7 +137,7 @@ class CanvasPart(object):
         width(self, xory=-1)
         num_pix(self)
         white_image(self, dimension=2, images_number=-1)
-        set_quarters_coord_inds(self)
+        set_canvassection_coordinds(self)
         intimerange_pixchanges_inds(self, t0, t1)
         active_coord_inds(self, t0, t1)
         select_active_pixchanges_inds(self, input_inds)
@@ -192,10 +197,11 @@ class CanvasPart(object):
             self.coords_timerange = np.full( (len(self.coords[0]), 1, 2), self.info.border_path_times[0])
         else:
             self._get_bounded_coords(show_coords=show_coords)
-        # reject times where a canvas quarter was off, for pixels in these quarters
+        # reject times where a canvas quarter was off, for pixels in these canvas sections
         if verbose:
             print('_reject_off_times()')
         self._reject_off_times()
+        print(np.where(self.coords_timerange == 0.))
 
         # set the pixel changes within the boundary
         if verbose:
@@ -281,12 +287,13 @@ class CanvasPart(object):
 
     def _reject_off_times(self):
         '''
-        Cut away in self.coords_timerange the times at which some quarters of the canvas were off
+        Cut away in self.coords_timerange the times at which some sections of the canvas were off
         '''
-        off1_ind = np.nonzero(np.asarray(self.coords[0]>=1000) * np.asarray(self.coords[1]<1000))[0]
-        off2_ind = np.nonzero(np.asarray(self.coords[1]>=1000))[0]
+        self.set_canvassection_coordinds()
 
-        for indices, tmin in [off1_ind, var.TIME_ENLARGE1], [off2_ind, var.TIME_ENLARGE2]:
+        for e in range(var.N_ENLARGE):
+            indices = self.canvassection_coordinds[e]
+            tmin = var.TIME_ENLARGE[e]
             for i in indices: # loop on indices of coordinates to be treated
                 deleted_items = 0
                 for j in range(0, len(self.coords_timerange[i])): # loop on different disjoint timeranges in which this pixel is active (usually 1)
@@ -387,39 +394,47 @@ class CanvasPart(object):
         # find redundant pixel changes
         if verbose:
             print('    find redundant pixel changes')
-        (self.pixel_changes['redundant_col'], self.pixel_changes['redundant_colanduser']) = self._find_redundant_pix_change()
+        (self.pixel_changes['redundant_col'], self.pixel_changes['redundant_colanduser']) = self._find_redundant_pix_change(verbose)
 
         # find changes with cheated cooldown (<250 seconds)
         if verbose:
             print('    find changes with cheated cooldown')
-        self.pixel_changes['cooldown_cheat'] = self._find_cheated_pix_change()
+        self.pixel_changes['cooldown_cheat'] = self._find_cheated_pix_change(verbose)
 
 
-    def _find_cheated_pix_change(self):
+    def _find_cheated_pix_change(self, verbose=False):
         '''
         Finds all the pixel_changes that cheated the 300 seconds cooldown significantly,
         meaning all changes done by a user who had done a pixel change less than 250s earlier.
         '''
         # sorting vs user index, then the time ordering should be conserved at 2nd level
-        sorting = self.pixel_changes.argsort(order=['user'])
-        self.pixch_sortuser = np.array(sorting, dtype = np.uint16 if len(sorting) < 65530 else np.uint32)
+        if verbose:
+            print('                     sorting on users')
+        self.pixch_sortuser = np.argsort(self.pixel_changes['user'], kind='stable')
+        if verbose:
+            print('                     sorting done')
+        self.pixch_sortuser = np.array(self.pixch_sortuser, dtype = np.uint16 if len(self.pixch_sortuser) < 65530 else np.uint32)
 
         # exclude moderator events
-        pix_change_cheat = np.zeros(len(self.pixel_changes))
-        pix_change_cheat[ self.pixel_changes['moderator'] ] = 1
+        pix_change_cheat = np.zeros(len(self.pixel_changes), dtype=bool)
+        pix_change_cheat[ self.pixel_changes['moderator'] ] = True
 
-        ind_nomod = np.where( np.logical_not(self.pixel_changes['moderator'][sorting]) )[0]
-        pixchanges = self.pixel_changes[sorting[ind_nomod]]
+        print('created pix_change_cheat')
+        ind_nomod = np.where( np.logical_not(self.pixel_changes['moderator'][self.pixch_sortuser]) )[0]
+        pixchanges_sec_sorted = self.pixel_changes['seconds'][self.pixch_sortuser[ind_nomod]]
+        pixchanges_user_sorted = self.pixel_changes['user'][self.pixch_sortuser[ind_nomod]]
 
+        print('created pixchanges')
         # get the time difference between pixel changes (n+1) and n for same user, and when the user changes
-        timedif = np.hstack((1e5, np.diff(pixchanges['seconds'])))
-        userchange = np.hstack((1e5, np.diff(pixchanges['user'])))
-        ind_cheat = np.where((timedif < var.COOLDOWN_MIN) & (userchange == 0))[0]
+        timedif = np.hstack((1e5, np.diff(pixchanges_sec_sorted))).astype(np.float16)
+        userchange = np.hstack((1e5, np.diff(pixchanges_user_sorted))).astype(bool)
+        ind_cheat = np.where((timedif < var.COOLDOWN_MIN) & np.logical_not(userchange))[0]
+        print('created timedif,userchange,indcheat')
 
-        pix_change_cheat[sorting[ind_nomod[ind_cheat]]] = 1
-        return pix_change_cheat.astype(bool)
+        pix_change_cheat[self.pixch_sortuser[ind_nomod[ind_cheat]]] = True
+        return pix_change_cheat
 
-    def _find_redundant_pix_change(self):
+    def _find_redundant_pix_change(self, verbose=False):
         '''
         Finds all the pixel_changes that are redundant and returns
         a boolean array indicating pixel changes whose color is redundant.
@@ -428,11 +443,16 @@ class CanvasPart(object):
         but says if the color AND the user is the same.
         '''
         # order pixel changes versus the coordinates (then the time ordering should be conserved at second level)
-        sorting = np.argsort(self.pixel_changes, order = ['coord_index'])
-        self.pixch_sortcoord = np.array(sorting, dtype = np.uint16 if len(sorting) < 65530 else np.uint32)
-        color = self.pixel_changes['color'][sorting]
-        coord = self.pixel_changes['coord_index'][sorting]
-        user = self.pixel_changes['user'][sorting]
+        
+        if verbose:
+            print('                     sorting on coordinates')
+        self.pixch_sortcoord = np.argsort(self.pixel_changes['coord_index'], kind='stable')
+        if verbose:
+            print('                     sorting done')
+        self.pixch_sortcoord = np.array(self.pixch_sortcoord, dtype = np.uint16 if len(self.pixch_sortcoord) < 65530 else np.uint32)
+        color = self.pixel_changes['color'][self.pixch_sortcoord]
+        coord = self.pixel_changes['coord_index'][self.pixch_sortcoord]
+        user = self.pixel_changes['user'][self.pixch_sortcoord]
 
         # look for changes of the same color and concerning the same pixel
         redundant_ind = np.where((np.diff(color) == 0) & (np.diff(coord) == 0))[0] + 1
@@ -440,9 +460,9 @@ class CanvasPart(object):
 
         # returned objects
         pix_change_redundant = np.zeros(len(color))
-        pix_change_redundant[sorting[redundant_ind]] = 1
+        pix_change_redundant[self.pixch_sortcoord[redundant_ind]] = 1
         pix_change_extraredundant = np.zeros(len(color))
-        pix_change_extraredundant[sorting[redundant_ind[ind_xtra_redundant]]] = 1
+        pix_change_extraredundant[self.pixch_sortcoord[redundant_ind[ind_xtra_redundant]]] = 1
         return (pix_change_redundant.astype(bool), pix_change_extraredundant.astype(bool))
 
     def _set_has_loc_jump(self):
@@ -486,7 +506,7 @@ class CanvasPart(object):
         num_coord = self.coords.shape[1]
         timeranges = self.coords_timerange
 
-        if self.is_rectangle:
+        if self.is_rectangle and np.all(timeranges[:,:,0] == timeranges[:,0,0]): #TODO check this is the case used for smallish rectangle compositions
             (t0ref, t1ref) = timeranges[0][0]
             if (t0 >= t0ref or t1 > t0ref) and (t0 < t1ref or t1 <= t1ref):
                 inds_active = np.arange(0, num_coord)
@@ -624,29 +644,31 @@ class CanvasPart(object):
         return current_colors
 
 
-    def set_quarters_coord_inds(self, rerun=False):
-        ''' Set the attributes quarter1_coordinds, quarter2_coordinds, quarter34_coordinds '''
-        if (not hasattr(self, 'quarter1_coordinds')) or rerun:
-            self.quarter1_coordinds = np.where((self.coords[0]<1000) & (self.coords[1]<1000))
-            self.quarter2_coordinds = np.where((self.coords[0]>=1000) & (self.coords[1]<1000))
-            self.quarter34_coordinds = np.where(self.coords[1]>=1000)
+    def set_canvassection_coordinds(self, rerun=False):
+        ''' Set the attribute canvassection_coordinds'''
+        if (not hasattr(self, 'canvassection_coordinds')) or rerun:
+            self.canvassection_coordinds = []
+            for e in range(var.N_ENLARGE):
+                cond_prev = False if e == 0 else cond
+                cond = ((self.coords[0] >= var.CANVAS_MINMAX[e, 0, 0]) & (self.coords[0] <= var.CANVAS_MINMAX[e, 0, 1]) &
+                        (self.coords[1] >= var.CANVAS_MINMAX[e, 1, 0]) & (self.coords[1] <= var.CANVAS_MINMAX[e, 1, 1]))
+                self.canvassection_coordinds.append( np.where(cond & np.invert(cond_prev))[0] ) # includes only the pixels that are in the new section, and not in the pre-existing ones
 
     def tmin_quadrant(self):
         '''
         Returns the minimum time of the quadrant on which this composition is
         '''
-        self.set_quarters_coord_inds()
+        self.set_canvassection_coordinds()
 
         tmin = 0
-        if len(self.quarter1_coordinds[0]) == 0:
-            if len(self.quarter2_coordinds[0]) > 0:
-                tmin = var.TIME_ENLARGE1
-            else:
-                tmin = var.TIME_ENLARGE2
+        for e in range(var.N_ENLARGE):
+            if len(self.canvassection_coordinds[e]) > 0:
+                tmin = var.TIME_ENLARGE[e]
+                break
 
         return tmin
 
-    def min_max_time(self, tmax_global=var.TIME_WHITEONLY):
+    def min_max_time(self, tmax_global=var.TIME_WHITEOUT):
         '''
         Returns first and last time that the composition is on
         '''

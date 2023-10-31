@@ -3,7 +3,8 @@ import rplacem.canvas_part as cp
 import rplacem.utilities as util
 import rplacem.canvas_part_statistics as stat
 import rplacem.compute_variables as compute
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns

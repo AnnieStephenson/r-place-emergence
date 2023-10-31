@@ -3,7 +3,8 @@ import os
 import rplacem.canvas_part as cp
 import rplacem.utilities as util
 import rplacem.canvas_part_statistics as stat
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import rplacem.transitions as trans
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -366,7 +367,7 @@ def firing_times(cpstat, ewsvar, earlyness, thres, slidingrange=21600, warning_c
         exclude_afterinactive = last_inactive + 1 + exclude_beg
         exclude_afterinactive = np.minimum(exclude_afterinactive, cpstat.n_t_bins - 1) # cap values at length of t_ranges
     # exclude white only times
-    exclude_end = np.arange(math.floor((var.TIME_WHITEONLY - earlyness) / tint), math.ceil(var.TIME_TOTAL / tint))
+    exclude_end = np.arange(math.floor((var.TIME_WHITEOUT - earlyness) / tint), math.ceil(var.TIME_TOTAL / tint))
     # exclude time within [earlyness] time before transition, and [slidingrange] time after transition
     _, mean_trans_starttime, median_trans_starttime, _ = trans.transition_start_time(cpstat)
     exclude_trans = []

@@ -1,7 +1,8 @@
 import numpy as np
 import pickle
 import os
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 import rplacem.transitions as tran
 import math
 import gc
@@ -17,9 +18,9 @@ gc.collect()
 # Define times that are kept before each event used in 
 tstep = cpstat0.t_interval
 trans_param = cpstat0.transition_param
-watchrange_min = max(trans_param[2] + trans_param[3], 5*3600) # minimal time range kept for single time series instances in training
+watchrange_min = max(trans_param[2] + trans_param[3], 6*3600) # minimal time range kept for single time series instances in training
 
-watch_timeidx_diff = np.array([1, 1, 2, 5, 13, 17, 17, 17]) # time indices kept, preceding the time of an event 
+watch_timeidx_diff = np.array([1, 1, 1, 2, 3, 5, 8, 10, 12, 15, 15]) #np.array([1, 1, 2, 5, 13, 17, 17, 17]) # time indices kept, preceding the time of an event 
 while tstep * (np.sum(watch_timeidx_diff)-1) < watchrange_min:
     watch_timeidx_diff = np.append(watch_timeidx_diff, 12)
 watch_timeidx = - np.flip(np.cumsum(watch_timeidx_diff)) + 1 # starts at -max_watch_index and ends at 0
@@ -33,7 +34,7 @@ watchrange = tstep * len_watchrange # length in seconds
 print(watchrange)
 
 # Same but for coarse variables
-watch_timeidx_diff_coarse = np.array([1, 8, 13, 17, 17, 17]) # time indices kept. For smoothened variables
+watch_timeidx_diff_coarse = np.array([1, 3, 8, 9, 10, 12, 15, 15])#np.array([1, 8, 13, 17, 17, 17]) # time indices kept. For smoothened variables
 while tstep * (np.sum(watch_timeidx_diff_coarse)-1) < watchrange_min:
     watch_timeidx_diff_coarse = np.append(watch_timeidx_diff_coarse, 12)
 watch_timeidx_coarse = - np.flip(np.cumsum(watch_timeidx_diff_coarse)) + 1
@@ -55,7 +56,7 @@ def variables_from_cpstat(cps):
     cps.fractal_dim_weighted.set_ratio_to_sw_average()
 
     take_ratio_to_average = np.array([0,0,0,0,0,0,0,0,0,1,1,0,0,0], dtype=bool)
-    coarse_timeranges = np.array([0,0,0,0,0,0,1,1,0,0,0,1,1,0], dtype=bool)
+    coarse_timeranges = np.array([0,0,0,0,0,1,1,1,0,0,0,0,1,0], dtype=bool)
     vars = np.array([cps.frac_pixdiff_inst_vs_swref,
                      cps.frac_pixdiff_inst_vs_stable_norm,
                      cps.frac_attack_changes,
@@ -78,9 +79,11 @@ def variables_from_cpstat(cps):
     return(vars, take_ratio_to_average, coarse_timeranges)
 
 cpstatvars = variables_from_cpstat(cpstat0)
-n_cpstatvars = np.count_nonzero(cpstatvars[2] == 0)
-n_cpstatvars_coarse = np.count_nonzero(cpstatvars[2] == 1)
+coarse_timerange = cpstatvars[2]
+n_cpstatvars = np.count_nonzero(coarse_timerange == 0)
+n_cpstatvars_coarse = np.count_nonzero(coarse_timerange == 1)
 n_trainingvars = n_cpstatvars * n_traintimes + n_cpstatvars_coarse * n_traintimes_coarse
+
 
 def get_vals_from_var(v, tidx, coarse=False):
     '''
@@ -94,20 +97,24 @@ def get_vals_from_var(v, tidx, coarse=False):
         vals[i] = np.mean(v[inds])
     return vals
 
-def get_earlyness(cpstat, t, trans_starttimes):
+def get_earliness(cpstat, t, trans_starttimes):
     '''
-    Return the earlyness of a potential signal at time t compared to the transitions present in cpstat
+    Return the earliness of a potential signal at time t compared to the transitions present in cpstat.
+    A random high (ie above 10h) earliness value is given when there is no transition in the composition
     '''
-    max_earlyness = 2.e5 #var.TIME_WHITEONLY - max(cpstat.sw_width_sec, watchrange) # max range of earlyness
+    min_earliness_notrans = 10*3600 # minimum random earliness given to events in no-transition compositions
+    max_earliness = var.TIME_WHITEOUT - max(cpstat.sw_width_sec, watchrange) # max range of earliness
+
     if cpstat.n_transitions == 0: # no transitions
-        return max_earlyness
+        # keep continuity of earliness values even here, but do not give value lower than some minimum
+        return var.TIME_WHITEOUT - t + min_earliness_notrans
     else:
-        possible_earlynesses = trans_starttimes - t
-        possible_earlynesses = possible_earlynesses[possible_earlynesses >= 0]
-        if len(possible_earlynesses) == 0: # all transitions are past time t
-            return max_earlyness
+        possible_earlinesses = trans_starttimes - t
+        possible_earlinesses = possible_earlinesses[possible_earlinesses >= 0]
+        if len(possible_earlinesses) == 0: # all transitions are past time t
+            return np.random.uniform(min_earliness_notrans, max_earliness)
         else: # take the closest transition happening after t
-            return np.min(possible_earlynesses)
+            return np.min(possible_earlinesses)
 
 def keep_in_sample(cpstat, it, t, trans_starttimes):
     '''
@@ -117,18 +124,20 @@ def keep_in_sample(cpstat, it, t, trans_starttimes):
         (cpstat.n_transitions == 0 or np.all(np.logical_or(t < trans_starttimes, it >= cpstat.transition_tinds[:, 3]))) and # exclude times with transition periods (can be redundant with line above)
         t >= cpstat.sw_width_sec + cpstat.tmin and # larger times than the sliding window and watchrange widths, and only when the composition is active (tmin)
         t >= watchrange + cpstat.tmin and
-        t <= var.TIME_WHITEONLY and # exclude white-only period
+        t <= var.TIME_WHITEOUT and # exclude white-only period
         cpstat.area_vst.val[it] > 0 and # non-zero active area
         # t must be in a timerange where the border_path is relatively stable, and at least [watchrange] later than the start of this timerange 
         np.any(np.logical_and(t >= cpstat.stable_borders_timeranges[:, 0] + watchrange, t <= cpstat.stable_borders_timeranges[:, 1])) and
         it < cpstat.n_t_bins - 1 # exclude the last time interval, that has a different size
         ):
 
+        # require a 3h stable region within the watchrange (so that it it the transition moment that is researched by the algo, and not the pre-transition stable period)
         len_stableregion = math.ceil(3.*3600 / (cpstat.t_lims[1] - cpstat.t_lims[0])) # maybe should use trans_param[2] (in seconds)...
         itmin = max(it - len_watchrange, np.argmax(cpstat.t_lims >= cpstat.tmin))
         stable_cond = cpstat.frac_pixdiff_inst_vs_swref.val[itmin:(it+1)] < trans_param[1]
         seq_pretrans = tran.limits_sequence_of_true(stable_cond, len_stableregion)
         return len(seq_pretrans) > 0
+    
     else:
         return False
 
@@ -141,6 +150,7 @@ outputval = np.full((nevents_max), -1, dtype=np.float32)
 varnames = []
 eventtime = np.full((nevents_max), -1, dtype=np.float64)
 id_idx = np.full((nevents_max), -1, dtype=np.int16)
+#previous_tstep_idx = np.full((nevents_max), 1e9, dtype=np.int16)
 id_dict = np.full(ncompmax, '')
 ntimes=0
 
@@ -179,6 +189,7 @@ for p in range(0, math.ceil(ncompmax/period)):
                     varnames.append(v.label + '_t' + 
                                     ((str(timeidx[i]) + str(timeidx[i+1]-1)) if (i < n_times-1) else '-0-0'))
 
+        #prev_it = -2
         for it, t in enumerate(cps.t_lims):
             ntimes += 1
             if keep_in_sample(cps, it, t, trans_starttimes):
@@ -191,13 +202,19 @@ for p in range(0, math.ceil(ncompmax/period)):
                 # input variables
                 inputvals[i_event] = vars_thistime
 
-                # earlyness output
-                outputval[i_event] = get_earlyness(cps, t, trans_starttimes)
+                # earliness output
+                outputval[i_event] = get_earliness(cps, t, trans_starttimes)
 
                 # time of this recorded event
                 eventtime[i_event] = t
                 #print(icps, it, t, outputval[-1], cps.frac_pixdiff_inst_vs_swref.val[it], cps.frac_pixdiff_inst_vs_swref_forwardlook.val[it], inputvals[-1][0:7] )
                 id_idx[i_event] = icps
+
+                ## index of the previous recorded event if it is only one timestep away
+                #if prev_it == it-1:
+                #    previous_tstep_idx[i_event] = i_event - 1
+                #prev_it = it
+
 
 print('# events total = ', i_event, 'from',n_keptcomps,'compositions')
 
@@ -206,6 +223,8 @@ inputvals = inputvals[0:i_event+1]
 outputval = outputval[0:i_event+1]
 eventtime = eventtime[0:i_event+1]
 id_idx = id_idx[0:i_event+1]
+#previous_tstep_idx = previous_tstep_idx[0:i_event+1]
+
 #for i in range(0, len(inputvals)):
 #    print(varnames)
 #    print(i, eventtime[i], inputvals[i], outputval[i])
@@ -215,10 +234,9 @@ print(inputvals.shape)
 print(outputval.shape)
 #print(outputval)
 
-
-file_path = os.path.join(var.DATA_PATH, 'training_data.pickle')
+file_path = os.path.join(var.DATA_PATH, 'training_data_'+str(n_trainingvars)+'variables.pickle')
 with open(file_path, 'wb') as handle:
-    pickle.dump([inputvals, outputval, varnames, eventtime, id_idx, id_dict],
+    pickle.dump([inputvals, outputval, varnames, eventtime, id_idx, id_dict, coarse_timerange, n_traintimes, n_traintimes_coarse],#previous_tstep_idx
                 handle,
                 protocol=pickle.HIGHEST_PROTOCOL)
 

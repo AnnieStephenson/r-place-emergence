@@ -3,7 +3,8 @@ import os
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
-import rplacem.variables_rplace2022 as var
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 
 file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
 
