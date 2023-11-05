@@ -554,7 +554,7 @@ def main_variables(cpart,
             # autocorrelation
             autocorr_per_pix = np.zeros(len(current_color))
             mode_color = stable_colors[:, 0]
-            previous_color = previous_colors[0, :]
+            previous_color = previous_colors[i_replace - 1, :]
 
             autocorr_per_pix[(current_color == previous_color) & (current_color == mode_color)] = 0
             autocorr_per_pix[(current_color == previous_color) & (current_color != mode_color)] = 1

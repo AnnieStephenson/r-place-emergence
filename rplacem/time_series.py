@@ -5,6 +5,7 @@ import rplacem.globalvariables_peryear as vars
 var = vars.var
 import rplacem.plot_utilities as plot
 import rplacem.utilities as util
+import scipy.stats
 
 class TimeSeries(object):
     '''
@@ -47,6 +48,7 @@ class TimeSeries(object):
         At index i, it contains the relevant transformation applied to the
         values at indices [max(0, i-sw_width_ews) : i]  (including i)
         Set in set_variance(), set_autocorrelation(), set_skewness()
+    kendall_tau
 
     methods
     -------
@@ -62,6 +64,7 @@ class TimeSeries(object):
         set_variance()
         set_autocorrelation()
         set_skewness()
+        set_kendalls_tau()
     '''
 
     def __init__(self,
@@ -154,6 +157,14 @@ class TimeSeries(object):
         autocorrelation = x.rolling(window=self.sw_width_ews, min_periods=1).apply(lambda y: y.autocorr())
         self.autocorrelation = np.array(autocorrelation)
 
+    def set_kendall_tau(self):
+        '''
+        calculates the rolling kendall's tau coefficient of the the state variable
+        '''
+        x = pd.Series(self.val)
+        kendall_tau = x.rolling(window=self.sw_width_ews, min_periods=1).apply(calc_kendall_tau)
+        self.kendall_tau = np.array(kendall_tau)
+
     def plot1d(self, xlog=False, ylog=False, ymin=None, ymax=None, save=True, hline=None, vline=None, ibeg_remove=0, iend_remove=0):
         if self.t_pts is None:
             self.set_t_pts()
@@ -166,3 +177,13 @@ class TimeSeries(object):
                      hline=hline, vline=vline,
                      save=(self.savename if save else '')
                      )
+
+
+def calc_kendall_tau(variable):
+    '''
+    calculates the kendall's tau coefficient
+    '''
+    x = np.arange(len(variable))
+    y = np.array(variable)
+    res = scipy.stats.kendalltau(x, y, variant='c')
+    return res.statistic
