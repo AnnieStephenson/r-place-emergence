@@ -394,7 +394,9 @@ def main_variables(cpart,
     # Output
     cpst.stability = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.autocorr = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+    cpst.autocorr2 = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
     cpst.variance = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+    cpst.variance2 = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
     cpst.diff_pixels_stable_vs_swref = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_swref = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_swref_forwardlook = cpst.ts_init(np.zeros(n_tlims))
@@ -551,20 +553,33 @@ def main_variables(cpart,
 
         # CLASSIC EWS VARIABLES
         if ews > 0:
-            # autocorrelation
-            autocorr_per_pix = np.zeros(len(current_color))
             mode_color = stable_colors[:, 0]
             previous_color = previous_colors[i_replace - 1, :]
 
-            autocorr_per_pix[(current_color == previous_color) & (current_color == mode_color)] = 0
-            autocorr_per_pix[(current_color == previous_color) & (current_color != mode_color)] = 1
-            autocorr_per_pix[(current_color != previous_color) & (current_color != mode_color) & (previous_color != mode_color)] = -1
-            autocorr_per_pix[(current_color != previous_color) & ((current_color == mode_color) | (previous_color == mode_color))] = 0
-            cpst.autocorr.val[i] = np.mean(autocorr_per_pix)
+            # autocorrelation normalized per pixel
+            autocorr_norm_per_pix = np.zeros(len(current_color))
+            autocorr_norm_per_pix[(current_color == previous_color) & (current_color == mode_color)] = 0
+            autocorr_norm_per_pix[(current_color == previous_color) & (current_color != mode_color)] = 1
+            autocorr_norm_per_pix[(current_color != previous_color) & (current_color != mode_color) & (previous_color != mode_color)] = -1
+            autocorr_norm_per_pix[(current_color != previous_color) & ((current_color == mode_color) | (previous_color == mode_color))] = 0
+            cpst.autocorr.val[i] = np.mean(autocorr_norm_per_pix)
 
-            # variance (different definition from 1-stability)
-            variance_per_pix = 1/np.sum(stable_timefrac**2, axis=1)
-            cpst.variance.val[i] = np.mean(variance_per_pix)
+            # autocorrelation of entire state
+            autocorr_denom_per_pix = np.zeros(len(current_color))
+            autocorr_denom_per_pix[(current_color == previous_color) & (current_color == mode_color)] = 0
+            autocorr_denom_per_pix[(current_color == previous_color) & (current_color != mode_color)] = 1
+            autocorr_denom_per_pix[(current_color != previous_color) & (current_color != mode_color) & (previous_color != mode_color)] = 1
+            autocorr_denom_per_pix[(current_color != previous_color) & ((current_color == mode_color) | (previous_color == mode_color))] = 0.5
+            cpst.autocorr2.val[i] = np.sum(autocorr_norm_per_pix)/np.sum(autocorr_denom_per_pix)
+
+
+            # variance normalized per pixel (different definition from 1-stability)
+            # this sums of the time fractions over each color for a given pixel, takes the inverse, then the mean over pixels
+            cpst.variance.val[i] = np.mean(1/np.sum(stable_timefrac**2, axis=1))
+
+            # variance or entire state
+            # this sums the time fractions over each pixel for a given color, takes the inverse, then the mean over colors
+            cpst.variance2.val[i] = np.mean(stable_timefrac**2)/32.
 
 
         # ATTACK/DEFENSE VS REFERENCE IMAGE

@@ -393,7 +393,9 @@ class CanvasPartStatistics(object):
         self.frac_attack_changes_image = None
 
         self.autocorr = ts.TimeSeries()
+        self.autocorr2 = ts.TimeSeries()
         self.variance = ts.TimeSeries()
+        self.variance2 = ts.TimeSeries()
 
         self.n_changes = ts.TimeSeries()
         self.n_defense_changes = ts.TimeSeries()
