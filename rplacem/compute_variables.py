@@ -528,33 +528,36 @@ def main_variables(cpart,
 
         # CLASSIC EWS VARIABLES
         if ews > 0:
-            mode_color = stable_colors[:, 0]
-            previous_color = previous_colors[i_replace - 1, :]
+            mode_color = stable_colors[inds_coor_active, 0]
+            prev_color = previous_colors[(i_replace - 1) % cpst.sw_width, inds_coor_active]
+            curr_color = current_color[inds_coor_active]
 
             # autocorrelation normalized per pixel
-            autocorr_norm_per_pix = np.zeros(len(current_color))
-            autocorr_norm_per_pix[(current_color == previous_color) & (current_color == mode_color)] = 0
-            autocorr_norm_per_pix[(current_color == previous_color) & (current_color != mode_color)] = 1
-            autocorr_norm_per_pix[(current_color != previous_color) & (current_color != mode_color) & (previous_color != mode_color)] = -1
-            autocorr_norm_per_pix[(current_color != previous_color) & ((current_color == mode_color) | (previous_color == mode_color))] = 0
-            cpst.autocorr.val[i] = np.mean(autocorr_norm_per_pix)
+            autocorr_norm_per_pix = np.zeros(len(curr_color))
+            autocorr_norm_per_pix[(curr_color == prev_color) & (curr_color == mode_color)] = 0
+            autocorr_norm_per_pix[(curr_color == prev_color) & (curr_color != mode_color)] = 1
+            autocorr_norm_per_pix[(curr_color != prev_color) & (curr_color != mode_color) & (prev_color != mode_color)] = -1
+            autocorr_norm_per_pix[(curr_color != prev_color) & ((curr_color == mode_color) | (prev_color == mode_color))] = 0
+            cpst.autocorr.val[i] = np.mean(autocorr_norm_per_pix) if len(autocorr_norm_per_pix) > 0 else 0
 
             # autocorrelation of entire state
-            autocorr_denom_per_pix = np.zeros(len(current_color))
-            autocorr_denom_per_pix[(current_color == previous_color) & (current_color == mode_color)] = 0
-            autocorr_denom_per_pix[(current_color == previous_color) & (current_color != mode_color)] = 1
-            autocorr_denom_per_pix[(current_color != previous_color) & (current_color != mode_color) & (previous_color != mode_color)] = 1
-            autocorr_denom_per_pix[(current_color != previous_color) & ((current_color == mode_color) | (previous_color == mode_color))] = 0.5
-            cpst.autocorr2.val[i] = np.sum(autocorr_norm_per_pix)/np.sum(autocorr_denom_per_pix)
+            autocorr_denom_per_pix = np.zeros(len(curr_color))
+            autocorr_denom_per_pix[(curr_color == prev_color) & (curr_color == mode_color)] = 0
+            autocorr_denom_per_pix[(curr_color == prev_color) & (curr_color != mode_color)] = 1
+            autocorr_denom_per_pix[(curr_color != prev_color) & (curr_color != mode_color) & (prev_color != mode_color)] = 1
+            autocorr_denom_per_pix[(curr_color != prev_color) & ((curr_color == mode_color) | (prev_color == mode_color))] = 0.5
+            denom = np.sum(autocorr_denom_per_pix)
+            cpst.autocorr2.val[i] = np.sum(autocorr_norm_per_pix) / denom if denom != 0 else 0
 
 
             # variance normalized per pixel (different definition from 1-stability)
-            # this sums of the time fractions over each color for a given pixel, takes the inverse, then the mean over pixels
-            cpst.variance.val[i] = np.mean(1/np.sum(stable_timefrac**2, axis=1))
+            # this sums the time fractions over each color for a given pixel, takes the inverse, then the mean over pixels
+            sum2_stable_timefrac = np.sum(stable_timefrac[inds_coor_active, :]**2, axis=1)
+            cpst.variance.val[i] = np.mean(np.reciprocal(sum2_stable_timefrac)) if len(inds_coor_active) > 0 else 1
 
-            # variance or entire state
-            # this sums the time fractions over each pixel for a given color, takes the inverse, then the mean over colors
-            cpst.variance2.val[i] = np.mean(stable_timefrac**2)/32.
+            # variance of entire state
+            # this sums the time fractions over each pixel, averaged over all colors, then takes the inverse
+            cpst.variance2.val[i] = var.NUM_COLORS / np.mean(stable_timefrac[inds_coor_active, :]**2) if len(inds_coor_active) > 0 else 1
 
 
         # ATTACK/DEFENSE VS REFERENCE IMAGE
@@ -831,7 +834,7 @@ def returntime(last_time_installed_sw, last_time_removed_sw,
 
     # compute mean and quantiles of returntime over pixels
     returntime_all = np.concatenate((returntime_inattpix, returntime_indefpix))
-    return np.mean(returntime_all), np.quantile(returntime_all, np.arange(0, 1.01, 0.1))
+    return (np.mean(returntime_all) if len(returntime_all) > 0 else 0), (np.quantile(returntime_all, np.arange(0, 1.01, 0.1)) if len(returntime_all) > 0 else 0)
 
 
 def return_time_fwdlooking(cpart, ref_image, t_lims=[0, var.TIME_TOTAL], summary_stats=True):
