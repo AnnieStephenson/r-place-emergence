@@ -106,6 +106,14 @@ class CanvasPartStatistics(object):
         Ratio of size of the size of the compressed stable image pixel array to the number of active pixels, at each time step
         Set in ratios_and_normalizations()
 
+    CLASSIC EWS -- need compute_vars['ews'] > 0
+    autocorrelation: TimeSeries, npts = n_t_bins + 1
+        calculated based on 4 cases of current color being equal or not to the previous color and to the mode color.
+    variance: TimeSeries, npts = n_t_bins + 1
+        variance as calculated by the spread in time fractions of different colors. An alternative variance is
+        1-stability.
+
+
     ENTROPY -- all need compute_vars['entropy'] > 0
     diff_pixels_stable_vs_swref
     diff_pixels_inst_vs_swref
@@ -300,7 +308,7 @@ class CanvasPartStatistics(object):
                  cpart,
                  t_interval=300,
                  tmax=var.TIME_TOTAL,
-                 compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1},
+                 compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1, 'ews': 0},
                  sliding_window=14400,
                  returnt_binwidth=100,
                  trans_param=[0.3, 0.1, 2*3600, 4*3600],
@@ -383,6 +391,11 @@ class CanvasPartStatistics(object):
         self.true_image = None
         self.attack_defense_image = None
         self.frac_attack_changes_image = None
+
+        self.autocorr = ts.TimeSeries()
+        self.autocorr2 = ts.TimeSeries()
+        self.variance = ts.TimeSeries()
+        self.variance2 = ts.TimeSeries()
 
         self.n_changes = ts.TimeSeries()
         self.n_defense_changes = ts.TimeSeries()
