@@ -162,10 +162,10 @@ def substract_and_sparse_replace(time_spent_in_color_sw, time_spent_in_color_vst
             # indices of pixels that needs at least i_rmv removed, and have the right length of recorded timespent (reg)
             enough_removedcols = np.where((num_cols_removed >= i_rmv + 1) & pix_thisreg)[0]
             # substract from time_spent_in_color_sw
-            time_spent_in_color_sw[enough_removedcols, 
+            time_spent_in_color_sw[enough_removedcols,
                                    nth_true_element(active_pix_removed[enough_removedcols], i_rmv)] -= time_spent_in_color_vst[reg][pos_in_timespentvst[enough_removedcols],
                                                                                                         (startidx_timespent[enough_removedcols] + i_rmv) % rec_lengths[reg]]
-        
+
         if not replace:
             continue
         # Here, add new elements in time_spent_in_color_vst, corresponding to the active colors in the new timestep
@@ -173,8 +173,8 @@ def substract_and_sparse_replace(time_spent_in_color_sw, time_spent_in_color_vst
             # indices of pixels that needs at least i_add added, and have the right length of recorded timespent (reg)
             enough_addedcols = np.where((num_cols_added >= i_add + 1) & (rec_len_regime == reg))[0]
             # add to time_spent_in_color_vst
-            time_spent_in_color_vst[reg][pos_in_timespentvst[enough_addedcols], 
-                                        (endidx_timespent[enough_addedcols] + i_add) % rec_lengths[reg]] = time_spent_in_color[enough_addedcols, 
+            time_spent_in_color_vst[reg][pos_in_timespentvst[enough_addedcols],
+                                        (endidx_timespent[enough_addedcols] + i_add) % rec_lengths[reg]] = time_spent_in_color[enough_addedcols,
                                                                                                                                nth_true_element(active_pix_added[enough_addedcols], i_add)]
 
     # deplace pointer for the start and end of useful values in time_spent_in_color_vst
@@ -318,6 +318,7 @@ def main_variables(cpart,
     instant = cpst.compute_vars['entropy']
     tran = cpst.compute_vars['transitions']
     other = cpst.compute_vars['other']
+    ews = cpst.compute_vars['ews']
     if save_memory is None:
         save_memory = (cpart.num_pix() > 3e5) # do the slower memory-saving method when the canvaspart is larger than 300,000 pixels
 
@@ -344,7 +345,7 @@ def main_variables(cpart,
         active_colors_vst = np.zeros((cpst.sw_width, cpart.num_pix(), var.NUM_COLORS), dtype=bool)
         rec_lengths = np.array([int(cpst.sw_width * 1.7), int(cpst.sw_width * 4.5), cpst.sw_width * var.NUM_COLORS])
         rec_len_regime = np.zeros((cpart.num_pix()), dtype=np.int8)
-        rec_timespent_num = np.zeros((cpart.num_pix()), dtype=np.int16) 
+        rec_timespent_num = np.zeros((cpart.num_pix()), dtype=np.int16)
         time_spent_in_color_vst = np.empty((3), dtype=object)
         time_spent_in_color_vst[0] = np.zeros((cpart.num_pix(), rec_lengths[0]), dtype=np.float32)
         for i in np.arange(1, 3): # will be filled when necessary
@@ -370,6 +371,10 @@ def main_variables(cpart,
     cpst.runnerup_timeratio_percentile90 = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
     cpst.n_used_colors_mean = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.n_used_colors_meanhighestdecile = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
+    cpst.autocorr = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+    cpst.autocorr2 = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+    cpst.variance = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+    cpst.variance2 = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
     cpst.diff_pixels_stable_vs_swref = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_swref = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_swref_forwardlook = cpst.ts_init(np.zeros(n_tlims))
@@ -519,8 +524,39 @@ def main_variables(cpart,
             ref_color = ref_im_const
 
         if i < itmin - 1: # skip times where the composition is not on
-            return #continue
-        
+            continue
+
+        # CLASSIC EWS VARIABLES
+        if ews > 0:
+            mode_color = stable_colors[:, 0]
+            previous_color = previous_colors[i_replace - 1, :]
+
+            # autocorrelation normalized per pixel
+            autocorr_norm_per_pix = np.zeros(len(current_color))
+            autocorr_norm_per_pix[(current_color == previous_color) & (current_color == mode_color)] = 0
+            autocorr_norm_per_pix[(current_color == previous_color) & (current_color != mode_color)] = 1
+            autocorr_norm_per_pix[(current_color != previous_color) & (current_color != mode_color) & (previous_color != mode_color)] = -1
+            autocorr_norm_per_pix[(current_color != previous_color) & ((current_color == mode_color) | (previous_color == mode_color))] = 0
+            cpst.autocorr.val[i] = np.mean(autocorr_norm_per_pix)
+
+            # autocorrelation of entire state
+            autocorr_denom_per_pix = np.zeros(len(current_color))
+            autocorr_denom_per_pix[(current_color == previous_color) & (current_color == mode_color)] = 0
+            autocorr_denom_per_pix[(current_color == previous_color) & (current_color != mode_color)] = 1
+            autocorr_denom_per_pix[(current_color != previous_color) & (current_color != mode_color) & (previous_color != mode_color)] = 1
+            autocorr_denom_per_pix[(current_color != previous_color) & ((current_color == mode_color) | (previous_color == mode_color))] = 0.5
+            cpst.autocorr2.val[i] = np.sum(autocorr_norm_per_pix)/np.sum(autocorr_denom_per_pix)
+
+
+            # variance normalized per pixel (different definition from 1-stability)
+            # this sums of the time fractions over each color for a given pixel, takes the inverse, then the mean over pixels
+            cpst.variance.val[i] = np.mean(1/np.sum(stable_timefrac**2, axis=1))
+
+            # variance or entire state
+            # this sums the time fractions over each pixel for a given color, takes the inverse, then the mean over colors
+            cpst.variance2.val[i] = np.mean(stable_timefrac**2)/32.
+
+
         # ATTACK/DEFENSE VS REFERENCE IMAGE
         if attdef > 0:
             # Calculate the (normalized) cumulative attack time over all pixels in this timestep
@@ -655,7 +691,7 @@ def main_variables(cpart,
 
             i_replace = i % cpst.sw_width # where to modify the "rolling" time_spent_in_color_vst array
             if save_memory:
-                substract_and_sparse_replace(time_spent_in_color_sw, time_spent_in_color_vst, None, i_replace, 
+                substract_and_sparse_replace(time_spent_in_color_sw, time_spent_in_color_vst, None, i_replace,
                                              pos_in_timespentvst, active_colors_vst, startidx_timespent, None,
                                              rec_len_regime, rec_lengths, None, None, replace=False, try_reduce=False)
             else:
