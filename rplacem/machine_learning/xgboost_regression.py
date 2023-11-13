@@ -351,8 +351,8 @@ def ROCAUC_6h_maxFPR1(pred, dtrain):
 # extract training data from file
 file_path = os.path.join(var.DATA_PATH, 'training_data_142variables.pickle')
 with open(file_path, 'rb') as f:
-    [inputvals, outputval, varnames, eventtime, id_idx, id_dict
-     #, coarse_timerange, n_traintimes, n_traintimes_coarse
+    [inputvals, outputval, varnames, eventtime, id_idx, id_dict,
+     coarse_timerange, n_traintimes, n_traintimes_coarse
      ] = pickle.load(f) 
 coarse_timerange = np.array([0,0,0,0,0,0,1,1,0,0,0,1,1,0], dtype=bool)
 n_traintimes = 11
@@ -360,12 +360,18 @@ n_traintimes_coarse = 8
 
 #previous_tstep_idx
 
+print(outputval[np.where(id_idx == 2)])
+
 # temporary, until re-running build_datasets
 min_earliness_notrans = 12*3600 # minimum random earliness given to events in no-transition compositions
-max_earliness = var.TIME_WHITEOUT - 6*3600 # max range of earliness
-notrans_events = np.where(np.isclose(outputval, 2e5, atol=1e-4))[0]
-outputval[notrans_events] = np.random.uniform(min_earliness_notrans, max_earliness, len(notrans_events))
+#max_earliness = var.TIME_WHITEOUT - 6*3600 # max range of earliness
+#notrans_events = np.where(np.isclose(outputval, 2e5, atol=1e-4))[0]
+#np.random.seed(42)
+#outputval[notrans_events] = np.random.uniform(min_earliness_notrans, max_earliness, len(notrans_events))
+nocomingtransition_events = np.where(outputval > min_earliness_notrans)[0]
+outputval[nocomingtransition_events] = min_earliness_notrans
 
+print(outputval[np.where(id_idx == 2)])
 
 # implement a small max_earliness
 #maxearliness = 12*3600
@@ -657,6 +663,11 @@ if binaryClassif:
                     loge=True, normalize_cols=False, addsavename='_backgroundEnriched_train')
     hist_true_vs_pred(true_test_regBkg, pred_test_regBkg, zmax=1.3e3, 
                     loge=True, normalize_cols=False, addsavename='_backgroundEnriched')
+    
+print('save to npz')
+np.savez(os.path.join(var.DATA_PATH, 'earliness_true_vs_predicted.npz') ,
+                      true = true_test_regSig, predicted = pred_test_regSig, compoID_idx = id_idx[test_inds][passClassif_test], time = eventtime[test_inds][passClassif_test], id_dict = id_dict )
+
 
 
 
@@ -774,6 +785,7 @@ makeplots = (not binaryClassif) and True
 
 if makeplots:
 
+    '''
     # SHAP values for feature importance
     explainer = shap.Explainer(model_Sig, feature_names=varnames)
     shap_values = explainer(X_test[passClassif_test])
@@ -847,7 +859,6 @@ if makeplots:
     shap_eachrange_coarse.values = shap_eachrange_coarse_vals
     shap_eachrange_coarse.data = shap_eachrange_coarse_data
     shap_eachrange_coarse.feature_names=varnames_eachrange_coarse
-    print
 
     plt.figure()
     shap.plots.beeswarm(shap_eachvar, show=False, max_display=40)
@@ -897,9 +908,8 @@ if makeplots:
     plt.figure()
     shap.plots.beeswarm(shap_values[y_test[passClassif_test] >= transform_target(6*3600)], show=False, max_display=142)
     plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_beeswarm_trueEarlinessAbove6h.pdf'), dpi=250, bbox_inches='tight')
-
-    exit()
-
+    '''
+    
     scatter_true_vs_pred(true_test_regSig, pred_test_regSig, id_idx, test_inds, loge=True)
     scatter_true_vs_pred(true_test_regSig, pred_test_regSig, id_idx, test_inds, loge=False)
     hist_true_vs_pred(true_test_regSig, pred_test_regSig, zmax=emax_test_hist2d, 
@@ -910,6 +920,7 @@ if makeplots:
     hist_true_vs_pred(true_train_regSig, pred_train_regSig, zmax=emax_test_hist2d*((1-test_size)/test_size), 
                       loge=True, trainsamples=True, normalize_cols=True, addsavename='_highEweight'+str(wmin))
 
+    exit()
 
     '''
     # check feature importance

@@ -1,3 +1,5 @@
+import matplotlib as mpl
+mpl.use('agg') # clears memory problem with GUI backend (plt.close() not working when plt.show() wasn't run before)
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 from matplotlib.ticker import ScalarFormatter
@@ -9,7 +11,6 @@ var = vars.var
 import rplacem.utilities as util
 import numpy as np
 import math
-
 
 def show_canvas_part(pixels, ax=None):
     '''
@@ -175,7 +176,7 @@ def draw_1dhist(data, xrange=[], bins=[100],
         print('save figure in', os.path.join(var.FIGS_PATH, outfile))
         plt.savefig(os.path.join(var.FIGS_PATH, outfile), bbox_inches='tight')
 
-def draw_2dmap(h2d, xedges, yedges,
+def draw_2dmap(h2d, 
                logz=True,
                zmax=1500,
                clabel='',
@@ -191,7 +192,7 @@ def draw_2dmap(h2d, xedges, yedges,
 
     parameters
     ----------
-    h2d, xedges, yedges: histogram as output by np.histogram2d (though histogram must be already transposed)
+    h2d : histogram as output by np.histogram2d (though histogram must be already transposed)
     logz: log for the colormap axis
     '''
     # DO NOT CHANGE THINGS RELATED TO RESOLUTION OR SIZES: everything is adjusted to have perfect resolution for 2000x2000 canvas
@@ -223,8 +224,7 @@ def draw_2dmap(h2d, xedges, yedges,
     if outfile != '':
         print('save figure in ',os.path.join(var.FIGS_PATH, outfile))
         plt.savefig(os.path.join(var.FIGS_PATH, outfile), dpi=imageres/10, bbox_inches='tight', pad_inches = 0)
-        plt.close()
-
+    plt.close()
 
 def draw_colorhist(data,
                    ylab='# pixel changes',
@@ -237,7 +237,8 @@ def draw_colorhist(data,
     fig, ax = plt.subplots()
 
     xpos = np.arange(var.NUM_COLORS)
-    colorder = np.array([31,22,18,12,5,17,20,4,11,2,1,9,10,13,0,3,6,7,8,16,30,29,28,27,25,19,15,14,21,23,24,26])
+    colorder = np.array([31,22,18,12,5,17,20,4,11,2,1,9,10,13,0,3,6,7,8,16,30,29,28,27,25,19,15,14,21,23,24,26]) if var.year == 2022 else \
+               np.array([3,0,8,27,4,18,16,29,19,23,30,13,12,9,28,22,20,11,17,15,26,1,31,5,2,6,7,24,14,25,21,10])
     colorder_inv = np.argsort(colorder)
     col = [var.IDX_TO_COLOR[str(colorder[i])] for i in xpos]
     h,b, patches = plt.hist(colorder_inv[data], bins=list(xpos)+[var.NUM_COLORS], edgecolor='black')
@@ -331,14 +332,16 @@ def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5, save=Tr
                      [cpstat.n_changes_norm, 0, None],
                      [cpstat.frac_attack_changes, 0, 1],
                      [cpstat.frac_users_new_vs_sw, 0, 1],
+                     [cpstat.runnerup_timeratio_percentile90, 0, None],
+                     [cpstat.n_used_colors_meanhighestdecile, 1, None],
                      #[cpstat.frac_users_new_vs_previoustime, 0, 1],
                      [cpstat.n_users_sw_norm, 0, None],
                      [cpstat.changes_per_user_sw, 0.9, None],
                      [cpstat.fractal_dim_weighted, None, None],
                      #[cpstat.frac_cooldowncheat_changes, 0, None],
                      #[cpstat.frac_bothattdef_users, 0, None],
-                     [cpstat.returntime_percentile90_overln2, 0, None],
-                     [cpstat.returntime_mean, 0, None],
+                     #[cpstat.returntime_percentile90_overln2, 0, None],
+                     #[cpstat.returntime_mean, 0, None],
                      [cpstat.cumul_attack_timefrac, 0, None],
                      #[cpstat.n_users_norm, 0, None],
                      #[cpstat.frac_attackonly_users, 0, 1]

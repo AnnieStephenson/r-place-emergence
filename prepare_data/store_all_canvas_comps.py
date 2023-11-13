@@ -36,17 +36,22 @@ parser.add_argument("-b", "--beginning", default=0)
 parser.add_argument("-e", "--end", default=atlas_num)
 args = parser.parse_args()
 
-store_compos(args.beginning, args.end)
+print(atlas_num)
+#store_compos(args.beginning, args.end)
 
-'''
-util.merge_pickles([ 'data/canvas_compositions_files0to999.pickle',
-                'data/canvas_compositions_files1000to1999.pickle',
-                'data/canvas_compositions_files2000to2999.pickle',
-                'data/canvas_compositions_files3000to3999.pickle',
-                'data/canvas_compositions_files4000to4999.pickle',
-                'data/canvas_compositions_files5000to6999.pickle',
-                'data/canvas_compositions_files7000to8999.pickle',
-                'data/canvas_compositions_files9000to10630.pickle',
+
+util.merge_pickles([ 
+                'data/2022/canvas_compositions_files0to299.pickle',
+                'data/2022/canvas_compositions_files300to999.pickle',
+                'data/2022/canvas_compositions_files1000to1799.pickle',
+                'data/2022/canvas_compositions_files1800to2599.pickle',
+                'data/2022/canvas_compositions_files2600to3599.pickle',
+                'data/2022/canvas_compositions_files3600to4799.pickle',
+                'data/2022/canvas_compositions_files4800to5999.pickle',
+                'data/2022/canvas_compositions_files6000to7199.pickle',
+                'data/2022/canvas_compositions_files7200to8799.pickle',
+                'data/2022/canvas_compositions_files8800to9599.pickle',
+                'data/2022/canvas_compositions_files9600to10199.pickle',
+                'data/2022/canvas_compositions_files10200to10884.pickle',
                 ],
                 'canvas_compositions_all.pickle')
-'''

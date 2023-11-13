@@ -100,19 +100,20 @@ def get_vals_from_var(v, tidx, coarse=False):
 def get_earliness(cpstat, t, trans_starttimes):
     '''
     Return the earliness of a potential signal at time t compared to the transitions present in cpstat.
-    A random high (ie above 10h) earliness value is given when there is no transition in the composition
+    All earliness values above 12h (and when there is no transition in the composition) are given a value of exactly 12h
     '''
-    min_earliness_notrans = 10*3600 # minimum random earliness given to events in no-transition compositions
-    max_earliness = var.TIME_WHITEOUT - max(cpstat.sw_width_sec, watchrange) # max range of earliness
+    min_earliness_notrans = 12*3600 # minimum random earliness given to events in no-transition compositions
+    #max_earliness = var.TIME_WHITEOUT - max(cpstat.sw_width_sec, watchrange) # max range of earliness
 
     if cpstat.n_transitions == 0: # no transitions
         # keep continuity of earliness values even here, but do not give value lower than some minimum
-        return var.TIME_WHITEOUT - t + min_earliness_notrans
+        #return var.TIME_WHITEOUT - t + min_earliness_notrans
+        return min_earliness_notrans
     else:
         possible_earlinesses = trans_starttimes - t
         possible_earlinesses = possible_earlinesses[possible_earlinesses >= 0]
-        if len(possible_earlinesses) == 0: # all transitions are past time t
-            return np.random.uniform(min_earliness_notrans, max_earliness)
+        if len(possible_earlinesses) == 0: # all transitions are before time t
+            return min_earliness_notrans #np.random.uniform(min_earliness_notrans, max_earliness)
         else: # take the closest transition happening after t
             return np.min(possible_earlinesses)
 
@@ -151,7 +152,7 @@ varnames = []
 eventtime = np.full((nevents_max), -1, dtype=np.float64)
 id_idx = np.full((nevents_max), -1, dtype=np.int16)
 #previous_tstep_idx = np.full((nevents_max), 1e9, dtype=np.int16)
-id_dict = np.full(ncompmax, '')
+id_dict = np.full(ncompmax, '', dtype='object')
 ntimes=0
 
 i_event = -1

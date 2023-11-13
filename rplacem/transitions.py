@@ -63,15 +63,32 @@ def merge_similar_transitions(transitions, require_same_posttrans=False):
 
     return trans_merged
 
+def merge_close_transitions(transitions, sw_width):
+    '''
+    Merge the transitions if they are closer than sw_dth to each other 
+    '''
+    deleted_idx = []
+    trans_merged = []
+     
+    for i in range(0, len(transitions)):
+        if i in deleted_idx: # this transition was previously deleted in the second-level loop
+            continue
+        trans = transitions[i]
+        for j in range(i, len(transitions)):
+            trans2 = transitions[j]
+            if trans2[0] <= trans[1] + sw_width:
+                trans[1] = max(trans[1], trans2[1])
+                deleted_idx.append(j)
+        trans_merged.append(trans)
+
+    return trans_merged
+
 def find_transitions(t_lims, 
                      testvar_pre, testvar_post,
                      tmin=0,
-                     cutoff=0.3, 
-                     cutoff_stable=0.1,
-                     len_stableregion=5*3600,
-                     distfromtrans_stableregion=5*3600,
-                     need_posttrans_stable=False,
-                     max_distfromtrans=10*3600
+                     cutoff_abs=0.25, 
+                     cutoff_rel=6,
+                     sw_width=3*3600
                      ):
     '''
     identifies transitions in a cpart.
@@ -82,18 +99,10 @@ def find_transitions(t_lims,
         time intervals in which the pixel states are studied. Must be ordered in a crescent way, start at 0, and be regularly spaced
     testvar_pre : 1d array-like of floats
         The variable on which cutoffs will be applied to detect transitions
-    cutoff : float
+    cutoff_abs : float
         the lower cutoff on instability to define when a transition is happening
-    cutoff_stable : float
+    cutoff_rel : float
         the higher cutoff on instability, needs to be not exceeded before and after the potential transition, for a validated transition
-    len_stableregion : float 
-        the duration (in seconds), before and after the potential transition, during which cutoff_stable must not be exceeded. 
-    distfromtrans_stableregion: float
-        maximal distance (in seconds) between the borders of the stable regions and those of the transition region.
-    need_posttrans_stable : bool
-        require or not a stable period after the transition
-    max_distfromtrans: float, in seconds
-        matters only when not need_posttrans_stable. Maximum time between beginning of transition of recorded beginning of post-transition period.
 
     returns
     -------
@@ -107,34 +116,38 @@ def find_transitions(t_lims,
         full_transition_times is the same array but with the times corresponding to those indices 
     '''
     # preliminary
-    len_stableregion = math.ceil(len_stableregion / (t_lims[1] - t_lims[0])) # assumes regularly-spaced t_lims
-    distfromtrans_stableregion = math.ceil(distfromtrans_stableregion / (t_lims[1] - t_lims[0])) # assumes regularly-spaced t_lims
-    max_distfromtrans = math.ceil(max_distfromtrans / (t_lims[1] - t_lims[0]))
-    if cutoff < cutoff_stable:
-        raise ValueError("ERROR in find_transitions(): instability cutoff for transitions must be higher than that for stable periods")
-    
+    if cutoff_rel < 1.01:
+        raise ValueError("ERROR in find_transitions(): relative cutoff for transitions must be higher than 1")
+    testvar_pre_abs = testvar_pre.val
+    testvar_pre_rel = testvar_pre.ratio_to_sw_mean
+    testvar_post_abs = testvar_post.val
+    testvar_post_rel = testvar_post.ratio_to_sw_mean
+
     # transition and pre and post-transition stability conditions
-    trans_cond = (np.array(testvar_pre) > cutoff)
-    testvar_pre_cond = np.array((np.array(testvar_pre) < cutoff_stable) & (t_lims >= tmin))
-    testvar_post_cond = (np.array(testvar_post) < cutoff_stable) 
+    intrans_cond = np.array((testvar_pre_abs > cutoff_abs) & (testvar_pre_rel > cutoff_rel) & (t_lims >= tmin + sw_width) )
+    pasttrans_cond = np.array((testvar_post_abs < cutoff_abs) | (testvar_post_rel < 1/cutoff_rel))
+    #testvar_pre_cond = np.array((np.array(testvar_pre) < cutoff_stable) & (t_lims >= tmin))
+    #testvar_post_cond = (np.array(testvar_post) < cutoff_stable) 
 
     # get the beg and end of sequences of at least len_stableregion indices that pass conditions
-    seq_trans = limits_sequence_of_true(trans_cond, 1)
-    seq_pretrans = limits_sequence_of_true(testvar_pre_cond, len_stableregion)
-    seq_posttrans = limits_sequence_of_true(testvar_post_cond, len_stableregion)
+    seq_intrans = limits_sequence_of_true(intrans_cond, 1)
+    seq_pasttrans = limits_sequence_of_true(pasttrans_cond, 1)
+    #seq_pretrans = limits_sequence_of_true(testvar_pre_cond, len_stableregion)
+    #seq_posttrans = limits_sequence_of_true(testvar_post_cond, len_stableregion)
 
     # keep only transitions that are surrounded by close-enough stable periods
     full_transition_tmp = []
-    for tr in seq_trans:
-        if t_lims[tr[0]+1] >= var.TIME_WHITEOUT: # exclude the arrival of white-only pixelchanges from transitions
+    for tr in seq_intrans:
+        if t_lims[tr[0]+1] >= var.TIME_GREYOUT: # exclude the arrival of grey- or white-only pixelchanges from transitions
             continue
-        # stable sequences close enough and before transition
-        pretrans_stable_seq = np.where((seq_pretrans[:, 1] <= tr[0])
-                                     & (seq_pretrans[:, 1] > tr[0] - distfromtrans_stableregion))[0]
+        
+        ## stable sequences close enough and before transition
+        #pretrans_stable_seq = np.where((seq_pretrans[:, 1] <= tr[0])
+        #                             & (seq_pretrans[:, 1] > tr[0] - distfromtrans_stableregion))[0]
         # stable sequences close enough and after transition
-        posttrans_stable_seq = np.where((seq_posttrans[:, 0] >= tr[0])
-                                      & (seq_posttrans[:, 0] < tr[1] + distfromtrans_stableregion))[0]
-
+        posttrans_stable_seq = np.where((seq_pasttrans[:, 0] >= tr[0])
+                                      & (seq_pasttrans[:, 0] <= tr[0] + sw_width))[0]
+        '''
         # keep transitions only if pre- and post-transition sequences are found (post-transition required only if need_posttrans_stable)
         if len(pretrans_stable_seq) > 0 and (len(posttrans_stable_seq) > 0 or (not need_posttrans_stable)):
             if need_posttrans_stable or (len(posttrans_stable_seq) > 0 and seq_posttrans[posttrans_stable_seq[0]][0] < tr[0] + max_distfromtrans):
@@ -144,9 +157,16 @@ def find_transitions(t_lims,
             if begend_posttrans[0] < tr[1]: # when the post-trans variable relaxes faster than the pre-trans variable, the transition period is shorter than what the pre-trans variable says
                 tr[1] = begend_posttrans[0]
             full_transition_tmp.append(np.hstack( (seq_pretrans[pretrans_stable_seq[-1]], tr, begend_posttrans) ))
+        '''
+        if len(posttrans_stable_seq) > 0:
+            endtrans = max(seq_pasttrans[posttrans_stable_seq[0]][0], tr[1]) # max of the transition-end given by the pre- and post-transition variables
+        else:
+            endtrans = min(tr[1], tr[0] + sw_width) # maximum sw_width duration of the transition
+
+        full_transition_tmp.append(np.array([tr[0], endtrans]))
     
     # merge transitions that have the same preceding and subsequent stable regions
-    full_transitions = merge_similar_transitions(np.array(full_transition_tmp))
+    full_transitions = merge_close_transitions(np.array(full_transition_tmp), sw_width)
     
     full_transitions_cap = np.copy(full_transitions)
     full_transitions_cap[full_transitions_cap > (len(t_lims)-1)] = len(t_lims)-1
@@ -169,8 +189,8 @@ def transition_start_time(cpstat, tr):
     t_lims = cpstat.t_lims
     # indices of the transition times
     trans_tind = cpstat.transition_tinds[tr]
-    ind_st = trans_tind[1] - 1
-    ind_end = trans_tind[3] + 1
+    ind_st = trans_tind[0] - 1
+    ind_end = trans_tind[1] + 1
 
     for i in range(len(vars)):
         # max of vars over transition time range
@@ -193,20 +213,27 @@ def transition_start_time(cpstat, tr):
 
 
 def transition_start_time_simple(cpstat):
-    thresvar = cpstat.frac_pixdiff_inst_vs_swref.val
+    thresvar_abs = cpstat.frac_pixdiff_inst_vs_swref.val
+    thresvar_rel = cpstat.frac_pixdiff_inst_vs_swref.ratio_to_sw_mean
     tlims = cpstat.t_lims
     starttimes = []
 
     for tr in np.arange(0, cpstat.n_transitions):
         # indices of the transition times
         trans_tind = cpstat.transition_tinds[tr]
-        ind_st = trans_tind[2]
+        ind_st = trans_tind[0]
         
-        # linear interpolation to find the time at which it is exactly equal to the transition threshold
-        boundary_vals = [thresvar[ind_st - 1], thresvar[ind_st]] # values of variable right before and after the beginning idx of the transition
+        # linear interpolation to find the time at which the variable is exactly equal to the transition threshold
+        boundary_vals = [thresvar_abs[ind_st - 1], thresvar_abs[ind_st]] # values of variable right before and after the beginning idx of the transition
         boundary_times = [tlims[ind_st-1], tlims[ind_st]]
         search_val = cpstat.transition_param[0]
-        start_t = np.interp(search_val, boundary_vals, boundary_times)
-        starttimes.append(start_t)
+        start_t_abs = np.interp(search_val, boundary_vals, boundary_times)
+        # same for relative threshold
+        boundary_vals = [thresvar_rel[ind_st - 1], thresvar_rel[ind_st]] # values of variable right before and after the beginning idx of the transition
+        boundary_times = [tlims[ind_st-1], tlims[ind_st]]
+        search_val = cpstat.transition_param[1]
+        start_t_rel = np.interp(search_val, boundary_vals, boundary_times)
+
+        starttimes.append(max(start_t_abs, start_t_rel))
 
     return np.array(starttimes)

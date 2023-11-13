@@ -45,8 +45,8 @@ def store_comp_stats(beg, end):
             canvas_comp_stat = stat.CanvasPartStatistics(cancomp,
                                                         t_interval=300,
                                                         tmax=var.TIME_TOTAL,
-                                                        compute_vars={'stability': 1, 'entropy' : 1, 'transitions' : 1, 'attackdefense' : 1, 'other' : 1},
-                                                        trans_param=[0.4, 0.15, 2*3600, 4*3600],
+                                                        compute_vars={'stability': 0, 'entropy' : 0, 'transitions' : 1, 'attackdefense' : 0, 'other' : 0},
+                                                        trans_param=[0.25, 8],#, 2*3600, 4*3600],
                                                         sliding_window=3*3600,
                                                         timeunit=300, # 5 minutes
                                                         verbose=False,
@@ -85,12 +85,12 @@ parser.add_argument("-b", "--beginning", default=0)
 parser.add_argument("-e", "--end", default=1e6)
 args = parser.parse_args()
 
-#store_comp_stats(args.beginning, args.end)
+store_comp_stats(args.beginning, args.end)
 
 
 beg = np.array([i*100 for i in range(0,128)])
 end_list = beg+99
 end_list[-1] = n_compositions - 1
 filelist = [ os.path.join(var.DATA_PATH, 'canvas_composition_statistics_%sto%s.pickle' %(b, e)) for b,e in zip(list(beg),list(end_list))]
-print(filelist)
-util.merge_pickles(filelist, os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all.pickle' )) #canvas_composition_statistics_all.pickle
+#print(filelist)
+#util.merge_pickles(filelist, os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all.pickle' )) #canvas_composition_statistics_all.pickle

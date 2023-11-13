@@ -5,11 +5,11 @@ var = vars.var
 import os
 import numpy as np
 
-maxdepth = 7
-learningrate = 0.12
+maxdepth = 7#8
+learningrate = 0.1#0.12
 subsample = 0.8
 colsample = 0.75
-minchildw = 4
+minchildw = 4#3.1
 logsub_transform = 1.5
 
 TPR = []

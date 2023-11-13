@@ -201,7 +201,6 @@ class CanvasPart(object):
         if verbose:
             print('_reject_off_times()')
         self._reject_off_times()
-        print(np.where(self.coords_timerange == 0.))
 
         # set the pixel changes within the boundary
         if verbose:
@@ -419,17 +418,14 @@ class CanvasPart(object):
         pix_change_cheat = np.zeros(len(self.pixel_changes), dtype=bool)
         pix_change_cheat[ self.pixel_changes['moderator'] ] = True
 
-        print('created pix_change_cheat')
         ind_nomod = np.where( np.logical_not(self.pixel_changes['moderator'][self.pixch_sortuser]) )[0]
         pixchanges_sec_sorted = self.pixel_changes['seconds'][self.pixch_sortuser[ind_nomod]]
         pixchanges_user_sorted = self.pixel_changes['user'][self.pixch_sortuser[ind_nomod]]
 
-        print('created pixchanges')
         # get the time difference between pixel changes (n+1) and n for same user, and when the user changes
         timedif = np.hstack((1e5, np.diff(pixchanges_sec_sorted))).astype(np.float16)
         userchange = np.hstack((1e5, np.diff(pixchanges_user_sorted))).astype(bool)
         ind_cheat = np.where((timedif < var.COOLDOWN_MIN) & np.logical_not(userchange))[0]
-        print('created timedif,userchange,indcheat')
 
         pix_change_cheat[self.pixch_sortuser[ind_nomod[ind_cheat]]] = True
         return pix_change_cheat
@@ -506,7 +502,7 @@ class CanvasPart(object):
         num_coord = self.coords.shape[1]
         timeranges = self.coords_timerange
 
-        if self.is_rectangle and np.all(timeranges[:,:,0] == timeranges[:,0,0]): #TODO check this is the case used for smallish rectangle compositions
+        if self.is_rectangle and np.all(timeranges[:,0,:] == timeranges[0,0,:]): #TODO check this is the case used for smallish rectangle compositions
             (t0ref, t1ref) = timeranges[0][0]
             if (t0 >= t0ref or t1 > t0ref) and (t0 < t1ref or t1 <= t1ref):
                 inds_active = np.arange(0, num_coord)
@@ -563,15 +559,18 @@ class CanvasPart(object):
     def is_from_atlas(self):
         return (self.info.id != '')
 
-    def pixchanges_coords(self):
+    def pixchanges_coords(self, inds=None):
         ''' Returns the 2d array of the (x, y) coordinates of all pixel changes.
         Shape (2, number of pixel changes) '''
-        return self.coords[:, self.pixel_changes['coord_index'] ]
+        if inds is None:
+            return self.coords[:, self.pixel_changes['coord_index'] ]
+        else:
+            return self.coords[:, self.pixel_changes['coord_index'][inds] ]
 
-    def pixchanges_coords_offset(self):
+    def pixchanges_coords_offset(self, inds=None):
         ''' Returns the (x, y) coordinates of all pixel changes, but starting from x=0 and y=0.
         Shape (2, number of pixel changes) '''
-        res = self.pixchanges_coords()
+        res = self.pixchanges_coords(inds)
         res[0] -= self.xmin
         res[1] -= self.ymin
         return res
@@ -709,6 +708,47 @@ class CanvasPart(object):
             pickle.dump(self,
                         handle,
                         protocol=pickle.HIGHEST_PROTOCOL)
+            
+    def color(self, inds=None):
+        if inds is None:
+            return self.pixel_changes['color']
+        else:
+            return self.pixel_changes['color'][inds]
+    def time(self, inds=None):
+        if inds is None:
+            return self.pixel_changes['seconds']
+        else:
+            return self.pixel_changes['seconds'][inds]
+    def user(self, inds=None):
+        if inds is None:
+            return self.pixel_changes['user']
+        else:
+            return self.pixel_changes['user'][inds]
+    def moderator(self, inds=None):
+        if inds is None:
+            return self.pixel_changes['moderator']
+        else:
+            return self.pixel_changes['moderator'][inds]
+    def redundant(self, inds=None):
+        if inds is None:
+            return self.pixel_changes['redundant_col']
+        else:
+            return self.pixel_changes['redundant_col'][inds]
+    def superredundant(self, inds=None):
+        if inds is None:
+            return self.pixel_changes['redundant_colanduser']
+        else:
+            return self.pixel_changes['redundant_colanduser'][inds]
+    def cheat(self, inds=None):
+        if inds is None:
+            return self.pixel_changes['cooldown_cheat']
+        else:
+            return self.pixel_changes['cooldown_cheat'][inds]
+    def coordidx(self, inds=None):
+        if inds is None:
+            return self.pixel_changes['coord_index']
+        else:
+            return self.pixel_changes['coord_index'][inds]
 
 
 class ColorMovement:
@@ -822,7 +862,6 @@ def get_atlas_border(id_index=-1, id='', atlas=None, addtime_before=0, addtime_a
             bpt[0][0] = max(0, bpt[0][0] - addtime_before)
         if addtime_after > 0:
             bpt[-1][1] = min(var.TIME_TOTAL, bpt[-1][1] + addtime_after)
-        #print(j, bp, bpt)
         # AtlasInfo with the new border_path
         atlas_info_out.append( AtlasInfo(id=str(id) + ('' if n_paths == 1 else ('_part'+str(j+1))),
                                          border_path=bp, border_path_times=bpt,
