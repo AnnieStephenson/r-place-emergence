@@ -463,6 +463,9 @@ class CanvasPartStatistics(object):
             util.save_movie(os.path.join(dirpath, 'attack_defense_ratio'), fps=15)
             util.save_movie(os.path.join(dirpath, 'attack_defense_Ising'), fps=6)
 
+        # find continuous time ranges over which the border_path of the composition does not change significantly
+        self.stable_borders_timeranges = cpart.stable_borderpath_timeranges()
+
         # find transitions
         if compute_vars['transitions'] > 0:
             self.search_transitions(cpart)
@@ -471,9 +474,6 @@ class CanvasPartStatistics(object):
                 self.refimage_posttrans = None
         else:
             self.n_transitions == 0
-
-        # find continuous time ranges over which the border_path of the composition does not change significantly
-        self.stable_borders_timeranges = cpart.stable_borderpath_timeranges()
 
         # Memory savings here
         if compute_vars['attackdefense'] < 2:
@@ -607,7 +607,8 @@ class CanvasPartStatistics(object):
         transitions = tran.find_transitions(self.t_lims,
                                             self.frac_pixdiff_inst_vs_swref, self.frac_pixdiff_inst_vs_swref_forwardlook,
                                             tmin=self.tmin,
-                                            cutoff_abs=par[0], cutoff_rel=par[1], sw_width=self.sw_width_sec)
+                                            cutoff_abs=par[0], cutoff_rel=par[1], 
+                                            sw_width=self.sw_width_sec, stable_area_timeranges=self.stable_borders_timeranges)
         self.transition_tinds = transitions[0]
         self.transition_times = transitions[1]
         self.n_transitions = len(transitions[1])

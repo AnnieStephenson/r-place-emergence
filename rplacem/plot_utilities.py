@@ -340,8 +340,8 @@ def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5, save=Tr
                      [cpstat.fractal_dim_weighted, None, None],
                      #[cpstat.frac_cooldowncheat_changes, 0, None],
                      #[cpstat.frac_bothattdef_users, 0, None],
-                     #[cpstat.returntime_percentile90_overln2, 0, None],
-                     #[cpstat.returntime_mean, 0, None],
+                     [cpstat.returntime_percentile90_overln2, 0, None],
+                     [cpstat.returntime_mean, 0, None],
                      [cpstat.cumul_attack_timefrac, 0, None],
                      #[cpstat.n_users_norm, 0, None],
                      #[cpstat.frac_attackonly_users, 0, 1]

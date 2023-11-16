@@ -16,15 +16,15 @@ import seaborn as sns
 
 # intro
 fromatlas = True
-cp_fromfile = True
+cp_fromfile = False
 cp_fromatlasfile = True
-cps_fromfile =True
+cps_fromfile =False
 
 if not cp_fromfile:
     pixel_changes_all = util.get_all_pixel_changes()
     atlas, num = util.load_atlas()
 
-id = '53_part1' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
+id = int('932') #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
 
 x1 = var.CANVAS_MINMAX[-1, 0, 0]
 x2 = var.CANVAS_MINMAX[-1, 0, 1]
@@ -96,7 +96,7 @@ if savecpstat:
                     protocol=pickle.HIGHEST_PROTOCOL)
 
 
-for cpstat in cpstats:
+for cpstat in [cpstat]:#cpstats
     if cpstat.n_transitions == 0:
         continue
     print(cpstat.id)

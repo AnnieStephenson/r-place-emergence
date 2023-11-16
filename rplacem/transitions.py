@@ -88,7 +88,8 @@ def find_transitions(t_lims,
                      tmin=0,
                      cutoff_abs=0.25, 
                      cutoff_rel=6,
-                     sw_width=3*3600
+                     sw_width=3*3600,
+                     stable_area_timeranges=[[0, var.TIME_TOTAL]]
                      ):
     '''
     identifies transitions in a cpart.
@@ -124,7 +125,13 @@ def find_transitions(t_lims,
     testvar_post_rel = testvar_post.ratio_to_sw_mean
 
     # transition and pre and post-transition stability conditions
-    intrans_cond = np.array((testvar_pre_abs > cutoff_abs) & (testvar_pre_rel > cutoff_rel) & (t_lims >= tmin + sw_width) )
+    intrans_cond = np.array((testvar_pre_abs > cutoff_abs) & (testvar_pre_rel > cutoff_rel) 
+                          & (t_lims >= tmin + sw_width))
+    not_at_borderpath_change = np.zeros(t_lims.shape, dtype=bool)
+    for i_range in range(len(stable_area_timeranges)):
+        not_at_borderpath_change = np.logical_or(not_at_borderpath_change, 
+                                                  np.array((t_lims >= stable_area_timeranges[i_range, 0] + sw_width) & (t_lims <= stable_area_timeranges[i_range, 1])))
+    intrans_cond = np.logical_and(intrans_cond, not_at_borderpath_change)
     pasttrans_cond = np.array((testvar_post_abs < cutoff_abs) | (testvar_post_rel < 1/cutoff_rel))
     #testvar_pre_cond = np.array((np.array(testvar_pre) < cutoff_stable) & (t_lims >= tmin))
     #testvar_post_cond = (np.array(testvar_post) < cutoff_stable) 

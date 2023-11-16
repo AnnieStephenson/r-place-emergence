@@ -26,6 +26,11 @@ class GlobalVars(object):
         self.TIME_16COLORS = 0 if year == 2022 else 116999.080
         self.TIME_24COLORS = 99634.706 if year == 2022 else 277192.251
         self.TIME_32COLORS = 195574.105 if year == 2022 else 361992.813
+        self.TIME_PARTIAL_240S_COOLDOWN = 273600 if year == 2023 else self.TIME_TOTAL # 2023 number from the reddit mod (Mikhail)
+        self.TIME_180S_AND_240S_COOLDOWN = self.TIME_GREYOUT if year == 2023 else self.TIME_TOTAL # 2023 info from the reddit mod (Mikhail)
+        self.TIME_120S_COOLDOWN = 459180 if year == 2023 else self.TIME_TOTAL # 2023 number from the reddit mod (Mikhail)
+        self.TIME_60S_COOLDOWN = 459420 if year == 2023 else self.TIME_TOTAL # 2023 number from the reddit mod (Mikhail)
+        self.TIME_30S_COOLDOWN = 460200 if year == 2023 else self.TIME_TOTAL # 2023 number from the reddit mod (Mikhail)
 
         self.N_ENLARGE = 3 if year == 2022 else 7
         self.TIME_ENLARGE = np.array([0, 99646.238, 195583.355]) if year == 2022 else \
@@ -64,4 +69,4 @@ class GlobalVars(object):
             self.COLIDX_TO_HEX[int(k)] = v
             self.COLIDX_TO_RGB[int(k)] = np.asarray(ImageColor.getrgb(v))
 
-var = GlobalVars(year=2022)
+var = GlobalVars(year=2023)
