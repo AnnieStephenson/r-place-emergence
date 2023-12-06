@@ -102,7 +102,6 @@ def cumulative_attack_timefrac(time_spent_in_col, ref_color, inds_active_pix, st
 
     return max(res, 0)
 
-#@profile
 def calc_stability(stable_timefrac, inds_active, compute_average):
     stab_per_pixel = stable_timefrac[:, 0]  # Get time fraction for most stable color.
 
@@ -116,19 +115,15 @@ def calc_stability(stable_timefrac, inds_active, compute_average):
 
     # Now get stability averaged over active pixels.
     if compute_average:
-        stability = np.mean(stab_per_pixel) if len(keepinds) > 0 else 1
-        runnerup_timeratio_mean = np.mean(stab_per_pixel_runnerup) if len(keepinds) > 0 else 0
-        runnerup_timeratio_percentile90 = np.percentile(stab_per_pixel_runnerup, 90) if len(keepinds) > 0 else 0
-        n_used_colors = np.mean(num_used_colors_perpix) if len(keepinds) > 0 else 0
-        n_used_colors_meanhighestdecile = np.mean(num_used_colors_perpix[num_used_colors_perpix >= np.percentile(num_used_colors_perpix, 90)]) if len(keepinds) > 0 else 0
+        stability = util.pixel_integrated_stats(stab_per_pixel, 1, True)
+        runnerup_timeratio = util.pixel_integrated_stats(stab_per_pixel_runnerup, 0)
+        n_used_colors = util.pixel_integrated_stats(num_used_colors_perpix, 1)
     else:
         stability = stab_per_pixel
-        runnerup_timeratio_mean = stab_per_pixel_runnerup
-        runnerup_timeratio_percentile90 = stab_per_pixel_runnerup
+        runnerup_timeratio = stab_per_pixel_runnerup
         n_used_colors = num_used_colors_perpix
-        n_used_colors_meanhighestdecile = num_used_colors_perpix
 
-    return stability, runnerup_timeratio_mean, runnerup_timeratio_percentile90, n_used_colors, n_used_colors_meanhighestdecile
+    return stability, runnerup_timeratio, n_used_colors
 
 
 def calc_stable_cols(time_spent_in_col):
@@ -366,23 +361,26 @@ def main_variables(cpart,
     stable_colors = np.empty((cpart.num_pix(), var.NUM_COLORS), dtype=np.int8)
 
     # Output
-    cpst.stability = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
-    cpst.runnerup_timeratio_mean = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
-    cpst.runnerup_timeratio_percentile90 = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
-    cpst.n_used_colors_mean = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
-    cpst.n_used_colors_meanhighestdecile = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
+    cpst.stability = np.empty(4, dtype=np.object) 
+    cpst.runnerup_timeratio = np.empty(4, dtype=np.object) 
+    cpst.n_used_colors = np.empty(4, dtype=np.object) 
+    for i in range(0, 4):
+        cpst.stability[i] = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
+        cpst.runnerup_timeratio[i] = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
+        cpst.n_used_colors[i] = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.autocorr = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
     cpst.autocorr2 = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
-    cpst.variance = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
-    cpst.variance2 = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+    cpst.variance = cpst.ts_init(np.ones(n_tlims, dtype=np.float64))
+    cpst.variance2 = cpst.ts_init(np.ones(n_tlims, dtype=np.float64))
     cpst.diff_pixels_stable_vs_swref = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_swref = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_swref_forwardlook = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_inst = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_stable = cpst.ts_init(np.zeros(n_tlims))
     if attdef > 0:
-        cpst.returntime_mean = cpst.ts_init(np.zeros(n_tlims))
-        cpst.returntime_deciles = np.zeros((n_tlims, 11))
+        cpst.returntime = np.empty(4, dtype=np.object) 
+        for i in range(0, 4):
+            cpst.returntime[i] = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
     cpst.area_vst = cpst.ts_init(np.full(n_tlims, cpart.num_pix()))
     cpst.n_changes = cpst.ts_init(np.zeros(n_tlims))
     cpst.n_defense_changes = cpst.ts_init(np.zeros(n_tlims))
@@ -502,8 +500,11 @@ def main_variables(cpart,
             stable_timefrac = calc_stable_timefrac(cpart, i, t_lims,
                                                    time_spent_in_color, stable_colors)
             # calculate the stability value in the time interval
-            cpst.stability.val[i], cpst.runnerup_timeratio_mean.val[i], cpst.runnerup_timeratio_percentile90.val[i], \
-                cpst.n_used_colors_mean.val[i], cpst.n_used_colors_meanhighestdecile.val[i] = calc_stability(stable_timefrac, inds_coor_active, True)
+            stabil, runnerup, ncols = calc_stability(stable_timefrac, inds_coor_active, True)
+            for k in range(0, 4):
+                cpst.stability[k].val[i] = stabil[k]
+                cpst.runnerup_timeratio[k].val[i] = runnerup[k]
+                cpst.n_used_colors[k].val[i] = ncols[k]
 
         if stab > 0 or tran > 0 or attdef > 0:
             # Store time_spent_in_color for this timestep, in a sparse array
@@ -557,8 +558,7 @@ def main_variables(cpart,
 
             # variance of entire state
             # this sums the time fractions over each pixel, averaged over all colors, then takes the inverse
-            cpst.variance2.val[i] = var.NUM_COLORS / np.mean(stable_timefrac[inds_coor_active, :]**2) if len(inds_coor_active) > 0 else 1
-
+            cpst.variance2.val[i] = 1 / np.mean(stable_timefrac[inds_coor_active, :]**2) / var.NUM_COLORS if len(inds_coor_active) > 0 else 1
 
         # ATTACK/DEFENSE VS REFERENCE IMAGE
         if attdef > 0:
@@ -566,9 +566,11 @@ def main_variables(cpart,
             cpst.cumul_attack_timefrac.val[i] = cumulative_attack_timefrac(time_spent_in_color, ref_color,
                                                                            inds_coor_active, cpst.t_interval)
                 
-            cpst.returntime_mean.val[i], cpst.returntime_deciles[i] = returntime(last_time_installed_sw, last_time_removed_sw, 
-                                                                                 current_color, ref_color,
-                                                                                 inds_coor_active, t_lims[i], cpst.sw_width_sec)
+            returnt = returntime(last_time_installed_sw, last_time_removed_sw, 
+                                current_color, ref_color,
+                                inds_coor_active, t_lims[i], cpst.sw_width_sec)
+            for k in range(0, 4):
+                cpst.returntime[k].val[i] = returnt[k]
 
             # Ising-style map of attack vs defense pixels
             if attdef > 1:
@@ -579,23 +581,10 @@ def main_variables(cpart,
                 cpst.attack_defense_image[i][coor_offset[1, inds_coor_active],
                                              coor_offset[0, inds_coor_active]] = diff_image[inds_coor_active]
 
-            # Calculate the number of changes and of users that are attacking or defending the reference image
-            num_changes_and_users(cpart, cpst, i, timerange_str,
-                                  t_inds_active, ref_color,
-                                  attdef > 1, (cpart_dir(out_dir_attdef) if attdef > 2 else ''))
-
-            # Compare number of unique users to that in the previous timestep or sliding window
-            users_now = cpart.user(t_inds_active)
-            i_prev = (i-1) % cpst.sw_width
-            users_prev = users_vst[i_prev]
-            cpst.n_users_new_vs_previoustime.val[i] = len(users_now) - len(np.intersect1d(users_now, users_prev)) # count unique elements in common in the two arrays
-            cpst.n_users_new_vs_sw.val[i] = len(users_now) - len(np.intersect1d(users_now, users_sw_unique))
-
-            # Number of unique users in a sliding window
-            users_vst[i_replace] = np.copy(users_now)
-            del users_now
-            users_sw_unique = np.unique(np.hstack(users_vst))
-            cpst.n_users_sw.val[i] = len(users_sw_unique)
+            # Calculate the number of changes and of users that are attacking or defending the reference image. Keep users_sw_unique for the next step
+            users_sw_unique = num_changes_and_users(cpart, cpst, i, i_replace, timerange_str,
+                                                    t_inds_active, ref_color, users_vst, users_sw_unique,
+                                                    attdef > 1, (cpart_dir(out_dir_attdef) if attdef > 2 else ''))
 
         # INSTANTANEOUS IMAGES: includes entropy and fractal dimension calculations
         # Calculate the number of pixels in the current interval (stable or instantaneous) that differ from the reference image, or from the previous timestep
@@ -715,8 +704,8 @@ def main_variables(cpart,
 
 
 def num_changes_and_users(cpart, cpst,
-                          t_step, time_str,
-                          t_inds_active, ref_image,
+                          t_step, i_replace, time_str,
+                          t_inds_active, ref_image, users_vst, users_sw_unique,
                           save_ratio_pixels, save_ratio_images=''):
     '''
     Modifies multiple variables of cpst dealing with the number of pixel changes and users:
@@ -751,7 +740,18 @@ def num_changes_and_users(cpart, cpst,
 
     # get indices of all pixel changes that happen in the step (and that are part of the composition timerange for this pixel)
     cpst.n_changes.val[t_step] = len(t_inds_active)
-    cpst.n_users.val[t_step] = len(np.unique(cpart.user(t_inds_active)))
+
+    # Compare number of unique users to that in the previous timestep or sliding window
+    users_now = cpart.user(t_inds_active)
+    cpst.n_users.val[t_step] = len(np.unique(users_now))
+    i_prev = (t_step-1) % cpst.sw_width
+    cpst.n_users_new_vs_previoustime.val[t_step] = cpst.n_users.val[t_step] - len(np.intersect1d(users_now, users_vst[i_prev])) # count unique elements in common in the two arrays
+    cpst.n_users_new_vs_sw.val[t_step] = cpst.n_users.val[t_step] - len(np.intersect1d(users_now, users_sw_unique))
+
+    # Number of unique users in a sliding window
+    users_vst[i_replace] = np.copy(users_now)
+    users_sw_unique = np.unique(np.hstack(users_vst))
+    cpst.n_users_sw.val[t_step] = len(users_sw_unique)
 
     # pixel changes that agree or not with the ref image
     agreeing_changes = np.array(ref_image[cpart.coordidx(t_inds_active)] == cpart.color(t_inds_active), np.bool_)
@@ -793,7 +793,7 @@ def num_changes_and_users(cpart, cpst,
             plt.savefig(os.path.join(var.FIGS_PATH, save_ratio_images, 'attack_defense_ratio_perpixel_'+time_str))
             plt.close()
 
-    return 1
+    return users_sw_unique
 
 
 def create_files_and_get_sizes(t_lims, t_step, pixels,
@@ -834,7 +834,7 @@ def returntime(last_time_installed_sw, last_time_removed_sw,
 
     # compute mean and quantiles of returntime over pixels
     returntime_all = np.concatenate((returntime_inattpix, returntime_indefpix))
-    return (np.mean(returntime_all) if len(returntime_all) > 0 else 0), (np.quantile(returntime_all, np.arange(0, 1.01, 0.1)) if len(returntime_all) > 0 else 0)
+    return util.pixel_integrated_stats(returntime_all, 0)
 
 
 def return_time_fwdlooking(cpart, ref_image, t_lims=[0, var.TIME_TOTAL], summary_stats=True):

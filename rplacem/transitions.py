@@ -133,38 +133,19 @@ def find_transitions(t_lims,
                                                   np.array((t_lims >= stable_area_timeranges[i_range, 0] + sw_width) & (t_lims <= stable_area_timeranges[i_range, 1])))
     intrans_cond = np.logical_and(intrans_cond, not_at_borderpath_change)
     pasttrans_cond = np.array((testvar_post_abs < cutoff_abs) | (testvar_post_rel < 1/cutoff_rel))
-    #testvar_pre_cond = np.array((np.array(testvar_pre) < cutoff_stable) & (t_lims >= tmin))
-    #testvar_post_cond = (np.array(testvar_post) < cutoff_stable) 
 
     # get the beg and end of sequences of at least len_stableregion indices that pass conditions
     seq_intrans = limits_sequence_of_true(intrans_cond, 1)
     seq_pasttrans = limits_sequence_of_true(pasttrans_cond, 1)
-    #seq_pretrans = limits_sequence_of_true(testvar_pre_cond, len_stableregion)
-    #seq_posttrans = limits_sequence_of_true(testvar_post_cond, len_stableregion)
 
     # keep only transitions that are surrounded by close-enough stable periods
     full_transition_tmp = []
     for tr in seq_intrans:
-        if t_lims[tr[0]+1] >= var.TIME_GREYOUT: # exclude the arrival of grey- or white-only pixelchanges from transitions
+        if t_lims[min(tr[0]+1, len(t_lims)-1)] >= var.TIME_GREYOUT: # exclude the arrival of grey- or white-only pixelchanges from transitions
             continue
         
-        ## stable sequences close enough and before transition
-        #pretrans_stable_seq = np.where((seq_pretrans[:, 1] <= tr[0])
-        #                             & (seq_pretrans[:, 1] > tr[0] - distfromtrans_stableregion))[0]
-        # stable sequences close enough and after transition
         posttrans_stable_seq = np.where((seq_pasttrans[:, 0] >= tr[0])
                                       & (seq_pasttrans[:, 0] <= tr[0] + sw_width))[0]
-        '''
-        # keep transitions only if pre- and post-transition sequences are found (post-transition required only if need_posttrans_stable)
-        if len(pretrans_stable_seq) > 0 and (len(posttrans_stable_seq) > 0 or (not need_posttrans_stable)):
-            if need_posttrans_stable or (len(posttrans_stable_seq) > 0 and seq_posttrans[posttrans_stable_seq[0]][0] < tr[0] + max_distfromtrans):
-                begend_posttrans = seq_posttrans[posttrans_stable_seq[0]]
-            else: # in this case, record a post-transition period that is closer than max_distfromtrans from beginning of transition
-                begend_posttrans = [tr[0] + max_distfromtrans, tr[0] + max_distfromtrans + 1]
-            if begend_posttrans[0] < tr[1]: # when the post-trans variable relaxes faster than the pre-trans variable, the transition period is shorter than what the pre-trans variable says
-                tr[1] = begend_posttrans[0]
-            full_transition_tmp.append(np.hstack( (seq_pretrans[pretrans_stable_seq[-1]], tr, begend_posttrans) ))
-        '''
         if len(posttrans_stable_seq) > 0:
             endtrans = max(seq_pasttrans[posttrans_stable_seq[0]][0], tr[1]) # max of the transition-end given by the pre- and post-transition variables
         else:
@@ -173,7 +154,7 @@ def find_transitions(t_lims,
         full_transition_tmp.append(np.array([tr[0], endtrans]))
     
     # merge transitions that have the same preceding and subsequent stable regions
-    full_transitions = merge_close_transitions(np.array(full_transition_tmp), sw_width)
+    full_transitions = merge_close_transitions(np.array(full_transition_tmp), int(sw_width/(t_lims[1]-t_lims[0])))
     
     full_transitions_cap = np.copy(full_transitions)
     full_transitions_cap[full_transitions_cap > (len(t_lims)-1)] = len(t_lims)-1
@@ -184,7 +165,7 @@ def transition_start_time(cpstat, tr):
     vars = [cpstat.n_changes_norm.val,
             #cpstat.frac_attack_changes.val - 0.5,
             #cpstat.returntime_median_overln2.val,
-            cpstat.instability_norm.val,
+            cpstat.instability_norm[0].val,
             cpstat.frac_pixdiff_stable_vs_swref.val,
             cpstat.frac_pixdiff_inst_vs_stable_norm.val,
             #1 - cpstat.frac_defenseonly_users.val - cpstat.frac_bothattdef_users.val - 0.5, #attackonly - 0.5

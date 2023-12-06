@@ -16,7 +16,7 @@ import seaborn as sns
 
 # intro
 fromatlas = True
-cp_fromfile = False
+cp_fromfile = True
 cp_fromatlasfile = True
 cps_fromfile =False
 
@@ -24,7 +24,7 @@ if not cp_fromfile:
     pixel_changes_all = util.get_all_pixel_changes()
     atlas, num = util.load_atlas()
 
-id = int('932') #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
+id = '6' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
 
 x1 = var.CANVAS_MINMAX[-1, 0, 0]
 x2 = var.CANVAS_MINMAX[-1, 0, 1]
@@ -84,7 +84,7 @@ if cps_fromfile:
 else: 
     cpstat = stat.CanvasPartStatistics(canpart, t_interval=300, #tmax=30000,
                                         compute_vars={'stability': 1, 'entropy' :3, 'transitions' : 1, 'attackdefense' : 1, 'other' : 1, 'ews' : 1},
-                                        sliding_window=int(3*3600), #3h?
+                                        sliding_window=int(2.5*3600), 
                                         verbose=True, dont_keep_dir=False, compression='DEFLATE_BMP_PNG', flattening='ravel')
     
 savecpstat = False
@@ -95,7 +95,8 @@ if savecpstat:
                     handle,
                     protocol=pickle.HIGHEST_PROTOCOL)
 
-
+print(cpstat.variance2.val)
+cpstat.fill_timeseries_info()
 for cpstat in [cpstat]:#cpstats
     if cpstat.n_transitions == 0:
         continue
@@ -105,7 +106,6 @@ for cpstat in [cpstat]:#cpstats
         os.mkdir(os.path.join(var.FIGS_PATH, str(cpstat.id)))
     except:
         ''
-    cpstat.fill_timeseries_info()
 
     cpstat.frac_pixdiff_inst_vs_stable_norm.plot1d(ymin=0)
     cpstat.frac_pixdiff_inst_vs_inst_norm.plot1d(ymin=0)
@@ -119,9 +119,6 @@ for cpstat in [cpstat]:#cpstats
         plt.xlim([cpstat.transition_times[j][0] - 10000, cpstat.transition_times[j][1] + 15000])
         plt.ylim([0,1])
         trans_start_t = trans.transition_start_time_simple(cpstat)[j]
-        print(trans_start_t, cpstat.transition_times[j][0], trans_start_t - cpstat.transition_times[j][0])
-        print(cpstat.transition_tinds[j], cpstat.t_lims[cpstat.transition_tinds[j]])
-        print(cpstat.frac_diff_pixels_pre_vs_post_trans[j])
 
         plt.vlines([trans_start_t, cpstat.transition_times[j][0], cpstat.transition_times[j][1]], 0, 1, colors=['black'], linestyles=['dotted'])
         plt.savefig(os.path.join(var.FIGS_PATH, str(cpstat.id),  'frac_pixdiff_inst_vs_swref_transition'+str(j)))
@@ -170,7 +167,7 @@ plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Fraction_of_differing_pixels
 #plt.ylim([0., 2])
 #plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Fraction_of_differing_pixels__ratio_inst_vs_stable.png'), bbox_inches='tight')
 
-cpstat.instability_norm.plot1d(ymin=0)
+cpstat.instability_norm[0].plot1d(ymin=0)
 cpstat.n_users_norm.plot1d(ymin=0)
 cpstat.n_changes_norm.plot1d(ymin=0)
 cpstat.entropy.plot1d(ymin=0)
@@ -178,8 +175,8 @@ cpstat.frac_attack_changes.plot1d(ymin=0, ymax=1, hline=0.5)
 cpstat.frac_attackonly_users.plot1d(ymin=0, ymax=1)
 cpstat.frac_defenseonly_users.plot1d(ymin=0, ymax=1)
 cpstat.frac_bothattdef_users.plot1d(ymin=0, ymax=1)
-cpstat.returntime_median_overln2.plot1d(ymin=0, ibeg_remove=1, iend_remove=2)
-cpstat.returntime_mean.plot1d(ymin=0, ibeg_remove=1, iend_remove=2)
+cpstat.returntime[1].plot1d(ymin=0, ibeg_remove=1, iend_remove=2)
+cpstat.returntime[0].plot1d(ymin=0, ibeg_remove=1, iend_remove=2)
 cpstat.cumul_attack_timefrac.plot1d(ymin=0, ibeg_remove=1)
 
 cpstat.frac_moderator_changes.plot1d(ymin=0)
@@ -187,7 +184,7 @@ cpstat.frac_cooldowncheat_changes.plot1d(ymin=0)
 cpstat.frac_redundant_color_changes.plot1d(ymin=0)
 cpstat.frac_redundant_coloranduser_changes.plot1d(ymin=0)
 
-plot.cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(8,11.5), fontsize=10, save=True)
+plot.cpstat_tseries(cpstat, nrows=10, ncols=2, figsize=(8,11.5), fontsize=10, save=True)
 
 #OLD EWS
 '''

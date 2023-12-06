@@ -69,4 +69,4 @@ class GlobalVars(object):
             self.COLIDX_TO_HEX[int(k)] = v
             self.COLIDX_TO_RGB[int(k)] = np.asarray(ImageColor.getrgb(v))
 
-var = GlobalVars(year=2023)
+var = GlobalVars(year=2022)

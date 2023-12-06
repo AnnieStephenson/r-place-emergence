@@ -88,15 +88,14 @@ class CanvasPartStatistics(object):
         stability averaged over all pixels of the CanvasPart, for each time bin.
             Needs compute_vars['stability'] > 0
             Set in comp.main_variables()
-    runnerup_timeratio_mean
-    runnerup_timeratio_percentile90: TimeSeries, n_pts = n_t_bins+1
-            ratio of time spent in the second most used color to the time in the most stable color
-            averaged over all pixels of the CanvasPart (or the value of the 90th highest percentile), for each time bin.
+    runnerup_timeratio: array of 4 TimeSeries, n_pts = n_t_bins+1
+            For each time step, contains 4 pixel-integrated stats (mean, median, and 90th percentile, mean of highest decile) of runnerup_time
+            It is the ratio of time spent in the second most used color to the time in the most stable color
             Needs compute_vars['stability'] > 0
             Set in comp.main_variables()
-    n_used colors: TimeSeries, n_pts = n_t_bins+1
-            number of used colors in a pixel in a time interval
-            averaged over all pixels of the CanvasPart, for each time bin.
+    n_used_colors:  array of 4 TimeSeries, n_pts = n_t_bins+1
+            For each time step, contains 4 pixel-integrated stats (mean, median, and 90th percentile, mean of highest decile) of n_used_colors
+            It is the number of used colors in a pixel in a time interval
             Needs compute_vars['stability'] > 0
             Set in comp.main_variables()
     instability_norm : TimeSeries, n_pts = n_t_bins+1
@@ -190,7 +189,6 @@ class CanvasPartStatistics(object):
             Set in search_transitions()
     frac_diff_pixels_pre_vs_post_trans : 1d array of shape (n_transitions)
         Fraction of the active pixels that differ between the pre- and post-transition stable images
-            Needs compute_vars['transitions'] > 1
             Set in search_transitions()
 
     ATTACK-DEFENSE -- all need compute_vars['attackdefense'] > 0
@@ -257,15 +255,10 @@ class CanvasPartStatistics(object):
         Each element is a pixels image info (2d numpy array containing color indices)
         Image containing, for each pixel, the fraction of pixel changes that are attacking, for each time step
         Needs compute_vars['attackdefense'] > 1
-    returntime_deciles : 2d array of shape (n_t_bins+1, 11)
-        For each time step, contains the 11 deciles of pixels sorted by return time
-        Kept if compute_vars['attackdefense'] > 1
+    returntime : array of 4 TimeSeries
+        For each time step, contains 4 pixel-integrated stats (mean, median, and 90th percentile, mean of highest decile) of return time
+        which is the time that an attack within the sliding window takes to return to a defense pixel
             Set in comp.main_variables()
-    returntime_mean
-    returntime_median_overln2
-    returntime_percentile90_overln2 : 2d array of shape (n_t_bins)
-        mean, median, and 90th percentile of returntime in each time bin
-            Set in returntime_stats() (deciles) and in comp.main_variables() (mean)
     cumul_attack_timefrac : TimeSeries, n_pts = n_t_bins+1
         Sum of the times that each pixel spent in an attack color during this timestep
         Normalized by the timestep width times #pixels
@@ -383,11 +376,9 @@ class CanvasPartStatistics(object):
         self.diff_pixels_inst_vs_stable = ts.TimeSeries()
         self.area_vst = ts.TimeSeries()
 
-        self.stability = ts.TimeSeries()
-        self.runnerup_timeratio_mean = ts.TimeSeries()
-        self.runnerup_timeratio_percentile90 = ts.TimeSeries()
-        self.n_used_colors_mean = ts.TimeSeries()
-        self.n_used_colors_meanhighestdecile = ts.TimeSeries()
+        self.stability = None
+        self.runnerup_timeratio = None
+        self.n_used_colors = None
         self.size_compr_stab_im = ts.TimeSeries()
         self.stable_image = None
         self.second_stable_image = None
@@ -410,8 +401,7 @@ class CanvasPartStatistics(object):
         self.n_defenseonly_users = ts.TimeSeries()
         self.n_attack_users = ts.TimeSeries()
 
-        self.returntime_mean = ts.TimeSeries()
-        self.returntime_deciles = None
+        self.returntime = None
         self.cumul_attack_timefrac = ts.TimeSeries()
 
         self.n_moderator_changes = ts.TimeSeries()
@@ -450,9 +440,17 @@ class CanvasPartStatistics(object):
         # ratio variables and normalizations
         self.ratios_and_normalizations()
 
-        # Return time: histogram, mean and median
-        if self.compute_vars['attackdefense'] > 0:
-            self.returntime_stats()
+        if np.any(self.frac_users_new_vs_sw.val > 1):
+            print('frac_users_new_vs_sw > 1 !!!!!!!')
+        if np.any(self.variance.val < 1):
+            print('variance < 1 !!!!!!!')
+        if np.any(self.variance2.val < 1):
+            print('variance2 < 1 !!!!!!!')
+        if np.any(abs(self.autocorr.val) > 1):
+            print('abs(self.autocorr) > 1 !!!!!!!')
+        if np.any(abs(self.autocorr2.val) > 1):
+            print('abs(self.autocorr2) > 1 !!!!!!!')
+        
 
         # Make movies
         if self.compute_vars['stability'] > 2:
@@ -475,9 +473,16 @@ class CanvasPartStatistics(object):
         else:
             self.n_transitions == 0
 
+        # calculate kendall tau's
+        self.returntime[0].set_kendall_tau()
+        self.instability_norm[0].set_kendall_tau()
+        self.variance.set_kendall_tau()
+        self.variance2.set_kendall_tau()
+        self.autocorr.set_kendall_tau()
+        self.autocorr2.set_kendall_tau()
+
         # Memory savings here
         if compute_vars['attackdefense'] < 2:
-            self.returntime_deciles = None
             self.n_defense_changes = ts.TimeSeries()
             self.n_defenseonly_users = ts.TimeSeries()
             self.n_attack_users = ts.TimeSeries()
@@ -556,7 +561,9 @@ class CanvasPartStatistics(object):
            and self.compute_vars['other'] > 0
 
     def ratios_and_normalizations(self):
-        self.instability_norm = self.ts_init( (1 - self.stability.val) / self.t_norm )
+        self.instability_norm = np.empty(4, dtype=np.object) 
+        for k in range(0,4):
+            self.instability_norm[k] = self.ts_init( (1 - self.stability[k].val) / self.t_norm )
         self.n_changes_norm = self.ts_init( util.divide_treatzero(self.n_changes.val / self.t_norm, self.area_vst.val, 0, 0) )
         self.frac_pixdiff_stable_vs_swref = self.ts_init( util.divide_treatzero(self.diff_pixels_stable_vs_swref.val, self.area_vst.val, 0, 0) )
         self.frac_pixdiff_inst_vs_swref = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_swref.val, self.area_vst.val, 0, 0) )
@@ -596,10 +603,6 @@ class CanvasPartStatistics(object):
         self.frac_redundant_color_changes = self.ts_init( util.divide_treatzero(self.n_redundant_color_changes.val, self.n_changes.val, 0, 0) )
         self.frac_redundant_coloranduser_changes = self.ts_init( util.divide_treatzero(self.n_redundant_coloranduser_changes.val, self.n_changes.val, 0, 0) )
 
-    def returntime_stats(self):
-        self.returntime_median_overln2 = self.ts_init( self.returntime_deciles[:, 5] )
-        self.returntime_percentile90_overln2 = self.ts_init(self.returntime_deciles[:, 9] )
-
     def search_transitions(self, cpart):
         par = self.transition_param
         self.frac_pixdiff_inst_vs_swref.set_ratio_to_sw_average()
@@ -614,9 +617,6 @@ class CanvasPartStatistics(object):
         self.n_transitions = len(transitions[1])
         trans = self.compute_vars['transitions']
 
-        if self.n_transitions > 0:
-            print(transitions)
-
         self.refimage_pretrans = cpart.white_image(3, images_number=self.n_transitions)
         self.refimage_posttrans = cpart.white_image(3, images_number=self.n_transitions)
         self.refimage_intrans = cpart.white_image(3, images_number=self.n_transitions) if trans > 1 else None
@@ -625,9 +625,6 @@ class CanvasPartStatistics(object):
         self.trans_start_time = np.empty(self.n_transitions)
         self.trans_start_tind = np.empty(self.n_transitions, dtype=np.int64)
 
-        if self.n_transitions > 0:
-            print(tran.transition_start_time_simple(self))
-            
         for j in range(0, self.n_transitions):
             self.trans_start_time[j] = tran.transition_start_time(self, j)[1] # take the mean here, but could be the median (among variables)
             self.trans_start_tind[j] = np.argmax(self.t_lims >= self.trans_start_time[j])
@@ -637,8 +634,6 @@ class CanvasPartStatistics(object):
             active_coords = cpart.active_coord_inds(self.t_lims[beg_trans], self.t_lims[end_trans])
             self.frac_diff_pixels_pre_vs_post_trans[j] = np.count_nonzero(self.refimage_sw_flat[beg_trans][active_coords]
                                                                         - self.refimage_sw_flat[end_trans][active_coords]) / self.area
-            if self.n_transitions > 0:
-                print(self.frac_diff_pixels_pre_vs_post_trans[j])
 
             if trans > 1:
                 self.refimage_pretrans[j] = self.refimage_sw[beg_trans]
@@ -657,12 +652,12 @@ class CanvasPartStatistics(object):
 
         self.frac_pixdiff_inst_vs_stable_norm.desc_long = 'Fraction of pixels differing from the stable image in the previous step, normalized by the time unit.'
         self.frac_pixdiff_inst_vs_stable_norm.desc_short = 'frac of pixels differing from previous-step stable image / '+n_min_tunit
-        self.frac_pixdiff_inst_vs_stable_norm.label = 'frac_pixdiff_inst_vs_stable_norm'
+        self.frac_pixdiff_inst_vs_stable_norm.label = 'frac_pixdiff_inst_vs_stable'
         self.frac_pixdiff_inst_vs_stable_norm.savename = filepath('fraction_of_differing_pixels_vs_stable_normalized')
 
         self.frac_pixdiff_inst_vs_inst_norm.desc_long = 'Fraction of pixels differing from the instantaneous image in the previous step, normalized by the time unit.'
         self.frac_pixdiff_inst_vs_inst_norm.desc_short = 'frac of pixels differing from previous-step image / '+n_min_tunit
-        self.frac_pixdiff_inst_vs_inst_norm.label = 'frac_pixdiff_inst_vs_inst_norm'
+        self.frac_pixdiff_inst_vs_inst_norm.label = 'frac_pixdiff_inst_vs_inst'
         self.frac_pixdiff_inst_vs_inst_norm.savename = filepath('fraction_of_differing_pixels_normalized')
 
         self.frac_pixdiff_inst_vs_swref.desc_long = 'Fraction of pixels differing from the reference image in the preceding sliding window'
@@ -674,32 +669,6 @@ class CanvasPartStatistics(object):
         self.frac_pixdiff_inst_vs_swref_forwardlook.desc_short = 'frac of pixels differing from forward-looking sliding-window ref image'
         self.frac_pixdiff_inst_vs_swref_forwardlook.label = 'frac_pixdiff_inst_vs_swref_forwardlook'
         self.frac_pixdiff_inst_vs_swref_forwardlook.savename = filepath('fraction_of_differing_pixels_vs_slidingwindowref_forwardlook')
-
-        self.instability_norm.desc_long = 'instability = (1 - stability), normalized by the time unit. \
-            Stability is the time fraction that each pixel spent in its dominant color, averaged over all active pixels'
-        self.instability_norm.desc_short = 'instability / '+n_min_tunit
-        self.instability_norm.label = 'instability_norm'
-        self.instability_norm.savename = filepath('instability_normalized')
-
-        self.runnerup_timeratio_mean.desc_long = 'Ratio of time spent in the second most used color to that in the most used color, for each pixel, averaged over all pixels'
-        self.runnerup_timeratio_mean.desc_short = 't(runner-up color) / t(most stable color) [pixel av.]'
-        self.runnerup_timeratio_mean.label = 'runnerup_timeratio_mean'
-        self.runnerup_timeratio_mean.savename = filepath('runnerup_timeratio_mean')
-
-        self.runnerup_timeratio_percentile90.desc_long = 'Ratio of time spent in the second most used color to that in the most used color, for each pixel, 90th highest percentile of all pixels'
-        self.runnerup_timeratio_percentile90.desc_short = 't(runner-up color) / t(most stable color) [pixel 90th perc.]'
-        self.runnerup_timeratio_percentile90.label = 'runnerup_timeratio_percentile90'
-        self.runnerup_timeratio_percentile90.savename = filepath('runnerup_timeratio_percentile90')
-
-        self.n_used_colors_mean.desc_long = 'Number of used colors in each pixel, averaged over all pixels'
-        self.n_used_colors_mean.desc_short = '# used colors / pixel [pixel av.]'
-        self.n_used_colors_mean.label = 'n_used_colors_mean'
-        self.n_used_colors_mean.savename = filepath('n_used_colors_mean')
-
-        self.n_used_colors_meanhighestdecile.desc_long = 'Number of used colors in each pixel, mean of the highest decile of all pixels'
-        self.n_used_colors_meanhighestdecile.desc_short = '# used colors / pixel [pixel 90th perc.]'
-        self.n_used_colors_meanhighestdecile.label = 'n_used_colors_meanhighestdecile'
-        self.n_used_colors_meanhighestdecile.savename = filepath('n_used_colors_meanhighestdecile')
 
         self.n_users_norm.desc_long = 'number of users, normalized by the time unit and the number of active pixels.'
         self.n_users_norm.desc_short = '# users / area / '+n_min_tunit
@@ -740,25 +709,35 @@ class CanvasPartStatistics(object):
         self.frac_bothattdef_users.label = 'frac_bothattdef_users'
         self.frac_bothattdef_users.savename = filepath('fraction_of_users_bothattackingdefending')
 
-        if self.compute_vars['attackdefense'] > 0:
-            self.returntime_median_overln2.desc_long = 'Median time for pixels to recover from attack [s] / ln(2)'
-            self.returntime_median_overln2.desc_short = 'median pixel recovery time from attack [s] / ln(2)'
-            self.returntime_median_overln2.label = 'returntime_median_overln2'
-            self.returntime_median_overln2.savename = filepath('median_pixel_recovery_time')
+        desclong = ["Mean", "Median", "90th percentile", "Mean of highest decile"]
+        descshort = ["mean", "median", "percentile90", "top decile mean"]
+        labs = ["mean", "median", "percentile90", "meantopdecile"]
+        for k in range(0,4):
+            if self.compute_vars['attackdefense'] > 0:
+                self.returntime[k].desc_long = desclong[k]+' time for pixels to recover from attack [s] / ln(2)'
+                self.returntime[k].desc_short = descshort[k]+' pixel recovery time from attack [s] / ln(2)'
+                self.returntime[k].label = 'returntime_'+labs[k]
+                self.returntime[k].savename = filepath(labs[k]+'_pixel_recovery_time')
+                
+            self.instability_norm[k].desc_long = 'instability = (1 - stability), normalized by the time unit. \
+                Stability is the time fraction that each pixel spent in its dominant color.'+desclong[k]+'of all active pixels'
+            self.instability_norm[k].desc_short = 'instability '+descshort[k]+' / '+n_min_tunit
+            self.instability_norm[k].label = 'instability_'+labs[k]
+            self.instability_norm[k].savename = filepath(labs[k]+'_instability_normalized')
 
-            self.returntime_percentile90_overln2.desc_long = '90th percentile of time for pixels to recover from attack [s] / ln(2)'
-            self.returntime_percentile90_overln2.desc_short = '90th perc. pixel recovery time from attack [s] / ln(2)'
-            self.returntime_percentile90_overln2.label = 'returntime_percentile90_overln2'
-            self.returntime_percentile90_overln2.savename = filepath('pixel_recovery_time_90thpercentile')
+            self.runnerup_timeratio[k].desc_long = 'Ratio of time spent in the second most used color to that in the most used color, for each pixel. '+desclong[k]+' of all active pixels'
+            self.runnerup_timeratio[k].desc_short = 't(runner-up color) / t(most stable color) ['+descshort[k]+']'
+            self.runnerup_timeratio[k].label = 'runnerup_timeratio_'+labs[k]
+            self.runnerup_timeratio[k].savename = filepath(labs[k]+'_runnerup_timeratio')
 
-        self.returntime_mean.desc_long = 'Mean time for pixels to recover from attack [s]'
-        self.returntime_mean.desc_short = 'mean pixel recovery time from attack [s]'
-        self.returntime_mean.label = 'returntime_mean'
-        self.returntime_mean.savename = filepath('mean_pixel_recovery_time')
+            self.n_used_colors[k].desc_long = 'Number of used colors in each pixel. '+desclong[k]+' of all active pixels'
+            self.n_used_colors[k].desc_short = '# used colors / pixel ['+descshort[k]+']'
+            self.n_used_colors[k].label = 'n_colors_'+labs[k]
+            self.n_used_colors[k].savename = filepath(labs[k]+'_n_used_colors')
 
         self.cumul_attack_timefrac.desc_long = 'Fraction of the time that all pixels spent in an attack color [s]'
         self.cumul_attack_timefrac.desc_short = 'frac of time spent in attack colors [s]'
-        self.cumul_attack_timefrac.label = 'cumul_attack_timefrac'
+        self.cumul_attack_timefrac.label = 'cumulated_attack_timefrac'
         self.cumul_attack_timefrac.savename = filepath('attack_time_fraction_allpixels')
 
         self.frac_moderator_changes.desc_long = 'Fraction of active pixels changes issued from moderators'
@@ -772,7 +751,7 @@ class CanvasPartStatistics(object):
 
         self.frac_redundant_color_changes.desc_long = 'Fraction of active pixels changes that are redundant in color with the pixel content before its change'
         self.frac_redundant_color_changes.desc_short = 'fraction of redundant changes'
-        self.frac_redundant_color_changes.label = 'frac_redundant_color_changes'
+        self.frac_redundant_color_changes.label = 'frac_redundant_changes'
         self.frac_redundant_color_changes.savename = filepath('fraction_redundant_changes')
 
         self.frac_redundant_coloranduser_changes.desc_long = 'Fraction of active pixels changes that are redundant in color and user with the pixel content before its change'
@@ -785,22 +764,42 @@ class CanvasPartStatistics(object):
         self.changes_per_user_sw.savename = filepath('changes_per_user_slidingwindow')
         self.changes_per_user_sw.label = 'changes_per_user_sw'
 
-        self.n_users_sw_norm.desc_long = 'Number of unique users active over the rpeceding sliding window'
+        self.n_users_sw_norm.desc_long = 'Number of unique users active over the preceding sliding window'
         self.n_users_sw_norm.desc_short = '# users (sliding window)'
         self.n_users_sw_norm.savename = filepath('number_users_slidingwindow')
-        self.n_users_sw_norm.label = 'n_users_sw_norm'
+        self.n_users_sw_norm.label = 'n_users_sw'
 
         self.frac_users_new_vs_sw.desc_long = 'Fraction of new users in this timestep compared to those active in the preceding sliding window'
         self.frac_users_new_vs_sw.desc_short = 'Fraction of new users vs sliding window'
         self.frac_users_new_vs_sw.savename = filepath('fraction_new_users_vs_slidingwindow')
-        self.frac_users_new_vs_sw.label = 'frac_users_new_vs_sw'
+        self.frac_users_new_vs_sw.label = 'frac_new_users_vs_sw'
 
         self.frac_users_new_vs_previoustime.desc_long = 'Fraction of new users in this timestep compared to those active in the previous timestep'
         self.frac_users_new_vs_previoustime.desc_short = 'Fraction of new users vs previous time'
-        self.frac_users_new_vs_previoustime.savename = filepath('fraction_new_users_vs_previoustime')
-        self.frac_users_new_vs_previoustime.label = 'frac_users_new_vs_previoustime'
+        self.frac_users_new_vs_previoustime.savename = filepath('frac_new_users_vs_previoustime')
+        self.frac_users_new_vs_previoustime.label = 'frac_new_users_vs_previoustime'
 
         self.fractal_dim_weighted.desc_long = 'Fractal dimension, averaged over colors weighted by their abundance'
         self.fractal_dim_weighted.desc_short = 'Fraction dimension (color-weighted)'
         self.fractal_dim_weighted.savename = filepath('fractal_dimension_weighted')
-        self.fractal_dim_weighted.label = 'fractal_dim_weighted'
+        self.fractal_dim_weighted.label = 'fractal_dimension'
+
+        self.variance.desc_long = 'Variance'
+        self.variance.desc_short = 'Variance'
+        self.variance.savename = filepath('variance')
+        self.variance.label = 'variance'
+
+        self.variance2.desc_long = 'Variance in parallel over all pixels'
+        self.variance2.desc_short = 'Variance all pixels'
+        self.variance2.savename = filepath('variance_allpixels')
+        self.variance2.label = 'variance_all_pixels'
+
+        self.autocorr.desc_long = 'autocorr'
+        self.autocorr.desc_short = 'autocorr'
+        self.autocorr.savename = filepath('autocorr')
+        self.autocorr.label = 'autocorr'
+
+        self.autocorr2.desc_long = 'autocorrelation over all pixels'
+        self.autocorr2.desc_short = 'autocorrelation_allpixels'
+        self.autocorr2.savename = filepath('autocorrelation_allpixels')
+        self.autocorr2.label = 'autocorrelation_allpixels'

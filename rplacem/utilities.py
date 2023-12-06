@@ -195,3 +195,19 @@ def divide_treatzero(a, b, escape=1, escape_posnum=10):
     res[np.where((b == 0) & (a != 0))] = escape_posnum
 
     return res
+
+def pixel_integrated_stats(a, fallback, percentile10=False):
+    '''
+    Calculates the mean, median, 90th percentile and mean of highest decile for input array.
+    Considers 10th percentile and lowest decile if [percentile10]
+    Returns [fallback] for empty array
+    '''
+    n = len(a)
+    if n == 0:
+        return np.array([fallback, fallback, fallback, fallback])
+    else:
+        sorted = np.sort(a)
+        return np.array([np.mean(a),
+                         sorted[int(n/2)],
+                         sorted[(1 if percentile10 else -1) * int(n/10)],
+                         np.mean(sorted[ :int(n/10) ] if percentile10 else sorted[ -int(n/10) :])])
