@@ -64,7 +64,7 @@ class TimeSeries(object):
         set_variance()
         set_autocorrelation()
         set_skewness()
-        set_kendalls_tau()
+        set_kendall_tau()
     '''
 
     def __init__(self,
@@ -102,6 +102,11 @@ class TimeSeries(object):
         self.savename = os.path.join(var.FIGS_PATH, cpstat.id, savename + '.png') if savename != '' else ''
 
         self.t_pts = None
+        self.variance = None
+        self.autocorrelation = None
+        self.skewness = None
+        self.kendall_tau = None
+        self.ratio_to_sw_mean = None
         if record_all:
             self.set_all_vars()
 
@@ -114,21 +119,26 @@ class TimeSeries(object):
         self.set_variance()
         self.set_autocorrelation()
         self.set_skewness()
+        self.set_kendall_tau()
 
-    def set_ratio_to_sw_average(self):
+    def set_ratio_to_sw_average(self, rerun=False):
         '''
         At time index i, returns ratio of self.val[i] to the average over the preceding sliding window [i-sw_width_mean : i[.
         The average from 0 to i-1 is used when i < sw_width_mean.
         The cumulative_sum method is much faster than other methods.
         '''
-        mean_sliding = np.empty(self.n_pts)
-        sw = self.sw_width_mean
-        cumul_sum = np.cumsum(self.val)  # cumsum[i] is the sum of values in indices [0, i] with i included
-        mean_sliding[0] = self.val[0]
-        mean_sliding[1:(sw+1)] = cumul_sum[0:sw] / np.arange(1, sw+1)
-        mean_sliding[(sw+1):] = (cumul_sum[sw:-1] - cumul_sum[:(-sw-1)]) / float(sw)
+        if self.ratio_to_sw_mean is None or rerun:
+            mean_sliding = np.empty(self.n_pts)
+            sw = self.sw_width_mean
+            cumul_sum = np.cumsum(self.val)  # cumsum[i] is the sum of values in indices [0, i] with i included
+            mean_sliding[0] = self.val[0]
+            mean_sliding[1:(sw+1)] = cumul_sum[0:sw] / np.arange(1, sw+1)
+            mean_sliding[(sw+1):] = (cumul_sum[sw:-1] - cumul_sum[:(-sw-1)]) / float(sw)
 
-        self.ratio_to_sw_mean = util.divide_treatzero(self.val, mean_sliding, 1, 1)
+            if self.label[0:6] == 'autoco': # take the difference rather than the ratio for autocorrelation
+                self.ratio_to_sw_mean = self.val - mean_sliding
+            else:
+                self.ratio_to_sw_mean = util.divide_treatzero(self.val, mean_sliding, 1, 1)
 
     def set_t_pts(self):
         self.t_pts = np.arange(self.tmin, self.tmin + self.n_pts * self.t_interval - 1e-4, self.t_interval)
@@ -157,13 +167,14 @@ class TimeSeries(object):
         autocorrelation = x.rolling(window=self.sw_width_ews, min_periods=1).apply(lambda y: y.autocorr())
         self.autocorrelation = np.array(autocorrelation)
 
-    def set_kendall_tau(self):
+    def set_kendall_tau(self, rerun=False):
         '''
         calculates the rolling kendall's tau coefficient of the the state variable
         '''
-        x = pd.Series(self.val)
-        kendall_tau = x.rolling(window=self.sw_width_ews, min_periods=1).apply(calc_kendall_tau)
-        self.kendall_tau = np.array(kendall_tau)
+        if self.exists() and (self.kendall_tau is None or rerun):
+            x = pd.Series(self.val)
+            kendall_tau = x.rolling(window=self.sw_width_ews, min_periods=1).apply(calc_kendall_tau)
+            self.kendall_tau = np.array(kendall_tau)
 
     def plot1d(self, xlog=False, ylog=False, ymin=None, ymax=None, save=True, hline=None, vline=None, ibeg_remove=0, iend_remove=0):
         if self.t_pts is None:
