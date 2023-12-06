@@ -284,6 +284,16 @@ class CanvasPartStatistics(object):
         Same as above, but divided by the number of pixel changes in this timestep
             Set in ratios_and_normalizations()
 
+    VOID ATTACKS -- need compute_vars['void_attack'] > 0
+    frac_black_px: TimeSeries, npts = n_t_bins + 1
+        fraction of black pixels in composition versus time
+    frac_purple_px: TimeSeries, npts = n_t_bins + 1
+        fraction of purple pixels in composition versus time
+    frac_black_ref: TimeSeries, npts = n_t_bins + 1
+        fraction of black pixels in reference image versus time
+    frac_purple_ref: TimeSeries, npts = n_t_bins + 1
+        fraction of purple pixels in reference image versus time
+
     methods
     -------
     private:
@@ -308,7 +318,7 @@ class CanvasPartStatistics(object):
                  cpart,
                  t_interval=300,
                  tmax=var.TIME_TOTAL,
-                 compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1, 'ews': 0},
+                 compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1, 'ews': 0, 'void_attack': 0},
                  sliding_window=14400,
                  returnt_binwidth=100,
                  trans_param=[0.3, 0.1, 2*3600, 4*3600],
@@ -406,6 +416,10 @@ class CanvasPartStatistics(object):
         self.n_attack_users = ts.TimeSeries()
         self.returntime = None
         self.cumul_attack_timefrac = ts.TimeSeries()
+        self.frac_black_px = ts.TimeSeries()
+        self.frac_purple_px = ts.TimeSeries()
+        self.frac_black_ref = ts.TimeSeries()
+        self.frac_purple_ref = ts.TimeSeries()
 
         self.n_moderator_changes = ts.TimeSeries()
         self.n_cooldowncheat_changes = ts.TimeSeries()

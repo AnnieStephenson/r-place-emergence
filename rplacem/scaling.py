@@ -1,11 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import entropy as ent
-import canvas_part as cp
+import rplacem.entropy as ent
+import rplacem.canvas_part as cp
 import pandas as pd
 import pickle
 import rplacem.utilities as util
+import scipy
+import rplacem.globalvariables_peryear as vars
+var = vars.var
 
 
 def plot_loglog_fit(x_data_unfilt, y_data_unfilt,
@@ -165,13 +168,41 @@ def calc_min_max_entropy(compression='LZ77',
 
         entropy_16[i] = np.mean(entropy_16_range)
         entropy_32[i] = np.mean(entropy_32_range)
+
+
+    f_entropy_min = scipy.interpolate.interp1d(squares, 1/squares, kind='linear')
+    f_entropy_max_16 = scipy.interpolate.interp1d(squares, entropy_16, kind='linear')
+    f_entropy_max_32 = scipy.interpolate.interp1d(squares, entropy_32, kind='linear')
         # entropy_black[i] = np.mean(entropy_black_range)
         # flat_white = np.ones(sq_len, dtype='int32')
         # flat_white = flat_white.reshape(int(np.sqrt(sq_len)), int(np.sqrt(sq_len)))
         # len_comp = ent.calc_compressed_size(flat_white, flattening=flattening, compression=compression)
         # entropy_white[i] = len_comp/sq_len
-    return entropy_16, entropy_32
+    return f_entropy_min, f_entropy_max_16, f_entropy_max_32
 
+def calc_user_attn(canvas_comp):
+    pixch_user_sorted = canvas_comp.pixel_changes[canvas_comp.pixch_sortuser]
+    pixch_user_sorted = pixch_user_sorted[pixch_user_sorted['active'] == 1]
+    users, user_inds = np.unique(pixch_user_sorted['user'][::-1], return_index=True)
+    user_end_inds = len(pixch_user_sorted) - user_inds
+    tmin, tmax = canvas_comp.min_max_time()
+    max_num_px_ch = (var.TIME_WHITEOUT-tmin)/300.
+    attn_frac = np.zeros(len(users))
+    npix = canvas_comp.num_pix()
+    for j in range(0, len(users)):
+        if j == 0:
+            coord_inds = pixch_user_sorted['coord_index'][0: user_end_inds[j]]
+            times = pixch_user_sorted['seconds'][0: user_end_inds[j]]
+        else:
+            coord_inds = pixch_user_sorted['coord_index'][user_end_inds[j-1]: user_end_inds[j]]
+            times = pixch_user_sorted['seconds'][user_end_inds[j-1]: user_end_inds[j]]
+        num_pxch = len(times)
+        attn_frac[j] = num_pxch/max_num_px_ch
+    mean_attn = np.mean(attn_frac)
+    med_attn = np.median(attn_frac)
+    pix_norm_attn = np.mean(np.sort(attn_frac)[0:int(npix)]) # mean of the n_pix most attentive players
+
+    return mean_attn, med_attn, pix_norm_attn
 
 # define function for user distance
 def calc_user_distance(canvas_comp):
@@ -184,15 +215,17 @@ def calc_user_distance(canvas_comp):
     dist_mean = np.zeros(len(users))
     dist_central_mean = np.zeros(len(users))
     delta_t = np.zeros(len(users))
+    mean_timediff = np.zeros(len(users))
     speed_ave = np.zeros(len(users))
-    for i in range(0, len(users)):
-        if i==0:
-            coord_inds = pixch_user_sorted['coord_index'][0: user_end_inds[i]]
-            times = pixch_user_sorted['seconds'][0: user_end_inds[i]]
+    for j in range(0, len(users)):
+        if j==0:
+            coord_inds = pixch_user_sorted['coord_index'][0: user_end_inds[j]]
+            times = pixch_user_sorted['seconds'][0: user_end_inds[j]]
         else:
-            coord_inds = pixch_user_sorted['coord_index'][user_end_inds[i-1]: user_end_inds[i]]
-            times = pixch_user_sorted['seconds'][user_end_inds[i-1]: user_end_inds[i]]
-        delta_t[i] = times[-1] - times[0]
+            coord_inds = pixch_user_sorted['coord_index'][user_end_inds[j-1]: user_end_inds[j]]
+            times = pixch_user_sorted['seconds'][user_end_inds[j-1]: user_end_inds[j]]
+        delta_t[j] = times[-1] - times[0]
+        mean_timediff[j] = np.mean(np.diff(times))
         coords_x, coords_y = canvas_comp.coords[:, coord_inds]
         x_mean = np.mean(coords_x)
         y_mean = np.mean(coords_y)
@@ -200,20 +233,42 @@ def calc_user_distance(canvas_comp):
         diffy = np.abs(np.diff(coords_y))
         dist_subseq = np.sqrt(diffx**2 + diffy**2)
         dist_central = np.sqrt((x_mean-coords_x)**2 + (y_mean-coords_y)**2)
-        dist_central_mean[i] = np.mean(dist_central)
+        dist_central_mean[j] = np.mean(dist_central)
         if len(dist_subseq) == 0:
-            dist_total[i] = np.nan
-            dist_mean[i] = np.nan
+            dist_total[j] = np.nan
+            dist_mean[j] = np.nan
         else:
-            dist_total[i] = np.sum(dist_subseq)
-            dist_mean[i] = np.mean(dist_subseq)
-        speed_ave[i] = dist_total[i]/delta_t[i]
+            dist_total[j] = np.sum(dist_subseq)
+            dist_mean[j] = np.mean(dist_subseq)
+        speed_ave[j] = dist_total[j]/delta_t[j]
 
-    return dist_total, dist_mean, dist_central_mean, delta_t, speed_ave
+    return dist_total, dist_mean, dist_central_mean, delta_t, mean_timediff, speed_ave
+
+def calc_recovery_time(cpart_stat, frac, ref_frac):
+    void_start_inds = np.where(frac-ref_frac > 0.7)[0]
+    if len(void_start_inds) > 1:
+        void_start_ind = void_start_inds[0]
+    else:
+        void_start_ind = 0
+
+    void_end_ind = np.where(frac-ref_frac < 0.1)[0]
+    potential_stop_inds = np.where(void_end_ind > void_start_ind)[0]
+    if len(potential_stop_inds) > 1 and len(np.atleast_1d(void_start_inds)) > 1:
+        void_end_ind = void_end_ind[potential_stop_inds[0]]
+    else:
+        void_start_ind = 0
+        void_end_ind = 0
+    start_void = cpart_stat.t_lims[void_start_ind]
+    end_void = cpart_stat.t_lims[void_end_ind]
+
+    recovery_time = end_void - start_void
+    return recovery_time
+
 
 
 def get_comp_scaling_data(canvas_parts_file='canvas_parts.pkl',
-                          canvas_parts_stats_file='canvas_part_stats_sw.pkl'):
+                          canvas_parts_stats_file='canvas_part_stats_sw.pkl',
+                          filename='reddit_place_composition_list_extended_sw.csv'):
 
     '''
     Calculate and save the scaling data as a .csv file
@@ -260,20 +315,27 @@ def get_comp_scaling_data(canvas_parts_file='canvas_parts.pkl',
     stability = []
     compressed_size = []
     entropy = []
+    fractal_dim = []
     dist_totals = []
     dist_means = []
     dist_central_means = []
     delta_ts = []
     speed_aves = []
+    recovery_black = []
+    recovery_purple = []
+    mean_attns = []
+    med_attns = []
+    pix_norm_attns = []
 
     # other metrics of interest: instability, entropy,
     num_iter = len(canvas_part_stats_list)
-
+    print(num_iter)
     for i in range(num_iter):
+        print(i)
         cpart_stat = canvas_part_stats_list[i]
         canvas_comp = canvas_comp_list[i]
 
-        att_ch_thresh = np.sum(cpart_stat.n_changes.val - cpart_stat.n_defense_changes.val)
+        att_ch_thresh = 0#np.sum(cpart_stat.n_changes.val - cpart_stat.n_defense_changes.val)
         def_ch_thresh = np.sum(cpart_stat.n_defense_changes.val)
 
         if len(canvas_comp.info.links) != 0 and 'subreddit' in canvas_comp.info.links:
@@ -291,9 +353,19 @@ def get_comp_scaling_data(canvas_parts_file='canvas_parts.pkl',
         elif subreddit[-1] != 'NA' and (('Alliance' in canvas_comp.info.links) or ('ally' in canvas_comp.info.links)):
             alliance_flag = 1
 
-        dist_total, dist_mean, dist_central_mean, delta_t, speed_ave = calc_user_distance(canvas_comp)
+        #dist_total, dist_mean, dist_central_mean, delta_t, speed_ave = calc_user_distance(canvas_comp)
+        mean_attn, med_attn, pix_norm_attn = calc_user_attn(canvas_comp)
+
+        recovery_time_black = calc_recovery_time(cpart_stat,
+                                                 cpart_stat.frac_black_px.val,
+                                                 cpart_stat.frac_black_ref.val)
+
+        recovery_time_purple = calc_recovery_time(cpart_stat,
+                                                  cpart_stat.frac_purple_px.val, cpart_stat.frac_purple_ref.val)
 
         # add values to composition lists
+        recovery_purple.append(recovery_time_purple)
+        recovery_black.append(recovery_time_black)
         names.append(canvas_comp.info.atlasname)
         streamer.append(streamer_flag)
         alliance.append(alliance_flag)
@@ -311,11 +383,15 @@ def get_comp_scaling_data(canvas_parts_file='canvas_parts.pkl',
         instab.append(np.mean(cpart_stat.instability_norm.val))  # may be an array
         compressed_size.append(cpart_stat.size_compr_stab_im.val)  # may be an array
         entropy.append(cpart_stat.entropy_stab_im.val)  # may be an array
-        dist_totals.append(dist_total)
-        dist_means.append(dist_mean)
-        dist_central_means.append(dist_central_mean)
-        delta_ts.append(delta_t)
-        speed_aves.append(speed_ave)
+        fractal_dim.append(cpart_stat.fractal_dim_weighted.val)  # may be an array
+        mean_attns.append(mean_attn)
+        med_attns.append(med_attn)
+        pix_norm_attns.append(pix_norm_attn)
+        #dist_totals.append(dist_total)
+        #dist_means.append(dist_mean)
+        #dist_central_means.append(dist_central_mean)
+        #delta_ts.append(delta_t)
+        #speed_aves.append(speed_ave)
 
     data = {
             'Name': names,
@@ -335,11 +411,16 @@ def get_comp_scaling_data(canvas_parts_file='canvas_parts.pkl',
             'Start time quadrant (s)': tmin_quad,
             'Stability': stability,
             'Compressed size': compressed_size,
-            'Entropy': entropy
+            'Entropy': entropy,
+            'Recovery time (black)': recovery_black,
+            'Recovery time (purple)': recovery_purple,
+            'Mean Attention': mean_attns,
+            'Median Attention': med_attns,
+            'Pixel Norm Attention': pix_norm_attns
             }
 
     df = pd.DataFrame(data)
-    df.to_csv('reddit_place_composition_list_extended_sw.csv', index=False)
+    df.to_csv(filename, index=False)
 
     return df
 

@@ -335,6 +335,7 @@ def main_variables(cpart,
     tran = cpst.compute_vars['transitions']
     other = cpst.compute_vars['other']
     ews = cpst.compute_vars['ews']
+    void_attack = cpst.compute_vars['void_attack']
     if save_memory is None:
         save_memory = True
         #save_memory = (cpart.num_pix() > 3e5) # do the slower memory-saving method when the canvaspart is larger than 300,000 pixels
@@ -392,6 +393,10 @@ def main_variables(cpart,
     stable_colors = np.empty((cpart.num_pix(), var.NUM_COLORS))
 
     # Output
+    cpst.frac_black_px = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
+    cpst.frac_purple_px = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
+    cpst.frac_black_ref = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
+    cpst.frac_purple_ref = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.stability = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.autocorr = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
     cpst.autocorr2 = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
@@ -648,6 +653,11 @@ def main_variables(cpart,
             # Create the png and bmp files from the current image, and store their sizes
             pix_tmp = cpart.white_image(2)
             pix_tmp[coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active]] = current_color[inds_coor_active]
+            if void_attack > 0:
+                cpst.frac_black_px.val[i] = len(np.where(current_color[inds_coor_active] == 5)[0])/len(current_color[inds_coor_active])
+                cpst.frac_purple_px.val[i] = len(np.where(current_color[inds_coor_active] == 17)[0])/len(current_color[inds_coor_active])
+                cpst.frac_black_ref.val[i] = len(np.where(ref_color[inds_coor_active] == 5)[0])/len(ref_color[inds_coor_active])
+                cpst.frac_purple_ref.val[i] = len(np.where(ref_color[inds_coor_active] == 17)[0])/len(ref_color[inds_coor_active])
             if ((compression == 'DEFLATE_BMP_PNG') or (instant > 2)):
                 create_files_and_get_sizes(t_lims, i, pix_tmp,
                                            cpst.size_compressed.val, cpst.size_uncompressed.val,
@@ -675,7 +685,7 @@ def main_variables(cpart,
         if tran > 0:
             cpst.refimage_sw_flat[i] = ref_color
         if attdef > 1 or tran > 1:
-            cpst.refimage_sw[i, coor_offset[1], coor_offset[0]] = ref_color
+            cpst.refimage_sw[i, coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active]] = ref_color[inds_coor_active]
             if attdef > 2:
                 timerange_str_ref = 'time{:06d}to{:06d}'.format(int(t_sw_start), int(t_lims[i]))
                 util.pixels_to_image(cpst.refimage_sw[i], cpart_dir(out_dir_ref), 'SlidingRef_' + timerange_str_ref + '.png')
@@ -683,9 +693,9 @@ def main_variables(cpart,
 
         # Create images containing the (sub)dominant color only.
         if stab > 1 and i >= itmin:
-            cpst.stable_image[i, coor_offset[1], coor_offset[0]] = stable_colors[:, 0]
-            cpst.second_stable_image[i, coor_offset[1], coor_offset[0]] = stable_colors[:, 1]
-            cpst.third_stable_image[i, coor_offset[1], coor_offset[0]] = stable_colors[:, 2]
+            cpst.stable_image[i, coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active]] = stable_colors[inds_coor_active, 0]
+            cpst.second_stable_image[i, coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active]] = stable_colors[inds_coor_active, 1]
+            cpst.third_stable_image[i, coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active]] = stable_colors[inds_coor_active, 2]
 
             # If second and/or third most used colors don't exist (time_spent == 0),
             # then use the first or second most used color instead.
@@ -704,7 +714,7 @@ def main_variables(cpart,
                 cpst.size_compr_stab_im.val[i] = entropy.calc_compressed_size(cpst.stable_image[i], flattening=flattening, compression=compression)
 
     # FRACTAL DIMENSION
-    if instant > 3:
+    if instant > 1:
         [cpst.fractal_dim_mask_median.val,
          cpst.fractal_dim_weighted.val] = fractal_dim.calc_from_image(cpst, shift_avg=True)
 
