@@ -316,7 +316,7 @@ class CanvasPartStatistics(object):
                  cpart,
                  t_interval=300,
                  tmax=var.TIME_TOTAL,
-                 compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1, 'ews': 0, 'void_attack': 0},
+                 compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1, 'ews': 0, 'void_attack': 0, 'inoutgroup': 0, 'lifetime_vars': 0},
                  sliding_window=14400,
                  trans_param=[0.3, 6],#, 2*3600, 4*3600],
                  timeunit=300,  # 5 minutes
@@ -410,6 +410,18 @@ class CanvasPartStatistics(object):
         self.n_bothattdef_users = ts.TimeSeries()
         self.n_defenseonly_users = ts.TimeSeries()
         self.n_attack_users = ts.TimeSeries()
+        self.n_bothattdef_users_lifetime = None
+        self.n_defenseonly_users_lifetime = None
+        self.n_attackonly_users_lifetime = None
+
+        self.n_ingroup_changes = ts.TimeSeries()
+        self.n_outgroup_changes = ts.TimeSeries()
+        self.n_ingrouponly_users = ts.TimeSeries()
+        self.n_outgrouponly_users = ts.TimeSeries()
+        self.n_bothinout_users = ts.TimeSeries()
+        self.n_bothinout_users_lifetime = None
+        self.n_ingrouponly_users_lifetime = None
+        self.n_outgrouponly_users_lifetime = None
 
         self.returntime = None
         self.cumul_attack_timefrac = ts.TimeSeries()
