@@ -17,7 +17,6 @@ import warnings
 import sparse as sp
 from memory_profiler import profile
 import gc
-from pympler import tracker
 
 def count_image_differences(pixels1, pixels2, npix, coor_idx, indices=None):
     ''' Count the number of pixels (at given *indices* of coordinates of cpart *cpart*) that differ
@@ -314,6 +313,8 @@ def main_variables(cpart,
     tran = cpst.compute_vars['transitions']
     other = cpst.compute_vars['other']
     ews = cpst.compute_vars['ews']
+    inout = cpst.compute_vars['inout']
+    lifetm = cpst.compute_vars['lifetime_vars']
     void_attack = cpst.compute_vars['void_attack']
     if save_memory is None:
         save_memory = (cpart.num_pix() > 3e5) # do the slower memory-saving method when the canvaspart is larger than 300,000 pixels
@@ -389,6 +390,11 @@ def main_variables(cpart,
     cpst.n_bothattdef_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.n_defenseonly_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.n_attackonly_users = cpst.ts_init(np.zeros(n_tlims))
+    cpst.n_ingroup_changes = cpst.ts_init(np.zeros(n_tlims))
+    cpst.n_outgroup_changes = cpst.ts_init(np.zeros(n_tlims))
+    cpst.n_ingrouponly_users = cpst.ts_init(np.zeros(n_tlims))
+    cpst.n_outgrouponly_users = cpst.ts_init(np.zeros(n_tlims))
+    cpst.n_bothinout_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.frac_attack_changes_image = np.full((n_tlims, cpart.width(1), cpart.width(0)), 1, dtype=np.float16) if attdef > 1 else None
     cpst.size_uncompressed = cpst.ts_init(np.zeros(n_tlims))
     cpst.size_compressed = cpst.ts_init(np.zeros(n_tlims))
@@ -407,6 +413,12 @@ def main_variables(cpart,
     cpst.frac_purple_px = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.frac_black_ref = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.frac_purple_ref = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
+    attack_users = np.array([])
+    defense_users = np.array([])
+    bothattdef_users = np.array([])
+    ingroup_users = np.array([])
+    outgroup_users = np.array([])
+    bothinout_users = np.array([])
 
     # output paths
     out_path = os.path.join(var.FIGS_PATH, cpart.out_name())
@@ -456,9 +468,10 @@ def main_variables(cpart,
                             ' instead of ' + flattening))
         create_files_and_get_sizes(t_lims, 0, cpart.white_image(2),
                                    cpst.size_compressed.val, cpst.size_uncompressed.val, cpart_dir(out_dir_time))
-
-
-
+    
+    # For identifying in/outgroup by comparing to sliding window looking forward and backward. Lists stay empty if inout is 0.
+    agreeing_changes_vst = []
+    t_inds_active_vst = []
 
     # LOOP over time steps
     i_fraction_print = 0
@@ -475,6 +488,8 @@ def main_variables(cpart,
         # Get indices of pixel changes in this time step, without or with the condition of being in an "active" pixel at this time
         t_inds = cpart.intimerange_pixchanges_inds(t_lims[i-1], t_lims[i])
         t_inds_active = cpart.select_active_pixchanges_inds(t_inds)
+        if inout > 0:
+            t_inds_active_vst.append(t_inds_active)
 
         # CORE COMPUTATIONS. Magic happens here
         # Misc. pixel changes variables
@@ -578,7 +593,7 @@ def main_variables(cpart,
                 cpst.returntime[k].val[i] = returnt[k]
 
             # Ising-style map of attack vs defense pixels
-            if attdef > 1:
+            if attdef > 2:
                 diff_image = current_color - ref_color
                 diff_image_isref = (diff_image == 0)
                 diff_image[diff_image_isref] = 31  # white if defense
@@ -587,9 +602,23 @@ def main_variables(cpart,
                                              coor_offset[0, inds_coor_active]] = diff_image[inds_coor_active]
 
             # Calculate the number of changes and of users that are attacking or defending the reference image. Keep users_sw_unique for the next step
-            users_sw_unique = num_changes_and_users(cpart, cpst, i, i_replace, timerange_str,
+            n_changes_and_users_result = num_changes_and_users(cpart, cpst, i, i_replace, timerange_str,
                                                     t_inds_active, ref_color, users_vst, users_sw_unique,
-                                                    attdef > 1, (cpart_dir(out_dir_attdef) if attdef > 2 else ''))
+                                                    t_inds_active_vst,
+                                                    agreeing_changes_vst,
+                                                    attdef > 1, inout > 0, attdef > 1, lifetm > 0,
+                                                    (cpart_dir(out_dir_attdef) if attdef > 2 else ''))
+            users_sw_unique = n_changes_and_users_result[0]
+            if lifetm > 0:
+                if attdef > 0:
+                    attack_users = np.concatenate((attack_users, np.atleast_1d(n_changes_and_users_result[1])))
+                    defense_users = np.concatenate((defense_users, np.atleast_1d(n_changes_and_users_result[2])))
+                    bothattdef_users = np.concatenate((bothattdef_users, np.atleast_1d(n_changes_and_users_result[3])))
+                if inout > 0 and i >= cpst.sw_width:
+                    ingroup_users = np.concatenate((ingroup_users, np.atleast_1d(n_changes_and_users_result[4])))
+                    outgroup_users = np.concatenate((outgroup_users, np.atleast_1d(n_changes_and_users_result[5])))
+                    bothinout_users = np.concatenate((bothinout_users, np.atleast_1d(n_changes_and_users_result[6])))
+
 
         # INSTANTANEOUS IMAGES: includes entropy and fractal dimension calculations
         # Calculate the number of pixels in the current interval (stable or instantaneous) that differ from the reference image, or from the previous timestep
@@ -620,7 +649,6 @@ def main_variables(cpart,
             else:
                 cpst.size_compressed.val[i] = entropy.calc_compressed_size(pix_tmp, flattening=flattening, compression=compression)
                 cpst.size_uncompressed.val[i] = entropy.calc_size(pix_tmp)
-        del inds_coor_active
 
         # END CORE COMPUTATIONS. Magic ends
 
@@ -648,7 +676,6 @@ def main_variables(cpart,
                 util.pixels_to_image(cpst.refimage_sw[i], cpart_dir(out_dir_ref), 'SlidingRef_' + timerange_str_ref + '.png')
                 util.pixels_to_image(cpst.attack_defense_image[i], cpart_dir(out_dir_attdefIsing), 'Attack_vs_defense_' + timerange_str + '.png')
         del ref_color
-
         # Create images containing the (sub)dominant color only.
         if stab > 1 and i >= itmin:
             cpst.stable_image[i, coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active]] = stable_colors[inds_coor_active, 0]
@@ -670,11 +697,10 @@ def main_variables(cpart,
 
                 # Calculate entropy of most stable image
                 cpst.size_compr_stab_im.val[i] = entropy.calc_compressed_size(cpst.stable_image[i], flattening=flattening, compression=compression)
-
+        del inds_coor_active
         if stab > 0:
             del stable_timefrac
         del time_spent_in_color
-
 
     # FRACTAL DIMENSION
     if instant > 0:
@@ -683,8 +709,13 @@ def main_variables(cpart,
 
     # Continue the loop over some more time steps to get the forward-looking sliding window reference
     if tran > 0:
-        for i in range(n_tlims, n_tlims + cpst.sw_width):
-            inds_coor_active = cpart.active_coord_inds(t_lims[i-1 - cpst.sw_width], t_lims[i - cpst.sw_width])
+        for i in range(n_tlims, n_tlims + min(cpst.sw_width, n_tlims-1)):
+            if n_tlims - 1 >= cpst.sw_width:
+                back_index = i - 1 - cpst.sw_width
+            else:
+                back_index = i - n_tlims
+        
+            inds_coor_active = cpart.active_coord_inds(t_lims[back_index], t_lims[back_index + 1])
 
             i_replace = i % cpst.sw_width # where to modify the "rolling" time_spent_in_color_vst array
             if save_memory:
@@ -692,11 +723,54 @@ def main_variables(cpart,
                                              pos_in_timespentvst, active_colors_vst, startidx_timespent, None,
                                              rec_len_regime, rec_lengths, None, None, replace=False, try_reduce=False)
             else:
-
+                # time_spent_in_color_vst has length of the number of intervals in the sw (cpst.sw_width)
+                # it contains the time spent in each color and pixel for each interval in the SW
+                # time_spent_in_color_sw is the total time spent in each color and pixel for each interval 
                 time_spent_in_color_sw -= time_spent_in_color_vst[i_replace]
-
+            
             ref_color = calc_stable_cols(time_spent_in_color_sw)[:, 0]
-            cpst.diff_pixels_inst_vs_swref_forwardlook.val[i - cpst.sw_width] = np.count_nonzero(previous_colors[i_replace, inds_coor_active] - ref_color[inds_coor_active])
+            
+            # t_inds_active is length of the t_intervals
+            t_inds_active_fwd = t_inds_active_vst[back_index]
+
+            if inout > 0:
+                agreeing_changes_bkwd = agreeing_changes_vst[back_index]
+                # Check whether there are enough time steps after the back index to at least go the edge sliding width forward in time 
+                if back_index + cpst.sw_width_edge <= n_tlims-1:
+                    agreeing_changes_fwd = np.array(ref_color[cpart.coordidx(t_inds_active_fwd)] == cpart.color(t_inds_active_fwd), np.bool_)
+                    ingroup_changes = agreeing_changes_bkwd | agreeing_changes_fwd
+                else:
+                    ingroup_changes = agreeing_changes_bkwd # backward or forward
+                outgroup_changes = np.invert(ingroup_changes)
+                cpst.n_ingroup_changes.val[back_index+1] = np.count_nonzero(ingroup_changes)
+                cpst.n_outgroup_changes.val[back_index+1] = np.count_nonzero(outgroup_changes)
+
+                # users
+                ingroup_users_step = np.unique(cpart.user(t_inds_active_fwd)[ingroup_changes])
+                outgroup_users_step = np.unique(cpart.user(t_inds_active_fwd)[outgroup_changes])
+                bothinout_users_step = (np.intersect1d(ingroup_users_step, outgroup_users_step))
+                ingroup_users = np.concatenate((ingroup_users, np.atleast_1d(ingroup_users_step)))
+                outgroup_users = np.concatenate((outgroup_users, np.atleast_1d(outgroup_users_step)))
+                bothinout_users = np.concatenate((bothinout_users, np.atleast_1d(bothinout_users_step)))
+                cpst.n_bothinout_users.val[back_index+1] = len(bothinout_users_step)
+                cpst.n_outgrouponly_users.val[back_index+1] = len(outgroup_users_step) - len(bothinout_users_step)
+                cpst.n_ingrouponly_users.val[back_index+1] = len(ingroup_users_step) - len(bothinout_users_step)
+
+            cpst.diff_pixels_inst_vs_swref_forwardlook.val[back_index+1] = np.count_nonzero(previous_colors[i_replace, inds_coor_active] - ref_color[inds_coor_active])
+
+    # LIFETIME VALUES
+    # calculate some things after the loop to get the value over the lifetime of the composition
+    if lifetm > 0:
+        if attdef > 1:
+            n_intersect_att_def = len(np.unique(np.intersect1d(attack_users, defense_users)))
+            cpst.n_attackonly_users_lifetime = len(np.unique(attack_users)) - n_intersect_att_def
+            cpst.n_defenseonly_users_lifetime = len(np.unique(defense_users)) - n_intersect_att_def
+            cpst.n_bothattdef_users_lifetime = len(np.unique(bothattdef_users)) + n_intersect_att_def
+        if inout > 0:
+            n_intersect_in_out = len(np.unique(np.intersect1d(outgroup_users, ingroup_users)))
+            cpst.n_outgrouponly_users_lifetime = len(np.unique(outgroup_users)) - n_intersect_in_out
+            cpst.n_ingrouponly_users_lifetime = len(np.unique(ingroup_users)) - n_intersect_in_out
+            cpst.n_bothinout_users_lifetime = len(np.unique(bothinout_users)) + n_intersect_in_out
 
     # These calculations can be done on the final arrays
     cpst.n_users_total = len(np.unique(cpart.user()))
@@ -711,37 +785,80 @@ def main_variables(cpart,
 def num_changes_and_users(cpart, cpst,
                           t_step, i_replace, time_str,
                           t_inds_active, ref_image, users_vst, users_sw_unique,
-                          save_ratio_pixels, save_ratio_images=''):
-    '''
-    Modifies multiple variables of cpst dealing with the number of pixel changes and users:
-                                  cpst.n_changes.val,
-                                  cpst.n_defense_changes.val,
-                                  cpst.n_users.val,
-                                  cpst.n_bothattdef_users.val,
-                                  cpst.n_defenseonly_users.val,
-                                  cpst.n_attackonly_users.val,
-                                  cpst.frac_attack_changes_image,
-    and their relation to the provided reference (stable) image
+                          t_inds_active_vst,
+                          agreeing_changes_vst,
+                          calc_attdef_userlist, 
+                          calc_inout_group,
+                          calc_lifetime_vals,
+                          save_ratio_pixels, 
+                          save_ratio_images=''):
+    """
+    Analyzes and updates statistics related to pixel changes and user activities in a canvas part.
 
-    parameters
+    This function updates several attributes of the `cpst` canvas_part_statistics object related to the number of pixel changes, 
+    the classification of these changes (defense/attack), and user participation metrics. 
+    It also handles the calculation of ratios for attack and defense changes at the pixel level and optionally saves these ratios.
+
+    Parameters
     ----------
     cpart : CanvasPart object
-        The CanvasPart object under study
-    ref_image: 2d array, shape (# y coords, # of x coords)
-        Image to which pixels at every time step are compared
-    save_ratio_pixels: bool
-        save the pixel arrays of the pixel-by-pixel attack/defense ratio
-    save_ratio_images: bool
-        save the images of the pixel-by-pixel attack/defense ratio
-    num_changes, num_defense_changes:
-        the number of total pixel changes, those that restore the ref_image (defense), and those that destroy the ref_image (attack).
-    num_active_coords:
-        Active area of the composition in each timerange
-    num_differing_pixels:
-        number of active pixels that are different than the ref image
-    num_defenseonly_users, num_attackdefense_users, num_users:
-        number of users that contributed changes (defending, both attacking and defending, or all) in the given time interval
-    '''
+        The canvas part object being analyzed.
+    cpst : CanvasPartStatistics object
+        Object containing statistical information of the canvas part, including counters and metrics to be updated.
+    t_step : int
+        The current time step index.
+    i_replace : int
+        Index for replacing users' list in a sliding window mechanism.
+    time_str : str
+        A string representation of the current time, used for naming saved files.
+    t_inds_active : array_like
+        Indices of active pixels in the current time step.
+    ref_image : ndarray, shape (#y_coords, #x_coords)
+        Reference image array against which changes are compared.
+    users_vst : list
+        List of users involved in changes for the current time step.
+    users_sw_unique : array_like
+        Array of unique users in the sliding window.
+    t_inds_active_vst : list
+        List of active time indices for validating changes against the stable version.
+    agreeing_changes_vst : list
+        List of changes that agree with the reference image over time.
+    calc_attdef_userlist : bool
+        Flag indicating whether to calculate lists of users associated with attack and defense changes.
+    calc_inout_group : bool
+        Flag indicating whether to calculate in-group and out-group changes and user metrics.
+    calc_lifetime_vals : bool
+        Flag indicating whether to calculate lifetime values for changes and users.
+    save_ratio_pixels : bool
+        Flag indicating whether to save the pixel-by-pixel attack/defense ratio arrays.
+    save_ratio_images : str, optional
+        Path to save the images of the pixel-by-pixel attack/defense ratio. If empty, images are not saved.
+
+    Returns
+    -------
+    result : list
+        A list containing unique users and, depending on flags, lists of users associated with specific types of changes.
+
+    Notes
+    -----
+    The function updates the following attributes of the `cpst` object:
+    - Number of changes (`n_changes`)
+    - Number of defense changes (`n_defense_changes`)
+    - Number of users (`n_users`)
+    - Number of users participating in both attack and defense (`n_bothattdef_users`)
+    - Number of users participating only in defense (`n_defenseonly_users`)
+    - Number of users participating only in attack (`n_attackonly_users`)
+    - Fraction of attack changes per image (`frac_attack_changes_image`)
+    - n_users_new_vs_previoustime
+    - n_users_sw
+    - n_ingroup_changes
+    - n_outgroup_changes
+    - n_outgrouponly_users
+    - n_ingrouponly_users
+    - n_bothinout_users
+
+    It also optionally calculates and saves images of the ratio of attack to defense changes for each pixel.
+    """
 
     # get indices of all pixel changes that happen in the step (and that are part of the composition timerange for this pixel)
     cpst.n_changes.val[t_step] = len(t_inds_active)
@@ -772,6 +889,52 @@ def num_changes_and_users(cpart, cpst,
     cpst.n_attackonly_users.val[t_step] = len(attack_users) - cpst.n_bothattdef_users.val[t_step]
     cpst.n_defenseonly_users.val[t_step] = num_defense_users - cpst.n_bothattdef_users.val[t_step]
 
+    # Find pixel changes and users that belong to ingroup vs outgroup
+    # to define in/out group, we compare the changes in the current time interval 
+    # to both the forward and backward sliding window, which allows us to count innovations
+    # that are eventually adopted into the composition as in-group changes. 
+    #
+    # For the forward comparison, we use the reference sliding window from the current step, 
+    # then subtract the sliding window index with from the current time index, to reach the index before
+    # the current sliding window. From this back-index, the current reference image is the forward sliding reference image. 
+    # 
+    # Doing this back referencing does require us to keep a record of the 
+    # active indices and agreeing changes versus time, so we can always perform the back index to the proper time interval
+    # to make the current sliding window stable reference the forward looking reference. 
+    # TODO: if memory is a problem, we could delete the elements of agreeing_changes_vst and t_inds_active_vst
+    # that come before the index [t_step - cpst.sw_width]. However, this would make the indexing less intuitive
+    # so I am leaving it this way for now. 
+
+    if calc_inout_group:
+        # Save agreeing changes in this step for later comparison to...
+        agreeing_changes_vst.append(agreeing_changes) 
+
+        # Check if the current time step is beyond the sliding window width
+        if t_step >= cpst.sw_width:
+            # Determine the active indices 'forward' in time, accounting for the sliding window
+            t_inds_active_fwd = t_inds_active_vst[t_step - cpst.sw_width]
+
+            agreeing_changes_fwd = np.array(ref_image[cpart.coordidx(t_inds_active_fwd)] == cpart.color(t_inds_active_fwd), np.bool_)
+            if t_step - cpst.sw_width >= cpst.sw_width_edge:
+                agreeing_changes_bkwd = agreeing_changes_vst[t_step - cpst.sw_width]
+                # ingroup changes are those that are either agreeing changes compared to the forward or backward looking sliding window reference
+                ingroup_changes = agreeing_changes_bkwd | agreeing_changes_fwd  
+            else:
+                ingroup_changes = agreeing_changes_fwd
+
+            outgroup_changes = np.invert(ingroup_changes)
+            cpst.n_ingroup_changes.val[t_step + 1 - cpst.sw_width] = np.count_nonzero(ingroup_changes)
+            cpst.n_outgroup_changes.val[t_step + 1 - cpst.sw_width] = np.count_nonzero(outgroup_changes)
+
+            # users
+            ingroup_users = np.unique(cpart.user(t_inds_active_fwd)[ingroup_changes])
+            outgroup_users = np.unique(cpart.user(t_inds_active_fwd)[outgroup_changes])
+            inout_users = np.intersect1d(ingroup_users, outgroup_users)
+            cpst.n_bothinout_users.val[t_step + 1 - cpst.sw_width] = len(inout_users)
+            num_ingroup_users = len(ingroup_users)
+            cpst.n_outgrouponly_users.val[t_step + 1 - cpst.sw_width] = len(outgroup_users) - cpst.n_bothinout_users.val[t_step + 1 - cpst.sw_width]
+            cpst.n_ingrouponly_users.val[t_step + 1 - cpst.sw_width] = num_ingroup_users - cpst.n_bothinout_users.val[t_step + 1 - cpst.sw_width]
+
     # count attack and defense changes for each pixel of the canvas
     if save_ratio_pixels:
         pixch_2Dcoor_offset = cpart.pixchanges_coords_offset(t_inds_active)  # for creation of the 2D images
@@ -798,7 +961,17 @@ def num_changes_and_users(cpart, cpst,
             plt.savefig(os.path.join(var.FIGS_PATH, save_ratio_images, 'attack_defense_ratio_perpixel_'+time_str))
             plt.close()
 
-    return users_sw_unique
+    result = [users_sw_unique]
+    if calc_attdef_userlist and calc_lifetime_vals:
+        result.append(attack_users)
+        result.append(defense_users)
+        result.append(attackdefense_users)
+    if calc_inout_group and t_step >= cpst.sw_width and calc_lifetime_vals:
+        result.append(ingroup_users)
+        result.append(outgroup_users)
+        result.append(inout_users)
+
+    return result
 
 
 def create_files_and_get_sizes(t_lims, t_step, pixels,
