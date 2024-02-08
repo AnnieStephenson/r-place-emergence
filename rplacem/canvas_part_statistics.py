@@ -318,6 +318,7 @@ class CanvasPartStatistics(object):
                  tmax=var.TIME_TOTAL,
                  compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1, 'ews': 0, 'void_attack': 0, 'inoutgroup': 0, 'lifetime_vars': 0},
                  sliding_window=14400,
+                 sliding_window_edge = 3600,
                  trans_param=[0.3, 6],#, 2*3600, 4*3600],
                  timeunit=300,  # 5 minutes
                  verbose=False,
@@ -346,8 +347,10 @@ class CanvasPartStatistics(object):
             Fills t_unit attribute. Check class doc for details.
         n_tbins : int
             Fills n_t_bins attribute. Check class doc for details.
-        sliding_window: float, in seconds
+        sliding_window : float, in seconds
             Duration of the sliding window on which the reference image is computed
+        sliding_window_edge : float, in seconds
+            Duration of the minimum sliding window on which the reference image is computed, when at the end edge of the composition lifetime
         t_interval : float, in seconds
             width of the time bins
         keep_ref_im_const : boolean
@@ -377,6 +380,7 @@ class CanvasPartStatistics(object):
         self.t_norm = self.t_interval / self.t_unit
         self.sw_width = int(sliding_window/self.t_interval)
         self.sw_width_sec = self.sw_width * self.t_interval # force the sliding window to be a multiple of the time interval
+        self.sw_width_edge = int(sliding_window_edge/self.t_interval)
 
         # Creating attributes that will be computed in comp.main_variables()
         self.diff_pixels_stable_vs_swref = ts.TimeSeries()
