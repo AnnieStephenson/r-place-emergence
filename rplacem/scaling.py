@@ -6,7 +6,7 @@ import pandas as pd
 import scipy
 import seaborn as sns
 import scipy.odr 
-
+import piecewise_regression
 import rplacem.canvas_part as cp
 import rplacem.entropy as ent
 import rplacem.globalvariables_peryear as vars
@@ -33,17 +33,31 @@ def plot_loglog_fit(x_data_unfilt,
                     alpha_error=0.3,
                     linewidth=2.5,
                     nbins=None,
-                    bin_type='subsample', # 'average'
+                    bin_type='average', # 'average'
                     bin_axis='y', # 'x'
-                    fit_type='OLS', # 'TLS'
+                    fit_type='TLS', # 'OLS'
                     max_bin_size=10,
                     n_subsample_iter=100,
                     plot_sliding_window_ave=True,
                     x_line_max=None,
-                    semilog=False, fit=True):
+                    semilog=False, fit=True, 
+                    print_summary=False,
+                    plot_bin_data=False):
     """
     Plots the data on a loglog plot with linear fit
+
+    Notes:
+        Explanation of how the error bars are being calculated, when doing the bilinear fit
+
+        1. We first bin the data and find the mean and standard deviation of the data in each bin. 
+        2. The plotted line fit is the fit on the mean data. 
+        3. Then, we fit the mean + stdev and means - stdev to get a high and low estimate 
+           based on the variance of the data
+        4. Then we use the confidence intervals on those high and low fits to obtain a high and low estimate based on
+           both the variance in the data and the confidence on the fit. 
     """
+    if linewidth == 0:
+        alpha_error = 0
 
     x_data_unfilt = np.array(x_data_unfilt)
     y_data_unfilt = np.array(y_data_unfilt)
@@ -113,72 +127,102 @@ def plot_loglog_fit(x_data_unfilt,
         )
     sns.despine()
 
-    if bin_type!='subsample':
-        n_subsample_iter=1
+    log_x_data, log_y_data, log_x_sem, log_y_sem = handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=max_bin_size)
+    
+    if plot_bin_data:
+        plt.plot(10**log_x_data, 10**log_y_data, '.', color=line_color)
 
-    slopes = []
-    intercepts = []
-    for i in range(n_subsample_iter):
-        if bin_axis=='y':
-            if bin_type=='subsample':
-                x_data_bin, y_data_bin = subsample_data_ybins(x_data, y_data, nbins=nbins, max_bin_size=max_bin_size)
-            if bin_type=='average':
-                x_data_bin, y_data_bin = average_data_ybins(x_data, y_data, nbins=nbins, max_bin_size=max_bin_size)
-        if bin_axis=='x':
-            if bin_type=='subsample':
-                y_data_bin, x_data_bin = subsample_data_ybins(y_data, x_data, nbins=nbins, max_bin_size=max_bin_size)
-            if bin_type=='average':
-                y_data_bin, x_data_bin = average_data_ybins(y_data, x_data, nbins=nbins, max_bin_size=max_bin_size)
-        log_x_data = np.log10(x_data_bin)
-        log_y_data = np.log10(y_data_bin)
-        #plt.figure()
-        #plt.loglog(log_x_data, log_y_data, '.')
-        if fit_type=='OLS':
-            coefficients = np.polyfit(log_x_data, log_y_data, 1)
-            s, inter = coefficients
-        if fit_type=='TLS':
-            data = scipy.odr.RealData(log_x_data, log_y_data)
-            model = scipy.odr.Model(linear_model)
-            odr = scipy.odr.ODR(data, model, beta0=[1.0, 0.0])  # Initial guess for parameters
-            result = odr.run()
-            params = result.beta
-            s= params[0]
-            inter = params[1]
-        slopes.append(s)
-        intercepts.append(inter)
-    slope = np.mean(slopes)
-    slope_std = np.std(slopes)
-    intercept = np.mean(intercepts)
-    intercept_std = np.std(intercepts)
+    if fit_type=='bilinear':
+        pw_fit = piecewise_regression.Fit(log_x_data, log_y_data, n_breakpoints=1)
+        results = pw_fit.get_results()
+        intercept = results['estimates']['const']['estimate']
+        slope = results['estimates']['alpha1']['estimate']
+        slope2 = results['estimates']['alpha2']['estimate'] 
+        breakpt = results['estimates']['breakpoint1']['estimate']
+        pw_fit_low = piecewise_regression.Fit(log_x_data + 2*log_x_sem, log_y_data - 2*log_y_sem, n_breakpoints=1)
+        pw_fit_high = piecewise_regression.Fit(log_x_data - 2*log_x_sem, log_y_data + 2*log_y_sem, n_breakpoints=1)
+        intercept_conf = (pw_fit_low.get_results()['estimates']['const']['confidence_interval'][0], pw_fit_high.get_results()['estimates']['const']['confidence_interval'][1])
+        slope_conf = (pw_fit_low.get_results()['estimates']['alpha1']['confidence_interval'][0], pw_fit_high.get_results()['estimates']['alpha1']['confidence_interval'][1])
+        slope2_conf = (pw_fit_low.get_results()['estimates']['alpha2']['confidence_interval'][0], pw_fit_high.get_results()['estimates']['alpha2']['confidence_interval'][1])
+        breakpt_conf_low = (pw_fit_low.get_results()['estimates']['breakpoint1']['confidence_interval'][0], pw_fit_low.get_results()['estimates']['breakpoint1']['confidence_interval'][1])
+        breakpt_conf_high = (pw_fit_high.get_results()['estimates']['breakpoint1']['confidence_interval'][0], pw_fit_high.get_results()['estimates']['breakpoint1']['confidence_interval'][1])
+        if print_summary:
+            print('\nFit summary for the mean of binned data: ')
+            pw_fit.summary()
+            print('\nFit summary for the mean of binned data minus stdev: ')
+            pw_fit_low.summary()
+            print('\nFit summary for the mean of binned data plus stdev:')
+            pw_fit_high.summary()
+    if fit_type=='OLS':
+        coefficients = np.polyfit(log_x_data, log_y_data, 1)
+        slope, intercept = coefficients
+        slope_conf = None
+        intercept_conf = None
+    if fit_type=='TLS':
+        data = scipy.odr.RealData(log_x_data, log_y_data)
+        model = scipy.odr.Model(linear_model)
+        odr = scipy.odr.ODR(data, model, beta0=[1.0, 0.0])  # Initial guess for parameters
+        result = odr.run()
+        params = result.beta
+        slope= params[0]
+        intercept = params[1]
+        slope_conf = None
+        intercept_conf = None
 
+    print('Fit parameters and roughly estimateed confidence intervals: ')
+    print("intercept: " + str(intercept) + ', conf. interval: ' + str(intercept_conf))
+    print("exponent: " + str(slope) + ', conf. interval: ' + str(slope_conf))
 
-    print("intercept: " + str(intercept) + ' +- ' + str(intercept_std))
-    print("exponent: " + str(slope) + ' +- ' + str(slope_std))
+    x_line_data = np.linspace(np.log10(np.min(x_data)), np.log10(np.max(x_data)), num=500)
+    x_line_data_lin = 10 ** x_line_data
+    if fit_type == 'bilinear':
+        ind_bp = np.argmin(np.abs(breakpt-x_line_data))
+        plt.plot(x_line_data_lin, 10 ** pw_fit.predict(x_line_data),
+                 color=line_color,
+                 alpha=alpha_line,
+                 linewidth=linewidth)
+        
+        # Print the parameters for the main fit
+        y_fit1 = 10 ** intercept * x_line_data_lin[0:ind_bp] ** slope
+        intercept2 = np.log10(y_fit1[-1]) - np.log10(x_line_data_lin[ind_bp] ** slope2)
+        intercept2_low = np.log10(y_fit1[-1]) - np.log10(x_line_data_lin[ind_bp] ** slope2_conf[1])
+        intercept2_high = np.log10(y_fit1[-1]) - np.log10(x_line_data_lin[ind_bp] ** slope2_conf[0])
+        print("breakpoint: " + str(breakpt) + ', conf. interval: ' + str((breakpt_conf_low[0], breakpt_conf_high[1])) )
+        print("exponent 2: " + str(slope2) + ', conf. interval: ' + str(slope2_conf))
+        print("intercept 2: " + str(intercept2) + ', conf. interval: ' + str((intercept2_low, intercept2_high)))
 
-    if x_line_max is None:
-        x_line_max = np.max(x_data)
+        # Calculate the y values for the high and low fit prediction
+        # high end of low fit. Higher bkpt tends to give lower y value, hence taking the higher one for the low fit
+        ind_bp_low = np.argmin(np.abs(breakpt_conf_low[1]-x_line_data)) 
+        # low end of high fit. Lower bkpt tends to give higher y value, hence takig the lower one for the high fit
+        ind_bp_high = np.argmin(np.abs(breakpt_conf_high[0]-x_line_data)) 
+        
+        yfit1_low = 10 ** intercept_conf[0] * x_line_data_lin[0:ind_bp_low] ** slope_conf[0]
+        yfit1_high = 10 ** intercept_conf[1] * x_line_data_lin[0:ind_bp_high] ** slope_conf[1]
+        intercept2_low = np.log10(yfit1_low[-1]) - np.log10(x_line_data_lin[ind_bp_low] ** slope2_conf[0])
+        intercept2_high = np.log10(yfit1_high[-1]) - np.log10(x_line_data_lin[ind_bp_high] ** slope2_conf[1])
 
-    if np.min(x_data) > 0:
-        x_line_min = np.log10(np.min(x_data))
+        yfit2_low = 10 ** intercept2_low * x_line_data_lin[ind_bp_low:] ** slope2_conf[0]
+        yfit2_high = 10 ** intercept2_high * x_line_data_lin[ind_bp_high:] ** slope2_conf[1]
+
+        yfit_low = np.concatenate([yfit1_low, yfit2_low])
+        yfit_high = np.concatenate([yfit1_high, yfit2_high])
+
+        plt.fill_between(
+            x_line_data_lin, 
+            yfit_low, 
+            yfit_high, 
+            linewidth=0,
+            color=line_color, alpha=alpha_error)
+
     else:
-        x_line_min = 0.1
-
-    x_line_data = np.logspace(x_line_min, np.log10(x_line_max))
-    plt.plot(
-        x_line_data,
-        10**(intercept) * x_line_data**(slope),
-        color=line_color,
-        alpha=alpha_line,
-        linewidth=linewidth,
-    )
-    if linewidth == 0:
-        alpha_error = 0
-    plt.fill_between(
-        x_line_data, 
-        10**(intercept - intercept_std) * x_line_data**(slope - slope_std), 
-        10**(intercept + intercept_std) * x_line_data**(slope + slope_std) , 
-        linewidth=0,
-        color=line_color, alpha=alpha_error)
+        plt.plot(
+            x_line_data,
+            10**(intercept) * x_line_data**(slope),
+            color=line_color,
+            alpha=alpha_line,
+            linewidth=linewidth,
+        )
 
     if z_data_unfilt is not None:
         data = x_data, y_data, z_data
@@ -186,49 +230,51 @@ def plot_loglog_fit(x_data_unfilt,
         data = x_data, y_data
     return data
 
-def average_data_ybins(x_data, y_data, nbins=80, max_bin_size=10):
-    log_x_data = np.log10(x_data)
-    log_y_data = np.log10(y_data)
-
+def handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10):
+    if bin_axis=='y':
+        log_x_data = np.log10(x_data)
+        log_y_data = np.log10(y_data)
+    if bin_axis=='x':
+        log_x_data = np.log10(y_data)
+        log_y_data = np.log10(x_data)
     hist_values, bin_edges = np.histogram(log_y_data, bins=nbins)
-    hist_values, bin_edges = np.histogram(log_y_data, bins=nbins)
-    y_values_clip = np.array([])
-    x_values_clip = np.array([])
-    for i in range(len(bin_edges) - 1):
-        indices = np.where((log_y_data >= bin_edges[i])
-                           & (log_y_data < bin_edges[i + 1]))[0]
-        y_values = np.array([np.mean(y_data[indices])])
-        x_values = np.array([np.mean(x_data[indices])])
-        if not np.isnan(x_values[0]):
-            x_values_clip = np.concatenate((x_values_clip, x_values))
-            y_values_clip = np.concatenate((y_values_clip, y_values))
-    return x_values_clip, y_values_clip
 
-def subsample_data_ybins(x_data, y_data, nbins=100, max_bin_size=10):
-    """
-    Subsamples data in different bins to account for uneven data distribution in x or y
-    """
-
-    log_x_data = np.log10(x_data)
-    log_y_data = np.log10(y_data)
-
-    hist_values, bin_edges = np.histogram(log_y_data, bins=nbins)
     # Get the values within each bin
-    y_values_clip = np.array([])
-    x_values_clip = np.array([])
+    y_log_values_clip = np.array([])
+    x_log_values_clip = np.array([])
+    y_log_sem_vals = np.array([])
+    x_log_sem_vals = np.array([])
+
     for i in range(len(bin_edges) - 1):
         indices = np.where((log_y_data >= bin_edges[i])
-                           & (log_y_data < bin_edges[i + 1]))[0]
-        if len(indices) < max_bin_size:
-            max_samp = len(indices)
-        else:
-            max_samp = max_bin_size
-        sampled_inds = np.random.choice(indices, size=max_samp)
-        x_values = x_data[sampled_inds]
-        y_values = y_data[sampled_inds]
-        x_values_clip = np.concatenate((x_values_clip, x_values))
-        y_values_clip = np.concatenate((y_values_clip, y_values))
-    return x_values_clip, y_values_clip
+                           & (log_y_data < bin_edges[i + 1])
+                           & (~np.isnan(log_x_data)))[0]
+        if bin_type=='average':
+            y_log_values = np.array([np.mean(log_y_data[indices])])
+            x_log_values = np.array([np.mean(log_x_data[indices])])
+            y_log_sem = np.array([scipy.stats.sem(log_y_data[indices], ddof=1)])
+            x_log_sem = np.array([scipy.stats.sem(log_x_data[indices], ddof=1)])            
+        if bin_type=='subsample':
+            if len(indices) < max_bin_size:
+                max_samp = len(indices)
+            else:
+                max_samp = max_bin_size
+            sampled_inds = np.random.choice(indices, size=max_samp)
+            x_log_values = log_x_data[sampled_inds]
+            y_log_values = log_y_data[sampled_inds]
+            y_log_sem = np.array([0])
+            x_log_sem = np.array([0])
+        if not np.isnan(x_log_values[0]) and not np.isnan(y_log_sem[0]):
+            x_log_values_clip = np.concatenate((x_log_values_clip, x_log_values))
+            y_log_values_clip = np.concatenate((y_log_values_clip, y_log_values))
+            y_log_sem_vals = np.concatenate((y_log_sem_vals, y_log_sem))
+            x_log_sem_vals = np.concatenate((x_log_sem_vals, x_log_sem))
+    if bin_axis=='y':
+        result = [x_log_values_clip, y_log_values_clip, x_log_sem_vals, y_log_sem_vals]
+    if bin_axis=='x':
+        result = [y_log_values_clip, x_log_values_clip, y_log_sem_vals, x_log_sem_vals]
+
+    return result
 
 
 def calc_min_max_entropy(compression="LZ77",
