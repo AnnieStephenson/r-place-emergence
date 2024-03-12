@@ -63,7 +63,7 @@ class EvalML:
         TP + TN / (# total events)
     '''
     def __init__(self, true, predicted, true_threshold, variableName='predicted_earliness', algo_param=AlgoParam(),
-                 n_pred_cuts=200, pred_thresholds=None, transformed_earliness=False, computeTN=True,
+                 n_pred_cuts=200, pred_thresholds=None, transformed_earliness=False, computeTN=True, force_noReversePredCut=False,
                  trainsample=False, ratioEvals=False):
         
         self.algo_param = algo_param
@@ -71,7 +71,9 @@ class EvalML:
         self.trainsample = trainsample
         self.ratioEvals = ratioEvals
         self.computeTN = computeTN
-        self.reversePredCut = None
+        self.reversePredCut = False if force_noReversePredCut else None
+        self.force_noReversePredCut = force_noReversePredCut
+
 
         self.true_threshold = true_threshold
         self.true_thres_internal_ = 0.5 if self.algo_param.type == 'classification' else self.true_threshold #in the middle of true and false for classification results
@@ -107,7 +109,7 @@ class EvalML:
 
             # compute basic variables
             self.compute_base(true, predicted)
-    
+
     # aliases
     def recall(self):
         return self.TPR
@@ -139,7 +141,8 @@ class EvalML:
         self.reversePredCut = (TPR_trial < FPR_trial)
 
     def compute_base(self, true, pred):
-        self.set_reversePredCut(true, pred)
+        if not self.force_noReversePredCut:
+            self.set_reversePredCut(true, pred)
         invertTrueCut = -1 if self.signalIsAboveThreshold_ else 1
         invertPredCut = -1 if self.reversePredCut else 1
         for i, pred_thres in enumerate(list(self.pred_thresholds)):
@@ -214,12 +217,13 @@ class EvalML:
         '''
         naninds = np.where(np.isnan(a))[0]
         for i in naninds:
-            if i<len(a)-2:
-                a[i] = a[i+(1 if not np.isnan(a[i+1]) else 2)]
+            if i<int(len(a)/2):
+                np.min(~np.isnan(a))
+                a[i] = a[np.min(np.where(~np.isnan(a))[0])]
             else:
-                a[i] = a[i-(1 if not np.isnan(a[i-1]) else 2)]
+                a[i] = a[np.max(np.where(~np.isnan(a))[0])]
 
-    def plotROC(self):
+    def plotROC(self, othername=''):
         plt.figure(num=1, clear=True)
 
         plt.xlim([0,1])
@@ -230,10 +234,10 @@ class EvalML:
         self.set_FPR()
         self.set_TPR()
         plt.plot(self.FPR, self.TPR)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'ROC_earlinessBelow'+str(self.true_threshold)+'s_'+self.variableName+('_LowerCut' if self.reversePredCut else '_UpperCut')+'.png'), 
+        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'ROC_earlinessBelow'+str(self.true_threshold)+'s_'+self.variableName+('_LowerCut' if self.reversePredCut else '_UpperCut')+'.png' if othername == '' else othername), 
                     dpi=250, bbox_inches='tight')
 
-    def plotPR(self):
+    def plotPR(self, othername=''):
         plt.figure(num=1, clear=True)
 
         plt.xlim([0,1])
@@ -244,7 +248,7 @@ class EvalML:
         self.set_TPR()
         plt.plot(self.TPR, self.purity)
 
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'PR_earlinessBelow'+str(self.true_threshold)+'s_'+self.variableName+('_LowerCut' if self.reversePredCut else '_UpperCut')+'.png'), 
+        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'PR_earlinessBelow'+str(self.true_threshold)+'s_'+self.variableName+('_LowerCut' if self.reversePredCut else '_UpperCut')+'.png' if othername == '' else othername), 
                     dpi=250, bbox_inches='tight')
 
     def interp_bothdirections(x, xp, yp):
@@ -253,13 +257,15 @@ class EvalML:
         else:
             return np.interp(x, np.flip(xp), np.flip(yp))
 
-    def calc_ROCAUC(self, maxFPR=1):
+    def calc_ROCAUC(self, maxFPR=1, verbose=False):
         if self.ROCAUC == None or maxFPR != 1:
             self.set_FPR()
             self.set_TPR()
             TPRatMaxFPR = np.interp(maxFPR, self.FPR, self.TPR)
             TPRtmp = self.complete_endpoints(self.TPR[self.FPR <= maxFPR], 0, TPRatMaxFPR, True)
             FPRtmp = self.complete_endpoints(self.FPR[self.FPR <= maxFPR], 0, maxFPR, True)
+            if verbose:
+                print(TPRtmp, FPRtmp,  simpson(TPRtmp, FPRtmp))
             auc = simpson(TPRtmp, FPRtmp) / maxFPR
             if maxFPR == 1:
                 self.ROCAUC = auc
