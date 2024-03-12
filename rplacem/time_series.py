@@ -132,7 +132,7 @@ class TimeSeries(object):
             sw = self.sw_width_mean
             cumul_sum = np.cumsum(self.val)  # cumsum[i] is the sum of values in indices [0, i] with i included
             mean_sliding[0] = self.val[0]
-            mean_sliding[1:(sw+1)] = cumul_sum[0:sw] / np.arange(1, sw+1)
+            mean_sliding[1:(sw+1)] = cumul_sum[0:np.min([sw, len(mean_sliding[1:])])] / np.arange(1, np.min([len(mean_sliding[1:])+1, sw+1]))
             mean_sliding[(sw+1):] = (cumul_sum[sw:-1] - cumul_sum[:(-sw-1)]) / float(sw)
 
             if self.label[0:6] == 'autoco': # take the difference rather than the ratio for autocorrelation
