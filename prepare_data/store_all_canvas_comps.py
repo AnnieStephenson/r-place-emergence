@@ -18,7 +18,7 @@ def store_compos(beg, end):
     print('start looping over compositions')
     for i in range(int(beg),int(end)):
         print(i, atlas[i]['id'])
-        atlas_info_separated = cp.get_atlas_border(id_index=i, atlas=atlas, addtime_before=7*3600, addtime_after=7*3600)
+        atlas_info_separated = cp.get_atlas_border(id_index=i, atlas=atlas, addtime_before=10*3600, addtime_after=5*3600) #used 7h before and after in the previous run
         for ainfo in atlas_info_separated:
             # actual canvas composition here
             #print(ainfo.id, ainfo.border_path, ainfo.border_path_times)

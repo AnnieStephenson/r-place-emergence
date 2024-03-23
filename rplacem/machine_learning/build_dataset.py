@@ -23,15 +23,15 @@ def variables_from_cpstat(cps):
                  (cps.n_changes_norm,                   0, 1, 0),
                  (cps.instability_norm[0],              0, 0, 0),
                  (cps.instability_norm[3],              0, 0, 0),#
-                 (cps.variance,                         1, 0, 0),#
-                 (cps.variance2,                        1, 0, 0),
+                 (cps.variance,                         0, 0, 0),#
+                 (cps.variance2,                        0, 0, 0),
                  (cps.runnerup_timeratio[0],            0, 0, 0),#
                  (cps.runnerup_timeratio[3],            0, 0, 0),
                  (cps.n_used_colors[0],                 0, 0, 0),
                  (cps.n_used_colors[3],                 0, 1, 0),
                  (cps.autocorr,                         1, 0, 0),  # the difference is taken instead of the ratio for autocorrelation
                  (cps.autocorr2,                        1, 0, 0),# # the difference is taken instead of the ratio for autocorrelation
-                 (cps.cumul_attack_timefrac,            0, 1, 0),#
+                 (cps.cumul_attack_timefrac,            0, 1, 0),
                  (cps.returntime[0],                    0, 1, 0),
                  (cps.returntime[3],                    0, 1, 0),
                  (cps.n_users_sw_norm,                  0, 1, 0),
@@ -265,6 +265,9 @@ for p in range(0, math.ceil(ncompmax/period)):
 
                 # earliness output
                 outputval[i_event] = get_earliness(cps, t, trans_starttimes)
+
+                if cps.id == '3':
+                    print(t, outputval[i_event]) 
 
                 # time of this recorded event
                 eventtime[i_event] = t

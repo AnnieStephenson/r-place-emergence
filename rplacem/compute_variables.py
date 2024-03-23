@@ -553,7 +553,7 @@ def main_variables(cpart,
             prev_color = previous_colors[(i_replace - 1) % cpst.sw_width, inds_coor_active]
             curr_color = current_color[inds_coor_active]
 
-            # autocorrelation normalized per pixel
+            # autocorrelation averaged over pixels
             autocorr_norm_per_pix = np.zeros(len(curr_color))
             autocorr_norm_per_pix[(curr_color == prev_color) & (curr_color == mode_color)] = 0
             autocorr_norm_per_pix[(curr_color == prev_color) & (curr_color != mode_color)] = 1
@@ -561,7 +561,7 @@ def main_variables(cpart,
             autocorr_norm_per_pix[(curr_color != prev_color) & ((curr_color == mode_color) | (prev_color == mode_color))] = 0
             cpst.autocorr.val[i] = np.mean(autocorr_norm_per_pix) if len(autocorr_norm_per_pix) > 0 else 0
 
-            # autocorrelation of entire state
+            # autocorrelation normalized on entire state
             autocorr_denom_per_pix = np.zeros(len(curr_color))
             autocorr_denom_per_pix[(curr_color == prev_color) & (curr_color == mode_color)] = 0
             autocorr_denom_per_pix[(curr_color == prev_color) & (curr_color != mode_color)] = 1
@@ -638,10 +638,10 @@ def main_variables(cpart,
             pix_tmp = cpart.white_image(2)
             pix_tmp[coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active]] = current_color[inds_coor_active]
             if void_attack > 0:
-                cpst.frac_black_px.val[i] = len(np.where(current_color[inds_coor_active] == 5)[0])/len(current_color[inds_coor_active])
-                cpst.frac_purple_px.val[i] = len(np.where(current_color[inds_coor_active] == 17)[0])/len(current_color[inds_coor_active])
-                cpst.frac_black_ref.val[i] = len(np.where(ref_color[inds_coor_active] == 5)[0])/len(ref_color[inds_coor_active])
-                cpst.frac_purple_ref.val[i] = len(np.where(ref_color[inds_coor_active] == 17)[0])/len(ref_color[inds_coor_active])
+                cpst.frac_black_px.val[i] = len(np.where(current_color[inds_coor_active] == var.BLACK)[0])/len(current_color[inds_coor_active])
+                cpst.frac_purple_px.val[i] = len(np.where(current_color[inds_coor_active] == var.PURPLE)[0])/len(current_color[inds_coor_active])
+                cpst.frac_black_ref.val[i] = len(np.where(ref_color[inds_coor_active] == var.BLACK)[0])/len(ref_color[inds_coor_active])
+                cpst.frac_purple_ref.val[i] = len(np.where(ref_color[inds_coor_active] == var.PURPLE)[0])/len(ref_color[inds_coor_active])
             if ((compression == 'DEFLATE_BMP_PNG') or (instant > 2)):
                 create_files_and_get_sizes(t_lims, i, pix_tmp,
                                            cpst.size_compressed.val, cpst.size_uncompressed.val,
