@@ -898,7 +898,7 @@ def compare_border_paths(b1, b2):
 def avoid_location_jump(border_path, border_path_times):
     '''
     Returns a list of lists of border paths, where there is no location jump within a given list of border paths.
-    Also removes the time holes for border paths that are similar enough.
+    Also removes the time holes for border paths that at least partially overlap.
     '''
     if len(border_path) < 2:
         return ([border_path], [border_path_times])

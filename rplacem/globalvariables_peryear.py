@@ -60,6 +60,8 @@ class GlobalVars(object):
         self.COLOR_TO_IDX = json.load(open(os.path.join(self.DATA_PATH, 'ColorDict.json')))
         self.IDX_TO_COLOR = json.load(open(os.path.join(self.DATA_PATH, 'ColorsFromIdx.json')))
         self.WHITE = self.COLOR_TO_IDX['#FFFFFF']
+        self.BLACK = self.COLOR_TO_IDX['#000000']
+        self.PURPLE = self.COLOR_TO_IDX['#811E9F']
         self.NUM_COLORS = len(self.COLOR_TO_IDX)
 
         # set color dictionaries translating the color index to the corresponding rgb or hex color

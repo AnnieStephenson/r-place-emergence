@@ -5,6 +5,7 @@ import math
 import scipy.stats
 import pickle
 import matplotlib.colors as colors
+import matplotlib.colorbar as colorbar
 import seaborn as sns
 import matplotlib.pyplot as plt
 import rplacem.globalvariables_peryear as vars
@@ -18,7 +19,7 @@ import EvalML as eval
 
 # GLOBAL AND XGBOOST PARAMETERS
 ml_param = eval.AlgoParam(type='regression', # or 'classification
-                          test2023=True,
+                          test2023=False,
                           n_features=None,
                           num_rounds=None, 
                           learning_rate=0.05, 
@@ -34,9 +35,9 @@ ml_param.min_child_weight = 3.1 if ml_param.type == 'regression' else 4
 
 warning_threshold_sec = 1200
 warning_threshold = ml_param.transform_target(warning_threshold_sec)
-makeplots = False if (ml_param.type != 'regression') else True
-make_shap_plots = False
-savefiles = True
+makeplots = False if (ml_param.type != 'regression') else False
+make_shap_plots = True
+savefiles = False
 emax_test_hist2d = 1.3e3
 
 
@@ -250,7 +251,151 @@ def plot_probas_BinaryClassification(sig, bkg, warn_thres_str, add_name, classif
     plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'proba_SigBkg_BinaryClassif_earlinessBelow'+warn_thres_str+add_name+'.png'), dpi=250)
     return hsig, hbkg
 
+def SHAP_reject_messy_times(shapvals):
+    vars_tocut = ['frac_pixdiff_inst_vs_swref_t-12-9',
+                  'frac_pixdiff_inst_vs_swref_t-17-13',
+                  'frac_pixdiff_inst_vs_swref_t-24-18',
+                  'frac_pixdiff_inst_vs_swref_t-39-25'
+                  ]
+    thresholds = [0.1, 0.07, 0.07, 0.07]
+    vars_idx = []
+    for vtest in vars_tocut:
+        for v in range(len(shapvals.feature_names)):
+            if shapvals.feature_names[v] == vtest:
+                vars_idx.append(v)
+    print(vars_idx)
+    print(shapvals.shape[0], 'instances entering SHAP_reject_messy_times')
+    
+    inds = np.where((shapvals.data[:, vars_idx[0]] < thresholds[0]) &
+                    (shapvals.data[:, vars_idx[1]] < thresholds[1]) &
+                    (shapvals.data[:, vars_idx[2]] < thresholds[2]) &
+                    (shapvals.data[:, vars_idx[3]] < thresholds[3]))[0]
+    print(len(inds), 'instances exiting SHAP_reject_messy_times')
+    
+    return inds
 
+def SHAP_featureDependence(target, shapvals, targetsort, varname, varnum, ml_param, e_threshold=3600, onlyStableTimes=False):
+    def xrange_lims(x):
+        xlog = False
+        xmin, xmax = np.min(x), np.max(x)
+        #if (varname[0:7] == 'frac_at'):
+        #    xmin = 1e-3
+        #    x[x<xmin] = xmin
+        #    xlog = True
+        if (varname[0:7] == 'autocor'):
+            xmin = -0.015 if xmin<-0.015 else xmin
+            xmax = 0.015 if xmax>0.015 else xmax
+            x[x<xmin] = xmin+1e-4
+            x[x>xmax] = xmax-1e-4
+        if (varname[0:7] == 'changes'):
+            xmax = 7 if xmax>7 else xmax
+            x[x>xmax] = xmax-1e-3
+        if (varname[0:7] == 'cumul_a'):
+            xmin = 2e-3 if xmin<2e-3 else xmin
+            x[x<xmin] = 1.01*xmin
+            xlog = True
+        if (varname[0:7] == 'entropy'):
+            xmax = 3.5 if xmax>3.5 else xmax
+            x[x>xmax] = xmax-1e-3
+        if (varname[0:23] == 'frac_pixdiff_inst_vs_st'):
+            xmax = 0.25 if xmax>0.25 else xmax
+            x[x>xmax] = xmax-1e-3
+        if (varname[0:23] == 'frac_pixdiff_inst_vs_sw'):
+            xmax = 0.45 if xmax>0.45 else xmax
+            x[x>xmax] = xmax-1e-3
+        if (varname[0:7] == 'fractal'):
+            xmin = 0.65 if xmin<0.65 else xmin
+            x[x<xmin] = xmin+1e-3
+            xmax = 1.35 if xmax>1.35 else xmax
+            x[x>xmax] = xmax-1e-3
+        if (varname[0:7] == 'instabi'):
+            xmin = 2e-3 if xmin<2e-3 else xmin
+            x[x<xmin] = 1.01*xmin
+            xmax = 0.2 if xmax>0.2 else xmax
+            x[x>xmax] = 0.99*xmax
+            xlog = True
+        if (varname[0:7] == 'n_chang'):
+            xmin = 1e-3 if xmin<1e-3 else xmin
+            x[x<xmin] = 1.01*xmin
+            xmax = 7 if xmax>7 else xmax
+            x[x>xmax] = xmax-1e-3
+            xlog = True
+        if (varname[0:21] == 'n_used_colors_meantop'):
+            xmax = 2.7 if xmax>2.7 else xmax
+            x[x>xmax] = xmax-1e-3
+        elif (varname[0:8] == 'n_used_c'):
+            xmin = 0.99
+            xmax = 1.5 if xmax>1.5 else xmax
+            x[x>xmax] = xmax-1e-3
+        if (varname[0:7] == 'n_users'):
+            xmin = 1e-3 if xmin<1e-3 else xmin
+            x[x<xmin] = 1.01*xmin
+            xlog = True
+        if (varname[0:7] == 'runneru'):
+            xmin = 1e-2 if xmin<1e-2 else xmin
+            x[x<xmin] = 1.01*xmin
+            xlog = True
+        if (varname[0:7] == 'varianc'):
+            xmin = 0.9 if xmin<0.9 else xmin
+            x[x<xmin] = xmin+1e-3
+            xmax = 1.15 if xmax>1.15 else xmax
+            x[x>xmax] = xmax-1e-3
+        if (varname[0:16] == 'returntime_meant'):
+            xmax = 5000 if xmax>5000 else xmax
+            x[x>xmax] = 5000-1
+        elif (varname[0:16] == 'returntime_mean_'):
+            xmax = 3000 if xmax>3000 else xmax
+            x[x>xmax] = 3000-1
+        
+        
+        return xmin, xmax, xlog
+    
+    xmin, xmax, xlog = xrange_lims(shapvals.data[:, varnum])
+
+    f = plt.figure(num=1, clear=True)
+
+    x = shapvals.data[targetsort, varnum]
+    y = shapvals.values[targetsort, varnum]
+    c = target[targetsort]
+    sc = plt.scatter(x, y, s=2, c=c, cmap='viridis', #alpha=alpha, vmin=vmin, vmax=vmax
+                )
+    plt.xlim([xmin, xmax])
+    if xlog:
+        plt.xscale('log')
+    cb = plt.colorbar(sc)
+    cb.set_label('log(true time to transition)')
+    plt.xlabel(varname)
+    plt.ylabel('SHAP value for '+varname)
+    plt.hlines(0, xmin, xmax, 'grey', 'dashed', linewidth=1.5)
+
+    invtransf_targ = ml_param.invtransform_target(c)
+    is_sig = np.where(invtransf_targ <= e_threshold)[0]
+    is_bkg = np.where(invtransf_targ > e_threshold)[0]
+
+    meanbkg = scipy.stats.binned_statistic(x[is_bkg], y[is_bkg], bins=(np.logspace(np.log10(xmin), np.log10(xmax), 120) if xlog else np.linspace(xmin, xmax, 120)), statistic='mean')
+    mean_valbkg = meanbkg.statistic
+    mean_binc_bkg = meanbkg.bin_edges
+    mean_binc_bkg = (mean_binc_bkg[:-1] + mean_binc_bkg[1:])/2.
+    plt.plot(mean_binc_bkg, mean_valbkg, color='orangered', label=r'mean SHAP (true $T^3 >$'+str(int(e_threshold))+'s)')
+
+    mean = scipy.stats.binned_statistic(x[is_sig], y[is_sig], bins=(np.logspace(np.log10(xmin), np.log10(xmax), 100) if xlog else np.linspace(xmin, xmax, 100)), statistic='mean')
+    mean_val = mean.statistic
+    mean_binc = mean.bin_edges
+    mean_binc = (mean_binc[:-1] + mean_binc[1:])/2.
+    plt.plot(mean_binc, mean_val, color='violet', label=r'mean SHAP (true $T^3 \leq$'+str(int(e_threshold))+'s)')
+
+    hist, b = np.histogram(x, bins=(np.logspace(np.log10(xmin), np.log10(xmax), 50) if xlog else np.linspace(xmin, xmax, 50)))
+    ymin, ymax = np.min(y), np.max(y)
+    hist = hist*(ymax-ymin)/np.sum(hist)
+    plt.bar(b[:-1], hist, align='edge', width=np.diff(b), color='grey', alpha=0.2, label='pdf of feature', bottom=ymin)
+
+    plt.legend(fontsize=9, framealpha=0.3)
+
+    plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP', 
+                             'SHAP_scatter'+('_onlyStableTimes' if onlyStableTimes else ''), 'SHAP_scatter_'+varname+'.png'), 
+                             dpi=250, bbox_inches='tight')
+    plt.clf()
+    f.clear()
 
 
 
@@ -556,7 +701,7 @@ if ml_param.type == 'regression' and ml_param.calibrate_pred:
     pred_calib_spline = UnivariateSpline(y_medianpred, pred_medianpred, w=w_splinefit, k=5)
 
 
-    print(pred_calib_spline)
+    #print(pred_calib_spline)
     pred_calib_transformer = pred_calib_spline#np.poly1d(pred_calib_spline)
     y_valid_bincenters = np.linspace(ml_param.transform_target(0), ml_param.transform_target(22*3600), 100)
     pred_valid_calib_vals = pred_calib_transformer(y_valid_bincenters)
@@ -619,7 +764,6 @@ for warn_thres_sec in ([1200, 3600, 3*3600, 6*3600] if ml_param.type == 'regress
 
     # make EvalML result for ratio of train to test samples
     eval_all_train = eval.EvalML(true_train, pred_train, pred_thresholds=eval_all.pred_thresholds, true_threshold=warn_thres_sec, algo_param=ml_param, transformed_earliness=False, trainsample=True )
-    eval_all_train.printResults()
     eval_ratio = eval.ratioEvals(eval_all_train, eval_all, printmore=True)
     eval_ratio.variableName = 'TrainOverTest'
     evals_allthresholds.append(eval_ratio)
@@ -655,7 +799,7 @@ if savefiles:
                         true = true_test, predicted = pred_test, compoID_idx = id_idx[test_inds], time = eventtime[test_inds], id_dict = id_dict )
 
 # PLOTS
-if makeplots:
+if makeplots or make_shap_plots:
     print('first 2D histogram')
     # 2D true vs predicted histograms
     #scatter_true_vs_pred(true_test, pred_test, id_idx, test_inds, loge=True)
@@ -718,7 +862,7 @@ if makeplots:
         shap_eachvar_data = np.empty((shap_values.shape[0], nvar_tintegrated))
         for v in range(nvar_tintegrated):
             shap_eachvar_vals[:, v] = np.sum(shap_values.values[:,varmap_eachvar[v]], axis=1)
-            shap_eachvar_data[:, v] = np.mean(shap_values.data[:,varmap_eachvar[v]], axis=1) # this is not correct but is only used to show the feature value in the plots
+            shap_eachvar_data[:, v] = np.mean(shap_values.data[:,varmap_eachvar[v]], axis=1)
         shap_eachvar.values = shap_eachvar_vals
         shap_eachvar.data = shap_eachvar_data
         shap_eachvar.feature_names=varnames_eachvar
@@ -744,67 +888,96 @@ if makeplots:
         shap_eachrange_coarse.data = shap_eachrange_coarse_data
         shap_eachrange_coarse.feature_names=varnames_eachrange_coarse
 
+        inds_onlyStableTimes = SHAP_reject_messy_times(shap_values)
+
+        # SAVE SHAP VALUES
+        if savefiles:
+            with open(os.path.join(var.DATA_PATH, 'SHAP_values.pickle'), 'wb') as f:
+                pickle.dump([shap_values, shap_eachvar, shap_eachrange, shap_eachrange_coarse, inds_onlyStableTimes], 
+                            f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        print('Scatter plot of all instances for each feature')
+        
+
+        print('shap_values')
+        f = plt.figure(num=1, clear=True)
+        targetsort = np.argsort(y_test)[::-1]
+        targetsort_onlyStableTimes = np.argsort(y_test[inds_onlyStableTimes])[::-1]
+
+
+        for v in range(shap_values.shape[1]):
+            print(v, varnames[v], end='\r')
+            #SHAP_featureDependence(y_test, shap_values, targetsort, varnames[v], v, ml_param, 3600, onlyStableTimes=False)
+            SHAP_featureDependence(y_test[inds_onlyStableTimes], shap_values[inds_onlyStableTimes], targetsort_onlyStableTimes, varnames[v], v, ml_param, 3600, onlyStableTimes=True)
+        print('shap_eachvar')
+        for v in range(shap_eachvar.shape[1]):
+            print(v, varnames[v], end='\r')
+            #SHAP_featureDependence(y_test, shap_eachvar, targetsort, varnames_eachvar[v], v, ml_param, 3600, onlyStableTimes=False)
+            SHAP_featureDependence(y_test[inds_onlyStableTimes], shap_eachvar[inds_onlyStableTimes], targetsort_onlyStableTimes, varnames_eachvar[v], v, ml_param, 3600, onlyStableTimes=True)
+
+        sys.exit()
+
         print('shap figure 1')
         plt.figure(num=1, clear=True)
         shap.plots.bar(shap_eachvar, show=False, max_display=40)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_bar_timeIntegrated.pdf'), dpi=250, bbox_inches='tight')
+        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_timeIntegrated.pdf'), dpi=250, bbox_inches='tight')
 
         #plt.figure(num=1, clear=True)
         #shap.plots.beeswarm(shap_eachrange, show=False, max_display=40)
-        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_beeswarm_perTimerange.pdf'), dpi=250, bbox_inches='tight')
+        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_perTimerange.pdf'), dpi=250, bbox_inches='tight')
 
         print('shap figure 2')
         plt.figure(num=1, clear=True)
         shap.plots.bar(shap_eachrange, show=False, max_display=40)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_bar_perTimerange.pdf'), dpi=250, bbox_inches='tight')
+        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_perTimerange.pdf'), dpi=250, bbox_inches='tight')
 
         #plt.figure(num=1, clear=True)
         #shap.plots.beeswarm(shap_eachrange_coarse, show=False, max_display=40)
-        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_beeswarm_perCoarseTimerange.pdf'), dpi=250, bbox_inches='tight')
+        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_perCoarseTimerange.pdf'), dpi=250, bbox_inches='tight')
 
         print('shap figure 3')
         plt.figure(num=1, clear=True)
         shap.plots.bar(shap_eachrange_coarse, show=False, max_display=40)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_bar_perCoarseTimerange.pdf'), dpi=250, bbox_inches='tight')
+        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_perCoarseTimerange.pdf'), dpi=250, bbox_inches='tight')
         
         print('shap figure 4')
         plt.figure(num=1, clear=True)
         shap.plots.bar(shap_values, show=False, max_display=40) 
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_bar.pdf'), dpi=250, bbox_inches='tight')
+        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar.pdf'), dpi=250, bbox_inches='tight')
 
         print('shap figure 5')
         plt.figure(num=1, clear=True)
         shap.plots.bar(shap_values, show=False, max_display=228)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_bar_allvars.pdf'), dpi=250, bbox_inches='tight')
+        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_allvars.pdf'), dpi=250, bbox_inches='tight')
 
         print('shap figure 6')
         plt.figure(num=1, clear=True)
         shap.plots.beeswarm(shap_values, show=False, max_display=40)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_beeswarm.pdf'), dpi=250, bbox_inches='tight')
+        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm.pdf'), dpi=250, bbox_inches='tight')
 
         print('shap figure 7')
         plt.figure(num=1, clear=True)
         shap.plots.beeswarm(shap_eachvar, show=False, max_display=40)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_beeswarm_timeIntegrated.pdf'), dpi=250, bbox_inches='tight')
+        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_timeIntegrated.pdf'), dpi=250, bbox_inches='tight')
 
         #plt.figure(num=1, clear=True)
         #shap.plots.beeswarm(shap_values, show=False, max_display=228)
-        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_beeswarm_allvars.pdf'), dpi=250, bbox_inches='tight')
+        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_allvars.pdf'), dpi=250, bbox_inches='tight')
         #plt.figure(num=1, clear=True)
 
 
 
         #shap.plots.bar(shap_values[y_test[passClassif_test] < ml_param.transform_target(6*3600)], show=False, max_display=142)
-        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_bar_trueEarlinessBelow6h.pdf'), dpi=250, bbox_inches='tight')
+        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_trueEarlinessBelow6h.pdf'), dpi=250, bbox_inches='tight')
         #plt.figure()
         #shap.plots.bar(shap_values[y_test[passClassif_test] >= ml_param.transform_target(6*3600)], show=False, max_display=142)
-        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_bar_trueEarlinessAbove6h.pdf'), dpi=250, bbox_inches='tight')
+        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_trueEarlinessAbove6h.pdf'), dpi=250, bbox_inches='tight')
         #plt.figure(num=1, clear=True)
         #shap.plots.beeswarm(shap_values[y_test < ml_param.transform_target(6*3600)], show=False, max_display=142)
-        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_beeswarm_trueEarlinessBelow6h.pdf'), dpi=250, bbox_inches='tight')
+        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_trueEarlinessBelow6h.pdf'), dpi=250, bbox_inches='tight')
         #plt.figure(num=1, clear=True)
         #shap.plots.beeswarm(shap_values[y_test >= ml_param.transform_target(6*3600)], show=False, max_display=142)
-        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP_beeswarm_trueEarlinessAbove6h.pdf'), dpi=250, bbox_inches='tight')
+        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_trueEarlinessAbove6h.pdf'), dpi=250, bbox_inches='tight')
         
 
         '''
