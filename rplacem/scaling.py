@@ -127,10 +127,17 @@ def plot_loglog_fit(x_data_unfilt,
         )
     sns.despine()
 
+    # calculate unbinned log data for later use in R^2
+    log_x_data_raw = np.log10(x_data)
+    log_y_data_raw = np.log10(y_data)
+
     log_x_data, log_y_data, log_x_sem, log_y_sem = handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=max_bin_size)
     
     if plot_bin_data:
         plt.plot(10**log_x_data, 10**log_y_data, '.', color=line_color)
+        plt.errorbar(10**log_x_data, 10**log_y_data, yerr=10**(2*log_y_sem), #xerr=10**log_x_sem,
+                     ecolor=line_color, elinewidth=1,
+                     capsize=0, linewidth=0)
 
     if fit_type=='bilinear':
         pw_fit = piecewise_regression.Fit(log_x_data, log_y_data, n_breakpoints=1)
@@ -141,11 +148,22 @@ def plot_loglog_fit(x_data_unfilt,
         breakpt = results['estimates']['breakpoint1']['estimate']
         pw_fit_low = piecewise_regression.Fit(log_x_data + 2*log_x_sem, log_y_data - 2*log_y_sem, n_breakpoints=1)
         pw_fit_high = piecewise_regression.Fit(log_x_data - 2*log_x_sem, log_y_data + 2*log_y_sem, n_breakpoints=1)
-        intercept_conf = (pw_fit_low.get_results()['estimates']['const']['confidence_interval'][0], pw_fit_high.get_results()['estimates']['const']['confidence_interval'][1])
-        slope_conf = (pw_fit_low.get_results()['estimates']['alpha1']['confidence_interval'][0], pw_fit_high.get_results()['estimates']['alpha1']['confidence_interval'][1])
-        slope2_conf = (pw_fit_low.get_results()['estimates']['alpha2']['confidence_interval'][0], pw_fit_high.get_results()['estimates']['alpha2']['confidence_interval'][1])
-        breakpt_conf_low = (pw_fit_low.get_results()['estimates']['breakpoint1']['confidence_interval'][0], pw_fit_low.get_results()['estimates']['breakpoint1']['confidence_interval'][1])
-        breakpt_conf_high = (pw_fit_high.get_results()['estimates']['breakpoint1']['confidence_interval'][0], pw_fit_high.get_results()['estimates']['breakpoint1']['confidence_interval'][1])
+
+        intercept_conf = pw_fit.get_results()['estimates']['const']['confidence_interval']
+        slope_conf = pw_fit.get_results()['estimates']['alpha1']['confidence_interval']
+        slope2_conf = pw_fit.get_results()['estimates']['alpha2']['confidence_interval']
+        breakpt_conf = pw_fit.get_results()['estimates']['breakpoint1']['confidence_interval']
+       
+        #intercept_conf = (pw_fit_low.get_results()['estimates']['const']['estimate'], pw_fit_high.get_results()['estimates']['const']['estimate'])
+        #slope_conf = (pw_fit_low.get_results()['estimates']['alpha1']['estimate'], pw_fit_high.get_results()['estimates']['alpha1']['estimate'])
+        #slope2_conf = (pw_fit_low.get_results()['estimates']['alpha2']['estimate'], pw_fit_high.get_results()['estimates']['alpha2']['estimate'])
+        #breakpt_conf = (pw_fit_low.get_results()['estimates']['breakpoint1']['estimate'], pw_fit_high.get_results()['estimates']['breakpoint1']['estimate'])
+
+        #intercept_conf = (pw_fit_low.get_results()['estimates']['const']['confidence_interval'][0], pw_fit_high.get_results()['estimates']['const']['confidence_interval'][1])
+        #slope_conf = (pw_fit_low.get_results()['estimates']['alpha1']['confidence_interval'][0], pw_fit_high.get_results()['estimates']['alpha1']['confidence_interval'][1])
+        #slope2_conf = (pw_fit_low.get_results()['estimates']['alpha2']['confidence_interval'][0], pw_fit_high.get_results()['estimates']['alpha2']['confidence_interval'][1])
+        #breakpt_conf_low = (pw_fit_low.get_results()['estimates']['breakpoint1']['confidence_interval'][0], pw_fit_low.get_results()['estimates']['breakpoint1']['confidence_interval'][1])
+        #breakpt_conf_high = (pw_fit_high.get_results()['estimates']['breakpoint1']['confidence_interval'][0], pw_fit_high.get_results()['estimates']['breakpoint1']['confidence_interval'][1])
         if print_summary:
             print('\nFit summary for the mean of binned data: ')
             pw_fit.summary()
@@ -159,15 +177,50 @@ def plot_loglog_fit(x_data_unfilt,
         slope_conf = None
         intercept_conf = None
     if fit_type=='TLS':
-        data = scipy.odr.RealData(log_x_data, log_y_data)
+        data = scipy.odr.RealData(log_x_data, log_y_data)#, sx=log_x_sem, sy=log_y_sem)
         model = scipy.odr.Model(linear_model)
         odr = scipy.odr.ODR(data, model, beta0=[1.0, 0.0])  # Initial guess for parameters
         result = odr.run()
         params = result.beta
         slope= params[0]
         intercept = params[1]
-        slope_conf = None
-        intercept_conf = None
+
+        # calculate R**2 on binned data
+        SST = np.sum((log_y_data - np.mean(log_y_data))**2)
+        y_pred = linear_model(result.beta, log_x_data)
+        SSR = np.sum((log_y_data - y_pred)**2)
+        R_squared = 1 - (SSR / SST)
+        RMS_error = np.sqrt(np.mean((log_y_data - y_pred)**2))
+        print( 'R squared binned: ' + str(R_squared))
+        print( 'RMS error binned: ' + str(RMS_error))
+       
+
+        # calculate R**2 on rawdata
+        SST = np.sum((log_y_data_raw - np.mean(log_y_data_raw))**2)
+        y_pred = linear_model(result.beta, log_x_data_raw)
+        SSR = np.sum((log_y_data_raw - y_pred)**2)
+        R_squared = 1 - (SSR / SST)
+        RMS_error_raw = np.sqrt(np.mean((log_y_data_raw - y_pred)**2))
+        print( 'R squared raw: ' + str(R_squared))
+        print( 'RMS error raw: ' + str(RMS_error_raw))
+        
+
+        # Confidence level, e.g., 95%
+        confidence_level = 0.95
+
+        # Degrees of freedom = number of data points - number of parameters
+        df = len(log_x_data) - len(result.beta)
+
+        # Critical value from t-distribution
+        t_val = scipy.stats.t.ppf((1 + confidence_level) / 2., df)
+
+        # Confidence intervals
+        conf_intervals = []
+        for param, error in zip(result.beta, result.sd_beta):
+            ci_width = t_val * error
+            conf_intervals.append((param - ci_width, param + ci_width))
+        slope_conf = conf_intervals[0]
+        intercept_conf = conf_intervals[1]
 
     print('Fit parameters and roughly estimateed confidence intervals: ')
     print("intercept: " + str(intercept) + ', conf. interval: ' + str(intercept_conf))
@@ -181,21 +234,26 @@ def plot_loglog_fit(x_data_unfilt,
                  color=line_color,
                  alpha=alpha_line,
                  linewidth=linewidth)
+        plt.vlines(x=10**breakpt, linestyle='--',
+                   alpha=0.5,
+                   color= line_color, 
+                   ymin = np.min(y_data), 
+                   ymax=np.max(y_data))
         
         # Print the parameters for the main fit
         y_fit1 = 10 ** intercept * x_line_data_lin[0:ind_bp] ** slope
         intercept2 = np.log10(y_fit1[-1]) - np.log10(x_line_data_lin[ind_bp] ** slope2)
         intercept2_low = np.log10(y_fit1[-1]) - np.log10(x_line_data_lin[ind_bp] ** slope2_conf[1])
         intercept2_high = np.log10(y_fit1[-1]) - np.log10(x_line_data_lin[ind_bp] ** slope2_conf[0])
-        print("breakpoint: " + str(breakpt) + ', conf. interval: ' + str((breakpt_conf_low[0], breakpt_conf_high[1])) )
+        print("breakpoint: " + str(breakpt) + ', conf. interval: ' + str((breakpt_conf)))
         print("exponent 2: " + str(slope2) + ', conf. interval: ' + str(slope2_conf))
         print("intercept 2: " + str(intercept2) + ', conf. interval: ' + str((intercept2_low, intercept2_high)))
 
         # Calculate the y values for the high and low fit prediction
         # high end of low fit. Higher bkpt tends to give lower y value, hence taking the higher one for the low fit
-        ind_bp_low = np.argmin(np.abs(breakpt_conf_low[1]-x_line_data)) 
+        ind_bp_low = np.argmin(np.abs(breakpt_conf[1]-x_line_data)) 
         # low end of high fit. Lower bkpt tends to give higher y value, hence takig the lower one for the high fit
-        ind_bp_high = np.argmin(np.abs(breakpt_conf_high[0]-x_line_data)) 
+        ind_bp_high = np.argmin(np.abs(breakpt_conf[0]-x_line_data)) 
         
         yfit1_low = 10 ** intercept_conf[0] * x_line_data_lin[0:ind_bp_low] ** slope_conf[0]
         yfit1_high = 10 ** intercept_conf[1] * x_line_data_lin[0:ind_bp_high] ** slope_conf[1]
@@ -217,12 +275,22 @@ def plot_loglog_fit(x_data_unfilt,
 
     else:
         plt.plot(
-            x_line_data,
-            10**(intercept) * x_line_data**(slope),
+            x_line_data_lin,
+            10**(intercept) * x_line_data_lin**(slope),
             color=line_color,
             alpha=alpha_line,
             linewidth=linewidth,
         )
+        if fit_type=='TLS':
+            if linewidth > 0:
+                yfit_low =  10 ** intercept_conf[0] * x_line_data_lin ** slope_conf[0]
+                yfit_high =  10 ** intercept_conf[1] * x_line_data_lin ** slope_conf[1]
+                plt.fill_between(x_line_data_lin, 
+                                yfit_low, 
+                                yfit_high, 
+                                linewidth=0,
+                                color=line_color, alpha=alpha_error)
+
 
     if z_data_unfilt is not None:
         data = x_data, y_data, z_data
@@ -249,11 +317,16 @@ def handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10)
         indices = np.where((log_y_data >= bin_edges[i])
                            & (log_y_data < bin_edges[i + 1])
                            & (~np.isnan(log_x_data)))[0]
+        if bin_type=='median':
+            y_log_values = np.array([np.median(log_y_data[indices])])
+            x_log_values = np.array([np.median(log_x_data[indices])])
+            y_log_sem = np.array([scipy.stats.sem(log_y_data[indices], ddof=1)])
+            x_log_sem = np.array([scipy.stats.sem(log_x_data[indices], ddof=1)])       
         if bin_type=='average':
             y_log_values = np.array([np.mean(log_y_data[indices])])
             x_log_values = np.array([np.mean(log_x_data[indices])])
-            y_log_sem = np.array([scipy.stats.sem(log_y_data[indices], ddof=1)])
-            x_log_sem = np.array([scipy.stats.sem(log_x_data[indices], ddof=1)])            
+            y_log_sem = np.array([np.std(log_y_data[indices])]) #np.array([scipy.stats.sem(log_y_data[indices], ddof=1)])
+            x_log_sem = np.array([np.std(log_x_data[indices])]) #np.array([scipy.stats.sem(log_x_data[indices], ddof=1)])            
         if bin_type=='subsample':
             if len(indices) < max_bin_size:
                 max_samp = len(indices)
@@ -264,7 +337,7 @@ def handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10)
             y_log_values = log_y_data[sampled_inds]
             y_log_sem = np.array([0])
             x_log_sem = np.array([0])
-        if not np.isnan(x_log_values[0]) and not np.isnan(y_log_sem[0]):
+        if not np.isnan(x_log_values[0]) and not np.isnan(y_log_sem[0]) and len(indices)>1:
             x_log_values_clip = np.concatenate((x_log_values_clip, x_log_values))
             y_log_values_clip = np.concatenate((y_log_values_clip, y_log_values))
             y_log_sem_vals = np.concatenate((y_log_sem_vals, y_log_sem))
@@ -522,7 +595,7 @@ def get_comp_scaling_data(
 
     # other metrics of interest: instability, entropy,
     num_iter = len(canvas_part_stats_list)
-    print(num_iter)
+
     for i in range(num_iter):
         print(i)
 
@@ -611,11 +684,11 @@ def get_comp_scaling_data(
         stability.append(cpart_stat.stability[0].val)  # may be an array
         instab.append(np.mean(
             cpart_stat.instability_norm[0].val))  # may be an array
-        compressed_size.append(
-            cpart_stat.size_compr_stab_im.val)  # may be an array
-        entropy.append(cpart_stat.entropy_stab_im.val)  # may be an array
-        fractal_dim.append(
-            cpart_stat.fractal_dim_weighted.val)  # may be an array
+        compressed_size.append(np.mean(
+            cpart_stat.size_compressed.val))  # may be an array
+        entropy.append(np.mean(cpart_stat.entropy.val))  # may be an array
+        fractal_dim.append(np.mean(
+            cpart_stat.fractal_dim_weighted.val))  # may be an array
         mean_attns.append(mean_attn)
         med_attns.append(med_attn)
         pix_norm_attns.append(pix_norm_attn)
@@ -677,6 +750,39 @@ def get_comp_scaling_data(
 
     return df
 
+def get_time_scaling_data(
+    canvas_parts_stats_file="canvas_part_stats_sw.pkl",
+    filename="n_changes_vst_vs_comp.npz", 
+    n_skip=1):
+
+    """
+   
+    """
+
+    with open(canvas_parts_stats_file, "rb") as file:
+        canvas_part_stats_list = pickle.load(file)
+
+    num_iter = len(canvas_part_stats_list)
+    num_times = int(np.ceil(((var.TIME_WHITEOUT / canvas_part_stats_list[0].t_unit) + 1) / n_skip))
+
+    # metric of interest
+    n_changes_vst_vs_comp = np.zeros((num_iter, num_times))
+    n_in_ch_vst_vs_comp = np.zeros((num_iter, num_times))
+    n_out_ch_vst_vs_comp = np.zeros((num_iter, num_times))
+    print(num_times)
+   
+    for i in range(num_iter):
+        print(i)
+        cpart_stat = canvas_part_stats_list[i]
+
+        n_changes_vst_vs_comp[i, :len(cpart_stat.n_changes.val)] = cpart_stat.n_changes.val
+        n_in_ch_vst_vs_comp[i, :len(cpart_stat.n_changes.val)] = cpart_stat.n_ingroup_changes.val
+        n_out_ch_vst_vs_comp[i, :len(cpart_stat.n_changes.val)] = cpart_stat.n_outgroup_changes.val
+
+    np.savez(filename, n_changes_vst_vs_comp, n_in_ch_vst_vs_comp, n_out_ch_vst_vs_comp)
+
+    return n_changes_vst_vs_comp, n_in_ch_vst_vs_comp, n_out_ch_vst_vs_comp
+
 
 def load_comp_scaling_data(
         filename="reddit_place_composition_list_extended.csv"):
@@ -699,18 +805,29 @@ def get_survivorship(df,
                      times,
                      start_time,
                      norm=True,
-                     plot=True):
+                     plot=True,
+                     extend_lifetimes=False):
     if plot:
         plt.figure()
     cmap = plt.get_cmap("copper")  # You can use any other colormap
     num_colors = len(size_mins)  # Change this to get more or fewer colors
     colors = [cmap(i) for i in np.linspace(0, 1, num_colors)]
     survive_curves = []
+    df_list = []
     for k in range(len(size_mins)):
         num_per_time = np.zeros(len(times))
-        df_size_bin = df[(binning_var > size_mins[k])
-                         & (binning_var < size_maxs[k])
-                         & (df["Start time quadrant (s)"] == start_time)]
+        if extend_lifetimes:
+            # take all of the compositions in size bins
+            df_size_bin = df[(binning_var > size_mins[k])
+                            & (binning_var < size_maxs[k])
+                            & (df["Start time quadrant (s)"] == start_time)]
+        else:
+            # include only compositions that end before the experiment ends. 
+            df_size_bin = df[(binning_var > size_mins[k])
+                            & (binning_var < size_maxs[k])
+                            & (df["Start time quadrant (s)"] == start_time)
+                            & (df["End time (s)"] < var.TIME_WHITEOUT)]
+            
         for i in range(len(df_size_bin)):
             t_end = np.array(df_size_bin["End time (s)"])[i]
             if t_end >= var.TIME_WHITEOUT:
@@ -731,17 +848,18 @@ def get_survivorship(df,
                 label=str(size_mins[k]) + "-" + str(size_maxs[k]),
                 color=colors[k],
             )
+        df_list.append(df_size_bin)
         survive_curves.append(surv)
     if plot:
         plt.xlim(0, times[-1] / 3600)
         sns.despine()
         plt.xlabel("age (hrs)")
         plt.ylabel("number surviving")
-    return times, survive_curves
+    return times, survive_curves, df_list
 
 
-def exponential_decay(x, A, tau, C):
-    return A * np.exp(-x / tau) + C
+def exponential_decay(x, A, tau):
+    return A * np.exp(-x / tau)# + C
 
 
 def get_taus(df,
@@ -750,20 +868,20 @@ def get_taus(df,
              start_time,
              norm=False,
              plot=True,
-             plot_surv=True):
+             plot_surv=True,
+             extend_lifetimes=False):
+    
     size_mins = sizes[0:-1]
     size_maxs = sizes[1:]
-    times = np.arange(0, var.TIME_WHITEOUT - start_time + 30 * 60, 30 * 60)
-    times, survive_curves = get_survivorship(
-        df,
-        binning_var,
-        size_mins,
-        size_maxs,
-        times,
-        start_time,
-        norm=norm,
-        plot=plot_surv,
-    )
+    times = np.arange(0, var.TIME_WHITEOUT - start_time - 10 * 30 * 60, 30 * 60)
+    times, survive_curves, df_list = get_survivorship(df, binning_var,
+                                             size_mins,
+                                             size_maxs,
+                                             times,
+                                             start_time,
+                                             norm=norm,
+                                             plot=plot_surv,
+                                             extend_lifetimes=extend_lifetimes)
 
     if plot:
         plt.figure()
@@ -772,21 +890,21 @@ def get_taus(df,
     for i in range(num):
         initial_guess = (
             max(survive_curves[i]),
-            10000,
-            min(survive_curves[i]),
-        )  # Initial guess for (A, tau, C)
+            10000)
+            #min(survive_curves[i])) # Initial guess for (A, tau, C)
         params, covariance = scipy.optimize.curve_fit(exponential_decay,
                                                       times,
                                                       survive_curves[i],
                                                       p0=initial_guess)
-        A_fit, tau_fit, C_fit = params
+        A_fit, tau_fit = params
+       # print(C_fit)
         taus[i] = tau_fit
         if plot:
-            plt.plot(times, survive_curves[i])
+            plt.semilogy(times, survive_curves[i])
             plt.plot(
                 times,
-                exponential_decay(times, A_fit, tau_fit, C_fit),
+                exponential_decay(times, A_fit, tau_fit),
                 "--",
                 label="Fit",
             )
-    return taus
+    return taus, df_list
