@@ -511,21 +511,22 @@ class CanvasPartStatistics(object):
         self.autocorr.set_kendall_tau()
         self.autocorr2.set_kendall_tau()
 
-        # Memory savings here
+        # Memory savings here 
+        # TODO: note from Annie: changed these to my preferences, but we should discuss
         if compute_vars['attackdefense'] < 2:
-            self.n_defense_changes = ts.TimeSeries()
-            self.n_defenseonly_users = ts.TimeSeries()
-            self.n_attack_users = ts.TimeSeries()
-            self.n_bothattdef_users = ts.TimeSeries()
-            self.n_users_sw = ts.TimeSeries()
+            #self.n_defense_changes = ts.TimeSeries()
+            # self.n_defenseonly_users = ts.TimeSeries()
+            # self.n_attack_users = ts.TimeSeries()
+            # self.n_bothattdef_users = ts.TimeSeries()
+            # self.n_users_sw = ts.TimeSeries()
             self.n_users_new_vs_previoustime = ts.TimeSeries()
             self.n_users_new_vs_sw = ts.TimeSeries()
             self.refimage_sw = None
         self.refimage_sw_flat = None
         if compute_vars['entropy'] < 2:
-            self.size_compressed = ts.TimeSeries()
-            self.diff_pixels_stable_vs_swref = ts.TimeSeries()
-            self.diff_pixels_inst_vs_swref_forwardlook = ts.TimeSeries()
+            #self.size_compressed = ts.TimeSeries()
+            #self.diff_pixels_stable_vs_swref = ts.TimeSeries()
+            #self.diff_pixels_inst_vs_swref_forwardlook = ts.TimeSeries()
             self.diff_pixels_inst_vs_inst = ts.TimeSeries()
             self.diff_pixels_inst_vs_stable = ts.TimeSeries()
             self.true_image = None
