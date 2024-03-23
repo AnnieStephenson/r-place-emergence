@@ -606,7 +606,7 @@ def main_variables(cpart,
                                                     t_inds_active, ref_color, users_vst, users_sw_unique,
                                                     t_inds_active_vst,
                                                     agreeing_changes_vst,
-                                                    attdef > 1, inout > 0, attdef > 1, lifetm > 0,
+                                                    attdef > 0, inout > 0, lifetm > 0, attdef > 1,
                                                     (cpart_dir(out_dir_attdef) if attdef > 2 else ''))
             users_sw_unique = n_changes_and_users_result[0]
             if lifetm > 0:
@@ -647,6 +647,8 @@ def main_variables(cpart,
                                            cpst.size_compressed.val, cpst.size_uncompressed.val,
                                            cpart_dir(out_dir_time), True, instant < 3)
             else:
+                # TODO finish implementing this
+                #cpst.size_compressed_ref.val[i] = entropy.calc_compressed_size(ref_color, flattening=flattening, compression=compression) 
                 cpst.size_compressed.val[i] = entropy.calc_compressed_size(pix_tmp, flattening=flattening, compression=compression)
                 cpst.size_uncompressed.val[i] = entropy.calc_size(pix_tmp)
 
@@ -682,6 +684,9 @@ def main_variables(cpart,
             cpst.second_stable_image[i, coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active]] = stable_colors[inds_coor_active, 1]
             cpst.third_stable_image[i, coor_offset[1, inds_coor_active], coor_offset[0, inds_coor_active]] = stable_colors[inds_coor_active, 2]
 
+            # Calculate entropy of most stable image
+            cpst.size_compr_stab_im.val[i] = entropy.calc_compressed_size(cpst.stable_image[i], flattening=flattening, compression=compression)
+
             # If second and/or third most used colors don't exist (time_spent == 0),
             # then use the first or second most used color instead.
             inds_to_change1 = np.where(stable_timefrac[:, 1] < 1e-9)
@@ -695,8 +700,7 @@ def main_variables(cpart,
                 util.pixels_to_image(cpst.second_stable_image[i], cpart_dir(out_dir_stab), 'SecondMostStableColor_' + timerange_str + '.png')
                 util.pixels_to_image(cpst.third_stable_image[i], cpart_dir(out_dir_stab), 'ThirdMostStableColor_' + timerange_str + '.png')
 
-                # Calculate entropy of most stable image
-                cpst.size_compr_stab_im.val[i] = entropy.calc_compressed_size(cpst.stable_image[i], flattening=flattening, compression=compression)
+                
         del inds_coor_active
         if stab > 0:
             del stable_timefrac
@@ -729,11 +733,11 @@ def main_variables(cpart,
                 time_spent_in_color_sw -= time_spent_in_color_vst[i_replace]
             
             ref_color = calc_stable_cols(time_spent_in_color_sw)[:, 0]
-            
-            # t_inds_active is length of the t_intervals
-            t_inds_active_fwd = t_inds_active_vst[back_index]
 
             if inout > 0:
+                # t_inds_active is length of the t_intervals
+                t_inds_active_fwd = t_inds_active_vst[back_index]
+
                 agreeing_changes_bkwd = agreeing_changes_vst[back_index]
                 # Check whether there are enough time steps after the back index to at least go the edge sliding width forward in time 
                 if back_index + cpst.sw_width_edge <= n_tlims-1:
@@ -761,7 +765,7 @@ def main_variables(cpart,
     # LIFETIME VALUES
     # calculate some things after the loop to get the value over the lifetime of the composition
     if lifetm > 0:
-        if attdef > 1:
+        if attdef > 0:
             n_intersect_att_def = len(np.unique(np.intersect1d(attack_users, defense_users)))
             cpst.n_attackonly_users_lifetime = len(np.unique(attack_users)) - n_intersect_att_def
             cpst.n_defenseonly_users_lifetime = len(np.unique(defense_users)) - n_intersect_att_def
