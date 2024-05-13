@@ -592,7 +592,7 @@ class CanvasPartStatistics(object):
            and self.compute_vars['other'] > 0
 
     def ratios_and_normalizations(self):
-        self.instability_norm = np.empty(4, dtype=np.object) 
+        self.instability_norm = np.empty(4, dtype=object) 
         for k in range(0,4):
             self.instability_norm[k] = self.ts_init( (1 - self.stability[k].val) / self.t_norm )
         self.n_changes_norm = self.ts_init( util.divide_treatzero(self.n_changes.val / self.t_norm, self.area_vst.val, 0, 0) )
