@@ -363,9 +363,9 @@ def main_variables(cpart,
     stable_colors = np.empty((cpart.num_pix(), var.NUM_COLORS), dtype=np.int8)
 
     # Output
-    cpst.stability = np.empty(4, dtype=np.object)
-    cpst.runnerup_timeratio = np.empty(4, dtype=np.object)
-    cpst.n_used_colors = np.empty(4, dtype=np.object)
+    cpst.stability = np.empty(4, dtype=object)
+    cpst.runnerup_timeratio = np.empty(4, dtype=object)
+    cpst.n_used_colors = np.empty(4, dtype=object)
     for i in range(0, 4):
         cpst.stability[i] = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
         cpst.runnerup_timeratio[i] = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
@@ -380,7 +380,7 @@ def main_variables(cpart,
     cpst.diff_pixels_inst_vs_inst = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_stable = cpst.ts_init(np.zeros(n_tlims))
     if attdef > 0:
-        cpst.returntime = np.empty(4, dtype=np.object)
+        cpst.returntime = np.empty(4, dtype=object)
         for i in range(0, 4):
             cpst.returntime[i] = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
     cpst.area_vst = cpst.ts_init(np.full(n_tlims, cpart.num_pix()))
