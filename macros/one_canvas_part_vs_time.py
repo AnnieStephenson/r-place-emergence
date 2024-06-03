@@ -24,7 +24,7 @@ if not cp_fromfile:
     pixel_changes_all = util.get_all_pixel_changes()
     atlas, num = util.load_atlas()
 
-id = '6' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
+id = '12' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
 
 x1 = var.CANVAS_MINMAX[-1, 0, 0]
 x2 = var.CANVAS_MINMAX[-1, 0, 1]
@@ -83,7 +83,8 @@ if cps_fromfile:
     
 else: 
     cpstat = stat.CanvasPartStatistics(canpart, t_interval=300, #tmax=30000,
-                                        compute_vars={'stability': 1, 'entropy' :3, 'transitions' : 1, 'attackdefense' : 1, 'other' : 1, 'ews' : 1},
+                                        compute_vars={'stability': 1, 'entropy' :3, 'transitions' : 1, 'attackdefense' : 1, 'other' : 1, 
+                                                      'ews' : 1, 'inout':1, 'lifetime_vars':1, 'void_attack':1},
                                         sliding_window=int(2.5*3600), 
                                         verbose=True, dont_keep_dir=False, compression='DEFLATE_BMP_PNG', flattening='ravel')
     
@@ -95,7 +96,40 @@ if savecpstat:
                     handle,
                     protocol=pickle.HIGHEST_PROTOCOL)
 
-print(cpstat.variance2.val)
+plt.figure()
+plt.plot(cpstat.frac_pixdiff_inst_vs_inst_norm.val[1:])
+plt.plot(np.abs(np.diff(cpstat.frac_pixdiff_inst_vs_swref.val)))
+plt.ylim([0,0.05])
+plt.savefig(os.path.join(var.FIGS_PATH, str(cpstat.id), 'frac_pixdiff_comparison'))
+
+plt.figure()
+plt.scatter(cpstat.frac_pixdiff_inst_vs_inst_norm.val[1:], np.abs(np.diff(cpstat.frac_pixdiff_inst_vs_swref.val)))
+plt.xlim([0,0.02])
+plt.ylim([0,0.02])
+plt.savefig(os.path.join(var.FIGS_PATH, str(cpstat.id), 'frac_pixdiff_comparison_scatter'))
+
+def printrho(v1, v2, v1n, v2n):
+    print('rho for ',v1n,' and ',v2n,' = ', np.corrcoef(v1[v1<1.1*np.max(v1)], v2[v1<1.1*np.max(v1)])[0,1])
+    plt.figure()
+    plt.scatter(v1,v2)
+    plt.ylabel(v2n)
+    plt.xlabel(v1n)
+    plt.savefig(os.path.join(var.FIGS_PATH, str(cpstat.id), 'test_correlation_'+v1n+'_'+v2n))
+    plt.close()
+
+printrho(cpstat.variance2.val, cpstat.variance_multinom.val, 'variance2', 'variance_multinom')
+printrho(cpstat.variance2.val, cpstat.variance_subdom.val, 'variance2', 'variance_subdom')
+printrho(cpstat.variance2.val, cpstat.instability_norm[0].val, 'variance2', 'instability_norm')
+printrho(cpstat.variance_multinom.val, cpstat.variance_subdom.val,'variance_multinom','variance_subdom')
+printrho(cpstat.variance2.val, cpstat.autocorr_multinom.val, 'variance2', 'autocorr_multinom')
+printrho(cpstat.autocorr_bycase.val, cpstat.autocorr_bycase_norm.val, 'autocorr_bycase', 'autocorr_bycase_norm')
+printrho(cpstat.autocorr_bycase.val, cpstat.autocorr_dissimil.val, 'autocorr_bycase', 'autocorr_dissimil')
+printrho(cpstat.autocorr_bycase.val, cpstat.autocorr_subdom.val, 'autocorr_bycase', 'autocorr_subdom')
+printrho(cpstat.autocorr_bycase.val, cpstat.autocorr_multinom.val, 'autocorr_bycase', 'autocorr_multinom')
+printrho(cpstat.autocorr_multinom.val, cpstat.autocorr_subdom.val, 'autocorr_multinom', 'autocorr_subdom')
+printrho(cpstat.autocorr_multinom.val, cpstat.autocorr_dissimil.val, 'autocorr_multinom', 'autocorr_dissimil')
+
+
 cpstat.fill_timeseries_info()
 for cpstat in [cpstat]:#cpstats
     if cpstat.n_transitions == 0:
@@ -184,7 +218,7 @@ cpstat.frac_cooldowncheat_changes.plot1d(ymin=0)
 cpstat.frac_redundant_color_changes.plot1d(ymin=0)
 cpstat.frac_redundant_coloranduser_changes.plot1d(ymin=0)
 
-plot.cpstat_tseries(cpstat, nrows=10, ncols=2, figsize=(8,11.5), fontsize=10, save=True)
+plot.cpstat_tseries(cpstat, nrows=11, ncols=2, figsize=(8,11.5), fontsize=10, save=True)
 
 #OLD EWS
 '''

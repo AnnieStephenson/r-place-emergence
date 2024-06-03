@@ -318,7 +318,7 @@ def draw_1d(xdata,
         plt.savefig(save, dpi=250, bbox_inches='tight')
         plt.close()
 
-def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5, save=True):
+def cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(5,10), fontsize=5, save=True):
 
     itmin = np.argmax(cpstat.t_lims >= cpstat.tmin)
 
@@ -343,15 +343,20 @@ def cpstat_tseries(cpstat, nrows=7, ncols=2, figsize=(5,10), fontsize=5, save=Tr
                      [cpstat.returntime[3], 0, None],
                      [cpstat.returntime[0], 0, None],
                      [cpstat.cumul_attack_timefrac, 0, None],
-                     [cpstat.variance, 1, None],
+                     [cpstat.variance_multinom, 0, None],
+                     [cpstat.variance_from_frac_pixdiff_inst, 0, 0.001],
                      [cpstat.variance2, 1, None],
-                     [cpstat.autocorr, None, None],
-                     [cpstat.autocorr2, None, None],
+                     [cpstat.autocorr_subdom, 0, None],
+                     [cpstat.autocorr_multinom, 0, None],
+                     [cpstat.returnrate, 0, 1],
                      #[cpstat.n_users_norm, 0, None],
                      #[cpstat.frac_attackonly_users, 0, 1]
                     ]
 
     for i, ax in enumerate(axes.T.flat):
+        #print(i)
+        #print(t_series_vars[i][0].desc_long)
+        #print(t_series_vars[i][0].val[0:50])
         ax.plot(cpstat.t_lims[itmin:], t_series_vars[i][0].val[itmin:])
         ax.patch.set_alpha(0)
 

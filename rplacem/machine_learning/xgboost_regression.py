@@ -35,9 +35,9 @@ ml_param.min_child_weight = 3.1 if ml_param.type == 'regression' else 4
 
 warning_threshold_sec = 1200
 warning_threshold = ml_param.transform_target(warning_threshold_sec)
-makeplots = False if (ml_param.type != 'regression') else False
+makeplots = False if (ml_param.type != 'regression') else True
 make_shap_plots = True
-savefiles = False
+savefiles = True
 emax_test_hist2d = 1.3e3
 
 
@@ -225,15 +225,15 @@ def extremes_colormap(min=0):
     newcmp = colors.ListedColormap(newcols)
     return newcmp
 
-def correlation_heatmap(correlations, summary=False, zoom_extremes=True):
+def correlation_heatmap(correlations, summary=False, zoom_extremes=True, vnames=None):
     fig= plt.subplots(figsize=(10,10), num=1, clear=True)
     sns.heatmap(correlations, vmax=1.0, vmin=-1.0, center=0, cmap=extremes_colormap(60 if zoom_extremes else 0), fmt='.2f', 
                 square=True, linewidths=.5, annot=False, cbar_kws={"shrink": .70},
-                xticklabels=varnames,
-                yticklabels=varnames,
+                xticklabels=vnames,
+                yticklabels=vnames,
                 )
-    plt.xticks(fontsize=4)
-    plt.yticks(fontsize=4)
+    plt.xticks(fontsize=10 if summary else 4)
+    plt.yticks(fontsize=10 if summary else 4)
     plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'correlation_matrix'+('_timevaraverage' if summary else '')+'.pdf'), bbox_inches='tight')
 
 def plot_probas_BinaryClassification(sig, bkg, warn_thres_str, add_name, classif=True, logy=True):
@@ -605,19 +605,51 @@ dtest = xg.DMatrix(data = X_test, label = y_test, weight=(w_test if ml_param.typ
 
 del w_train, w_test
 if ml_param.test2023:
-    del inputvals_2023, outputval_2023, outputval_orig_2023, weights_2023
+    del outputval_2023, weights_2023#,outputval_orig_2023, inputvals_2023
 gc.collect()
 
 if makeplots:
     # plot correlation between variables
     #print('plot correlations')
-    #correlation_heatmap(np.corrcoef(X_train, rowvar=False), 
-    #                    zoom_extremes=True)
+    corrs = np.corrcoef(X_train, rowvar=False)
+    # correlation matrix for features
+    #correlation_heatmap(corrs, 
+    #                    zoom_extremes=True, vnames=varnames)
+    # correlation matrix for variables
+    corrmat_pervar = np.zeros((len(coarse_timerange), len(coarse_timerange)))
 
+    i_current, j_current = 0,0
+    vnames_eachvar = []
+    for i_var in range(len(coarse_timerange)):
+        vnames_eachvar.append(varnames[i_current].split('_t-')[0])
+        i_timesteps_thisvar = n_traintimes_coarse if coarse_timerange[i_var] else n_traintimes
+        j_current = 0
+        for j_var in range(len(coarse_timerange)):
+            j_timesteps_thisvar = n_traintimes_coarse if coarse_timerange[j_var] else n_traintimes
+            
+            if i_timesteps_thisvar == j_timesteps_thisvar:
+                correlations_tosum = corrs[range(i_current, i_current+i_timesteps_thisvar), 
+                                           range(j_current, j_current+j_timesteps_thisvar)]
+            else: # keep only timesteps that are the same in both variables (coarse timeranges or not)
+                correlations_tosum = corrs[list(range(i_current, i_current+4))+[i_current+i_timesteps_thisvar-1], 
+                                           list(range(j_current, j_current+4))+[j_current+j_timesteps_thisvar-1]]
+            corrmat_pervar[i_var, j_var] = np.mean(correlations_tosum)
+    
+            j_current += j_timesteps_thisvar
+        i_current += i_timesteps_thisvar
+
+    correlation_heatmap(corrmat_pervar, summary=True, zoom_extremes=False, vnames=vnames_eachvar)
+    with open(os.path.join(var.DATA_PATH, 'correlation_matrix.pickle'), 'wb') as f:
+        pickle.dump([corrmat_pervar, vnames_eachvar], f, protocol=pickle.HIGHEST_PROTOCOL)
     #print('plot training variables')
     #plot_training_vars(inputvals=inputvals, outputval_orig=outputval_orig, varnames=varnames, earliness_thres=warning_threshold_sec)
-    1
-del inputvals, outputval_orig, X_train#, X_valid
+
+sys.exit()
+del X_train
+if ml_param.test2023:
+    del inputvals_2023
+else:
+    del inputvals#, X_valid, outputval_orig, 
 gc.collect()
 
 # XGBOOST REGRESSOR PARAMETERS
@@ -805,14 +837,18 @@ if makeplots or make_shap_plots:
     #scatter_true_vs_pred(true_test, pred_test, id_idx, test_inds, loge=True)
     #scatter_true_vs_pred(true_test, pred_test, id_idx, test_inds, loge=False)
     hist_true_vs_pred(true_test, pred_test, zmax=emax_test_hist2d, 
-                      loge=True, normalize_cols=True, addsavename='_highEweight'+str(ml_param.weight_highEarliness)+('_test2023' if ml_param.test2023 else ''))
+                    loge=True, normalize_cols=True, addsavename='_highEweight'+str(ml_param.weight_highEarliness)+('_test2023' if ml_param.test2023 else ''))
     print('another 2D histogram')
     # check for overtraining with true vs pred_test for training sample
     #scatter_true_vs_pred(true_train, pred_train, id_idx, train_inds, loge=True, trainsamples=True)
     hist_true_vs_pred(true_train, pred_train, zmax=emax_test_hist2d*(3 if ml_param.test2023 else (1-test_size)/test_size), 
-                      loge=True, trainsamples=True, normalize_cols=True, addsavename='_highEweight'+str(ml_param.weight_highEarliness)+('_test2023' if ml_param.test2023 else ''))
+                    loge=True, trainsamples=True, normalize_cols=True, addsavename='_highEweight'+str(ml_param.weight_highEarliness)+('_test2023' if ml_param.test2023 else ''))
 
     if make_shap_plots:
+        del y_train, true_test, true_train, pred_test, pred_train, id_idx, eventtime
+        if ml_param.test2023:
+            del id_idx_2023, eventtime_2023
+        gc.collect()
         print('start shap values')
         # SHAP values for feature importance
         explainer = shap.Explainer(model, feature_names=varnames)
@@ -893,7 +929,7 @@ if makeplots or make_shap_plots:
         # SAVE SHAP VALUES
         if savefiles:
             with open(os.path.join(var.DATA_PATH, 'SHAP_values.pickle'), 'wb') as f:
-                pickle.dump([shap_values, shap_eachvar, shap_eachrange, shap_eachrange_coarse, inds_onlyStableTimes], 
+                pickle.dump([shap_values, shap_eachvar, shap_eachrange, shap_eachrange_coarse, inds_onlyStableTimes, ml_param],
                             f, protocol=pickle.HIGHEST_PROTOCOL)
 
         print('Scatter plot of all instances for each feature')
