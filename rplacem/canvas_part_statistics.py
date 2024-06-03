@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import rplacem.globalvariables_peryear as vars
+import pandas as pd
 var = vars.var
 import rplacem.compute_variables as comp
 import rplacem.utilities as util
@@ -402,10 +403,15 @@ class CanvasPartStatistics(object):
         self.attack_defense_image = None
         self.frac_attack_changes_image = None
 
-        self.autocorr = ts.TimeSeries()
-        self.autocorr2 = ts.TimeSeries()
-        self.variance = ts.TimeSeries()
+        self.autocorr_bycase = ts.TimeSeries()
+        self.autocorr_bycase_norm = ts.TimeSeries()
+        self.autocorr_multinom = ts.TimeSeries()
+        self.autocorr_subdom = ts.TimeSeries()
+        self.autocorr_dissimil = ts.TimeSeries()
+        self.variance_subdom = ts.TimeSeries()
+        self.variance_multinom = ts.TimeSeries()
         self.variance2 = ts.TimeSeries()
+        self.variance_from_frac_pixdiff_inst = ts.TimeSeries()
 
         self.n_changes = ts.TimeSeries()
         self.n_defense_changes = ts.TimeSeries()
@@ -428,6 +434,7 @@ class CanvasPartStatistics(object):
         self.n_outgrouponly_users_lifetime = None
 
         self.returntime = None
+        self.returnrate = ts.TimeSeries()
         self.cumul_attack_timefrac = ts.TimeSeries()
         self.frac_black_px = ts.TimeSeries()
         self.frac_purple_px = ts.TimeSeries()
@@ -472,15 +479,8 @@ class CanvasPartStatistics(object):
 
         if np.any(self.frac_users_new_vs_sw.val > 1):
             print('frac_users_new_vs_sw > 1 !!!!!!!')
-        if np.any(self.variance.val < 1):
-            print('variance < 1 !!!!!!!')
         if np.any(self.variance2.val < 1):
             print('variance2 < 1 !!!!!!!')
-        if np.any(abs(self.autocorr.val) > 1):
-            print('abs(self.autocorr) > 1 !!!!!!!')
-        if np.any(abs(self.autocorr2.val) > 1):
-            print('abs(self.autocorr2) > 1 !!!!!!!')
-        
 
         # Make movies
         if self.compute_vars['stability'] > 2:
@@ -503,30 +503,46 @@ class CanvasPartStatistics(object):
         else:
             self.n_transitions == 0
 
+        # calculate variance over ~10 most recent timesteps
+        self.frac_pixdiff_inst_vs_swref.set_variance()
+        self.frac_pixdiff_inst_vs_inst_norm.set_variance()
+        def rolling_mean_squares(v, nroll):
+            sq = pd.Series(0.5 * (nroll/(nroll-1)) * v**2)
+            return np.array(sq.rolling(window=nroll, min_periods=1).mean())
+        self.variance_from_frac_pixdiff_inst.val = rolling_mean_squares(self.frac_pixdiff_inst_vs_inst_norm.val, 
+                                                                        self.entropy.sw_width_ews)
+
         # calculate kendall tau's
+        self.returnrate.set_kendall_tau()
         self.returntime[0].set_kendall_tau()
         self.instability_norm[0].set_kendall_tau()
-        self.variance.set_kendall_tau()
+        self.variance_multinom.set_kendall_tau()
+        self.variance_subdom.set_kendall_tau()
         self.variance2.set_kendall_tau()
-        self.autocorr.set_kendall_tau()
-        self.autocorr2.set_kendall_tau()
+        self.autocorr_bycase.set_kendall_tau()
+        self.autocorr_bycase_norm.set_kendall_tau()
+        self.autocorr_multinom.set_kendall_tau()
+        self.autocorr_subdom.set_kendall_tau()
+        self.autocorr_dissimil.set_kendall_tau()
 
         # Memory savings here 
         # TODO: note from Annie: changed these to my preferences, but we should discuss
         if compute_vars['attackdefense'] < 2:
-            #self.n_defense_changes = ts.TimeSeries()
-            # self.n_defenseonly_users = ts.TimeSeries()
-            # self.n_attack_users = ts.TimeSeries()
-            # self.n_bothattdef_users = ts.TimeSeries()
-            # self.n_users_sw = ts.TimeSeries()
+            # note from Guillaume : these variables don't seem to be used anywhere, and the info is contained in the frac_X variables
+            self.n_defense_changes = ts.TimeSeries()
+            self.n_defenseonly_users = ts.TimeSeries()
+            self.n_attack_users = ts.TimeSeries()
+            self.n_bothattdef_users = ts.TimeSeries()
+            self.n_users_sw = ts.TimeSeries()
+
             self.n_users_new_vs_previoustime = ts.TimeSeries()
             self.n_users_new_vs_sw = ts.TimeSeries()
             self.refimage_sw = None
         self.refimage_sw_flat = None
         if compute_vars['entropy'] < 2:
-            #self.size_compressed = ts.TimeSeries()
-            #self.diff_pixels_stable_vs_swref = ts.TimeSeries()
-            #self.diff_pixels_inst_vs_swref_forwardlook = ts.TimeSeries()
+            self.size_compressed = ts.TimeSeries()
+            self.diff_pixels_stable_vs_swref = ts.TimeSeries()
+            self.diff_pixels_inst_vs_swref_forwardlook = ts.TimeSeries()
             self.diff_pixels_inst_vs_inst = ts.TimeSeries()
             self.diff_pixels_inst_vs_stable = ts.TimeSeries()
             self.true_image = None
@@ -740,9 +756,16 @@ class CanvasPartStatistics(object):
         self.frac_bothattdef_users.label = 'frac_bothattdef_users'
         self.frac_bothattdef_users.savename = filepath('fraction_of_users_bothattackingdefending')
 
+        if self.compute_vars['attackdefense'] > 0:
+            self.returnrate.desc_long ='fraction of attacked pixels that recover within 5 minutes'
+            self.returnrate.desc_short = 'return rate (fraction of recovered pixels)'
+            self.returnrate.label = 'returnrate'
+            self.returnrate.savename = filepath('returnrate')
+
         desclong = ["Mean", "Median", "90th percentile", "Mean of highest decile"]
         descshort = ["mean", "median", "percentile90", "top decile mean"]
         labs = ["mean", "median", "percentile90", "meantopdecile"]
+
         for k in range(0,4):
             if self.compute_vars['attackdefense'] > 0:
                 self.returntime[k].desc_long = desclong[k]+' time for pixels to recover from attack [s] / ln(2)'
@@ -815,22 +838,63 @@ class CanvasPartStatistics(object):
         self.fractal_dim_weighted.savename = filepath('fractal_dimension_weighted')
         self.fractal_dim_weighted.label = 'fractal_dimension'
 
-        self.variance.desc_long = 'Variance'
-        self.variance.desc_short = 'Variance'
-        self.variance.savename = filepath('variance')
-        self.variance.label = 'variance'
+        #self.variance.desc_long = 'Variance'
+        #self.variance.desc_short = 'Variance'
+        #self.variance.savename = filepath('variance')
+        #self.variance.label = 'variance'
 
         self.variance2.desc_long = 'Variance in parallel over all pixels'
         self.variance2.desc_short = 'Variance all pixels'
         self.variance2.savename = filepath('variance_allpixels')
         self.variance2.label = 'variance_all_pixels'
 
-        self.autocorr.desc_long = 'autocorr'
-        self.autocorr.desc_short = 'autocorr'
-        self.autocorr.savename = filepath('autocorr')
-        self.autocorr.label = 'autocorr'
+        self.variance_multinom.desc_long = 'Variance based on multinomial distribution'
+        self.variance_multinom.desc_short = 'Variance (multinomial)'
+        self.variance_multinom.savename = filepath('variance_multinomial')
+        self.variance_multinom.label = 'variance_multinom'
 
-        self.autocorr2.desc_long = 'autocorrelation over all pixels'
-        self.autocorr2.desc_short = 'autocorrelation_allpixels'
-        self.autocorr2.savename = filepath('autocorrelation_allpixels')
-        self.autocorr2.label = 'autocorrelation_allpixels'
+        self.variance_subdom.desc_long = 'Variance based on subdominant dot product'
+        self.variance_subdom.desc_short = 'Variance (subdominant dot product)'
+        self.variance_subdom.savename = filepath('variance_subdominant')
+        self.variance_subdom.label = 'variance_subdom'
+
+        self.variance_from_frac_pixdiff_inst.desc_long = 'Variance based on squares of frac_pixdiff_inst_vs_inst'
+        self.variance_from_frac_pixdiff_inst.desc_short = 'Variance (frac_pixdiff_inst)'
+        self.variance_from_frac_pixdiff_inst.savename = filepath('variance_from_frac_pixdiff_inst')
+        self.variance_from_frac_pixdiff_inst.label = 'variance_from_frac_pixdiff_inst'
+        
+        self.autocorr_bycase.desc_long = 'Autocorrelation by case'
+        self.autocorr_bycase.desc_short = 'Autocorrelation by case'
+        self.autocorr_bycase.savename = filepath('autocorr_bycase')
+        self.autocorr_bycase.label = 'autocorr_bycase'
+
+        self.autocorr_bycase_norm.desc_long = 'Autocorrelation by case, over all pixels'
+        self.autocorr_bycase_norm.desc_short = 'autocorrelation_bycase_allpixels'
+        self.autocorr_bycase_norm.savename = filepath('autocorr_bycase_norm')
+        self.autocorr_bycase_norm.label = 'autocorr_bycase_norm'
+
+        self.autocorr_dissimil.desc_long = 'Autocorrelation by dissimilarity'
+        self.autocorr_dissimil.desc_short = 'autocorrelation_dissimil'
+        self.autocorr_dissimil.savename = filepath('autocorr_dissimil')
+        self.autocorr_dissimil.label = 'autocorr_dissimil'
+
+        self.autocorr_subdom.desc_long = 'Autocorrelation based on subdominant dot product'
+        self.autocorr_subdom.desc_short = 'autocorrelation_subdominant'
+        self.autocorr_subdom.savename = filepath('autocorr_subdom')
+        self.autocorr_subdom.label = 'autocorr_subdom'
+
+        self.autocorr_multinom.desc_long = 'Autocorrelation based on multinomial distribution'
+        self.autocorr_multinom.desc_short = 'autocorrelation_multinomial'
+        self.autocorr_multinom.savename = filepath('autocorr_multinom')
+        self.autocorr_multinom.label = 'autocorr_multinom'
+
+
+        #self.autocorr.desc_long = 'autocorr'
+        #self.autocorr.desc_short = 'autocorr'
+        #self.autocorr.savename = filepath('autocorr')
+        #self.autocorr.label = 'autocorr'
+
+        #self.autocorr2.desc_long = 'autocorrelation over all pixels'
+        #self.autocorr2.desc_short = 'autocorrelation_allpixels'
+        #self.autocorr2.savename = filepath('autocorrelation_allpixels')
+        #self.autocorr2.label = 'autocorrelation_allpixels'

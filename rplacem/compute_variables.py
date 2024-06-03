@@ -361,6 +361,7 @@ def main_variables(cpart,
         users_vst[i] = np.array([], dtype=np.int32)
     users_sw_unique = np.array([], dtype=np.int32)
     stable_colors = np.empty((cpart.num_pix(), var.NUM_COLORS), dtype=np.int8)
+    stable_timefrac_prev = np.empty((cpart.num_pix(), var.NUM_COLORS))
 
     # Output
     cpst.stability = np.empty(4, dtype=object)
@@ -370,17 +371,23 @@ def main_variables(cpart,
         cpst.stability[i] = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
         cpst.runnerup_timeratio[i] = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
         cpst.n_used_colors[i] = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
-    cpst.autocorr = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
-    cpst.autocorr2 = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
-    cpst.variance = cpst.ts_init(np.ones(n_tlims, dtype=np.float64))
+    cpst.autocorr_bycase = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+    cpst.autocorr_bycase_norm = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+    cpst.autocorr_multinom = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+    cpst.autocorr_subdom = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+    cpst.autocorr_dissimil = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+    #cpst.variance = cpst.ts_init(np.ones(n_tlims, dtype=np.float64))
     cpst.variance2 = cpst.ts_init(np.ones(n_tlims, dtype=np.float64))
+    cpst.variance_multinom = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+    cpst.variance_subdom = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
     cpst.diff_pixels_stable_vs_swref = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_swref = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_swref_forwardlook = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_inst = cpst.ts_init(np.zeros(n_tlims))
     cpst.diff_pixels_inst_vs_stable = cpst.ts_init(np.zeros(n_tlims))
     if attdef > 0:
-        cpst.returntime = np.empty(4, dtype=object)
+        cpst.returnrate = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
+        cpst.returntime = np.empty(4, dtype=np.object)
         for i in range(0, 4):
             cpst.returntime[i] = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
     cpst.area_vst = cpst.ts_init(np.full(n_tlims, cpart.num_pix()))
@@ -505,7 +512,7 @@ def main_variables(cpart,
 
         # Calculate the time each pixel spent in what color.
         # This also updates [current_color, last_time_installed_sw, last_time_removed_sw] with the pixel changes in this time step
-        # time_spent_in_color is of shape (n_tlims, n_pixels, n_colors)
+        # time_spent_in_color is of shape (n_pixels, n_colors)
         time_spent_in_color = calc_time_spent_in_color(cpart, t_inds,
                                                        t_lims[i-1], t_lims[i], current_color,
                                                        last_time_installed_sw, last_time_removed_sw)
@@ -549,36 +556,11 @@ def main_variables(cpart,
 
         # CLASSIC EWS VARIABLES
         if ews > 0:
-            mode_color = stable_colors[inds_coor_active, 0]
-            prev_color = previous_colors[(i_replace - 1) % cpst.sw_width, inds_coor_active]
-            curr_color = current_color[inds_coor_active]
+            compute_classic_ews(cpst, i, i_replace, inds_coor_active, 
+                                stable_timefrac, stable_timefrac_prev,
+                                stable_colors, previous_colors, current_color )
 
-            # autocorrelation averaged over pixels
-            autocorr_norm_per_pix = np.zeros(len(curr_color))
-            autocorr_norm_per_pix[(curr_color == prev_color) & (curr_color == mode_color)] = 0
-            autocorr_norm_per_pix[(curr_color == prev_color) & (curr_color != mode_color)] = 1
-            autocorr_norm_per_pix[(curr_color != prev_color) & (curr_color != mode_color) & (prev_color != mode_color)] = -1
-            autocorr_norm_per_pix[(curr_color != prev_color) & ((curr_color == mode_color) | (prev_color == mode_color))] = 0
-            cpst.autocorr.val[i] = np.mean(autocorr_norm_per_pix) if len(autocorr_norm_per_pix) > 0 else 0
-
-            # autocorrelation normalized on entire state
-            autocorr_denom_per_pix = np.zeros(len(curr_color))
-            autocorr_denom_per_pix[(curr_color == prev_color) & (curr_color == mode_color)] = 0
-            autocorr_denom_per_pix[(curr_color == prev_color) & (curr_color != mode_color)] = 1
-            autocorr_denom_per_pix[(curr_color != prev_color) & (curr_color != mode_color) & (prev_color != mode_color)] = 1
-            autocorr_denom_per_pix[(curr_color != prev_color) & ((curr_color == mode_color) | (prev_color == mode_color))] = 0.5
-            denom = np.sum(autocorr_denom_per_pix)
-            cpst.autocorr2.val[i] = np.sum(autocorr_norm_per_pix) / denom if denom != 0 else 0
-
-
-            # variance normalized per pixel (different definition from 1-stability)
-            # this sums the time fractions over each color for a given pixel, takes the inverse, then the mean over pixels
-            sum2_stable_timefrac = np.sum(stable_timefrac[inds_coor_active, :]**2, axis=1)
-            cpst.variance.val[i] = np.mean(np.reciprocal(sum2_stable_timefrac)) if len(inds_coor_active) > 0 else 1
-
-            # variance of entire state
-            # this sums the time fractions over each pixel, averaged over all colors, then takes the inverse
-            cpst.variance2.val[i] = 1 / np.mean(stable_timefrac[inds_coor_active, :]**2) / var.NUM_COLORS if len(inds_coor_active) > 0 else 1
+            
 
         # ATTACK/DEFENSE VS REFERENCE IMAGE
         if attdef > 0:
@@ -586,6 +568,8 @@ def main_variables(cpart,
             cpst.cumul_attack_timefrac.val[i] = cumulative_attack_timefrac(time_spent_in_color, ref_color,
                                                                            inds_coor_active, cpst.t_interval)
 
+            cpst.returnrate.val[i] = returnrate(current_color, previous_colors[(i_replace - 1) % cpst.sw_width, inds_coor_active],
+                                                ref_color, inds_coor_active, last_time_installed_sw, t_lims, i)
             returnt = returntime(last_time_installed_sw, last_time_removed_sw,
                                 current_color, ref_color,
                                 inds_coor_active, t_lims[i], cpst.sw_width_sec)
@@ -785,6 +769,60 @@ def main_variables(cpart,
     if delete_dir and not dir_exist_already:
         os.rmdir(out_path)
 
+def compute_classic_ews(cpst, i, i_replace, inds_coor_active, 
+                        stable_timefrac, stable_timefrac_prev,
+                        stable_colors, previous_colors, current_color):
+
+    mode_color = stable_colors[inds_coor_active, 0]
+    prev_color = previous_colors[(i_replace - 1) % cpst.sw_width, inds_coor_active]
+    curr_color = current_color[inds_coor_active]
+
+    # autocorrelation averaged over pixels
+    autocorr_norm_per_pix = np.zeros(len(curr_color))
+    autocorr_norm_per_pix[(curr_color == prev_color) & (curr_color == mode_color)] = 0
+    autocorr_norm_per_pix[(curr_color == prev_color) & (curr_color != mode_color)] = 1
+    autocorr_norm_per_pix[(curr_color != prev_color) & (curr_color != mode_color) & (prev_color != mode_color)] = -1
+    autocorr_norm_per_pix[(curr_color != prev_color) & ((curr_color == mode_color) | (prev_color == mode_color))] = 0
+    cpst.autocorr_bycase.val[i] = np.mean(autocorr_norm_per_pix) if len(autocorr_norm_per_pix) > 0 else 0
+
+    # autocorrelation normalized on entire state
+    autocorr_denom_per_pix = np.zeros(len(curr_color))
+    autocorr_denom_per_pix[(curr_color == prev_color) & (curr_color == mode_color)] = 0
+    autocorr_denom_per_pix[(curr_color == prev_color) & (curr_color != mode_color)] = 1
+    autocorr_denom_per_pix[(curr_color != prev_color) & (curr_color != mode_color) & (prev_color != mode_color)] = 1
+    autocorr_denom_per_pix[(curr_color != prev_color) & ((curr_color == mode_color) | (prev_color == mode_color))] = 0.5
+    denom = np.sum(autocorr_denom_per_pix)
+    cpst.autocorr_bycase_norm.val[i] = np.sum(autocorr_norm_per_pix) / denom if denom != 0 else 0
+
+
+    ## variance normalized per pixel (different definition from 1-stability)
+    ## this sums the time fractions over each color for a given pixel, takes the inverse, then the mean over pixels
+    #sum2_stable_timefrac = np.sum(stable_timefrac[inds_coor_active, :]**2, axis=1)
+    #cpst.variance.val[i] = np.mean(np.reciprocal(sum2_stable_timefrac)) if len(inds_coor_active) > 0 else 1
+
+    # variance of entire state
+    # this sums the time fractions over each pixel, averaged over all colors, then takes the inverse
+    cpst.variance2.val[i] = 1 / np.mean(stable_timefrac[inds_coor_active, :]**2) / var.NUM_COLORS if len(inds_coor_active) > 0 else 1
+
+    # variance defined as for a multinomial distribution: sum_{color i}{ p_i(1-p_i) } = 1 - sum(p_i^2)
+    cpst.variance_multinom.val[i] = np.mean( stable_timefrac[inds_coor_active, :] * (1-stable_timefrac[inds_coor_active, :]) ) * var.NUM_COLORS
+    # autocorrelation defined in analogy with the variance of multinomial distribution: sum_{color i}{ p^t_i * (1-p_^{t-1}_i) }
+    if i == 0:
+        stable_timefrac_prev = stable_timefrac
+    cpst.autocorr_multinom.val[i] = np.mean( stable_timefrac_prev[inds_coor_active, :] * (1-stable_timefrac[inds_coor_active, :]) ) * var.NUM_COLORS
+
+    # autocorrelation based on chi^2 dissimilarity between the two distributions: sum_{color i}{ 0.5* (p^t_i - p_^{t-1}_i) ^2 }
+    cpst.autocorr_dissimil.val[i] = 0.5 * np.mean( (stable_timefrac_prev[inds_coor_active, :] - stable_timefrac[inds_coor_active, :])**2 ) * var.NUM_COLORS
+
+    # variance and autocorrelation based on subdominant dot product. Sum of squares of X_i Y_i, excluding the color with the largest X_i Y_i term 
+    subdom_sum = lambda a : np.mean( np.sum(a, axis=1) - np.max(a, axis=1) )
+    cpst.variance_subdom.val[i] = subdom_sum( stable_timefrac[inds_coor_active, :]**2 )
+    cpst.autocorr_subdom.val[i] = subdom_sum( stable_timefrac[inds_coor_active, :] * stable_timefrac_prev[inds_coor_active, :] )
+
+    if i > 0:
+        np.copyto(stable_timefrac_prev, stable_timefrac)
+
+    return
 
 def num_changes_and_users(cpart, cpst,
                           t_step, i_replace, time_str,
@@ -994,6 +1032,16 @@ def create_files_and_get_sizes(t_lims, t_step, pixels,
         os.remove(impath_bmp)
     if delete_png:
         os.remove(impath_png)
+
+def returnrate(current_color, prev_color, ref_color, inds_coor_active, last_time_installed_sw, t_lims, tstep):
+    inds_att_prev = np.intersect1d(inds_coor_active, np.where(prev_color != ref_color))
+    n_att_prev = len(inds_att_prev)
+    if n_att_prev == 0:
+        return 1
+    else:
+        inds_not_recovered = inds_att_prev[ np.where(current_color[inds_att_prev] != ref_color[inds_att_prev])[0] ]
+        inds_recoveredthenlost = np.count_nonzero(last_time_installed_sw[ref_color[inds_not_recovered], inds_not_recovered] > t_lims[tstep-1]) # will also necessarily be < t_lims[tstep]
+        return (n_att_prev - len(inds_not_recovered) + inds_recoveredthenlost) / n_att_prev
 
 def returntime(last_time_installed_sw, last_time_removed_sw,
                current_color, ref_color,
