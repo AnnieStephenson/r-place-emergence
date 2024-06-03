@@ -387,7 +387,7 @@ def main_variables(cpart,
     cpst.diff_pixels_inst_vs_stable = cpst.ts_init(np.zeros(n_tlims))
     if attdef > 0:
         cpst.returnrate = cpst.ts_init(np.zeros(n_tlims, dtype=np.float64))
-        cpst.returntime = np.empty(4, dtype=np.object)
+        cpst.returntime = np.empty(4, dtype=object)
         for i in range(0, 4):
             cpst.returntime[i] = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
     cpst.area_vst = cpst.ts_init(np.full(n_tlims, cpart.num_pix()))
