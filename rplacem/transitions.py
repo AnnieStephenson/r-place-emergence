@@ -2,8 +2,7 @@ import numpy as np
 import rplacem.canvas_part as cp
 import rplacem.compute_variables as comp
 import rplacem.utilities as util
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import math
 from scipy import optimize
 

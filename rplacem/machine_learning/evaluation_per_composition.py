@@ -1,6 +1,5 @@
 import numpy as np
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import EvalML as eval
 import os
 import matplotlib.pyplot as plt

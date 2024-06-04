@@ -6,8 +6,7 @@ from matplotlib.ticker import ScalarFormatter
 import mpl_toolkits.axes_grid1.inset_locator as insloc
 import seaborn as sns
 import os, copy
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import rplacem.utilities as util
 import numpy as np
 import math

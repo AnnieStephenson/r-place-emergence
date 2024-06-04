@@ -6,8 +6,7 @@ import seaborn as sns
 from PIL import Image
 import shutil
 import math
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import rplacem.utilities as util
 import rplacem.plot_utilities as plot
 import rplacem.entropy as entropy

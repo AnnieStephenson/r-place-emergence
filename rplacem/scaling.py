@@ -9,10 +9,9 @@ import scipy.odr
 import piecewise_regression
 import rplacem.canvas_part as cp
 import rplacem.entropy as ent
-import rplacem.globalvariables_peryear as vars
 import rplacem.utilities as util
+from rplacem import var as var
 
-var = vars.var
 
 def linear_model(params, x):
     return params[0] * x + params[1]

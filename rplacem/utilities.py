@@ -3,8 +3,7 @@ import os
 import sys
 import numpy as np
 import glob
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import json
 import shutil
 from PIL import Image

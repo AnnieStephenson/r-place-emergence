@@ -1,7 +1,6 @@
 import numpy as np
 import os
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import matplotlib.pyplot as plt
 from scipy.integrate import simpson
 

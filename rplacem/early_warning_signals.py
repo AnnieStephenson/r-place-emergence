@@ -3,8 +3,7 @@ import os
 import rplacem.canvas_part as cp
 import rplacem.utilities as util
 import rplacem.canvas_part_statistics as stat
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import rplacem.transitions as trans
 import pandas as pd
 import matplotlib.pyplot as plt
