@@ -8,8 +8,7 @@ import matplotlib.colors as colors
 import matplotlib.colorbar as colorbar
 import seaborn as sns
 import matplotlib.pyplot as plt
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import gc
 from scipy.optimize import curve_fit
 from scipy.interpolate import UnivariateSpline

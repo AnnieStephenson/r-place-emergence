@@ -1,8 +1,7 @@
 import numpy as np
 import pickle
 import os, sys
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import rplacem.transitions as tran
 import math
 import gc

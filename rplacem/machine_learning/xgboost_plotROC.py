@@ -1,7 +1,6 @@
 import json
 import matplotlib.pyplot as plt
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import os
 import pickle
 import numpy as np

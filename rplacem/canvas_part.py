@@ -4,8 +4,7 @@ import pickle
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import rplacem.utilities as util
 import copy
 

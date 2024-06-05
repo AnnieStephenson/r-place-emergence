@@ -1,15 +1,15 @@
 import numpy as np
 import os
-import rplacem.globalvariables_peryear as vars
 import pandas as pd
-var = vars.var
 import rplacem.compute_variables as comp
 import rplacem.utilities as util
 import rplacem.transitions as tran
 import rplacem.time_series as ts
+from rplacem import var as var
 import shutil
 import warnings
 import math
+
 
 
 class CanvasPartStatistics(object):

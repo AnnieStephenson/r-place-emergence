@@ -1,8 +1,7 @@
 import numpy as np
 import os
 import pandas as pd
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import rplacem.plot_utilities as plot
 import rplacem.utilities as util
 import scipy.stats
