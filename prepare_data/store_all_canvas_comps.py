@@ -53,3 +53,6 @@ util.merge_pickles([
                 ],
                 'canvas_compositions_all.pickle')
 '''
+
+cp.clean_all_compositions(os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle'),
+                          os.path.join(var.DATA_PATH, 'canvas_compositions_all_cleaned.pickle'))

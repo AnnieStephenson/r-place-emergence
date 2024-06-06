@@ -6,6 +6,7 @@ import rplacem.transitions as tran
 import math
 import gc
 import matplotlib.pyplot as plt
+from rplacem.canvas_part import compare_border_paths, AtlasInfo
 
 def variables_from_cpstat(cps):
     '''
@@ -22,29 +23,34 @@ def variables_from_cpstat(cps):
                  (cps.n_changes_norm,                   0, 1, 0),
                  (cps.instability_norm[0],              0, 0, 0),
                  (cps.instability_norm[3],              0, 0, 0),#
-                 (cps.variance,                         0, 0, 0),#
                  (cps.variance2,                        0, 0, 0),
+                 #(cps.variance_multinom,                0, 0, 0),#n
+                 #(cps.variance_subdom,                  0, 0, 0),#n
+                 #(cps.variance_from_frac_pixdiff_inst,  0, 0, 0),#n
                  (cps.runnerup_timeratio[0],            0, 0, 0),#
                  (cps.runnerup_timeratio[3],            0, 0, 0),
                  (cps.n_used_colors[0],                 0, 0, 0),
                  (cps.n_used_colors[3],                 0, 1, 0),
-                 (cps.autocorr,                         1, 0, 0),  # the difference is taken instead of the ratio for autocorrelation
-                 (cps.autocorr2,                        1, 0, 0),# # the difference is taken instead of the ratio for autocorrelation
+                 #(cps.autocorr_bycase,                  1, 0, 0),  # the difference is taken instead of the ratio for autocorrelation
+                 #(cps.autocorr_bycase_norm,             1, 0, 0),# # the difference is taken instead of the ratio for autocorrelation
+                 #(cps.autocorr_multinom,                0, 0, 0),#n
+                 #(cps.autocorr_subdom,                  0, 0, 0),#n
+                 #(cps.autocorr_dissimil,                0, 0, 0),#n
                  (cps.cumul_attack_timefrac,            0, 1, 0),
                  (cps.returntime[0],                    0, 1, 0),
                  (cps.returntime[3],                    0, 1, 0),
+                 #(cps.returnrate,                       0, 0, 0),#n
                  (cps.n_users_sw_norm,                  0, 1, 0),
                  (cps.changes_per_user_sw,              0, 1, 0),
                  (cps.frac_users_new_vs_sw,             0, 0, 0),
                  (cps.frac_redundant_color_changes,     0, 0, 0),
                  (cps.entropy,                          1, 0, 0),
                  (cps.fractal_dim_weighted,             1, 0, 0),
-                 (cps.variance,                         0, 0, 1),#
                  (cps.variance2,                        0, 0, 1),#
                  (cps.returntime[0],                    0, 0, 1),#
                  (cps.instability_norm[0],              0, 0, 1),#
-                 (cps.autocorr,                         0, 0, 1),#
-                 (cps.autocorr2,                        0, 0, 1),#
+                 #(cps.autocorr_bycase,                  0, 0, 1),#
+                 #(cps.autocorr_bycase_norm,             0, 0, 1),#
                 ]
     
     vars = np.array([v[0] for v in vars_full])
@@ -73,7 +79,12 @@ def get_vals_from_var(v, tidx, coarse=False):
     vals = np.empty(n_times, dtype=np.float64)
 
     for i in range(0, n_times):
+        #print('tidx',tidx)
         inds = tidx + (watch_timeindrange_coarse if coarse else watch_timeindrange)[i]
+        #print(inds.size)
+        #print(inds)
+        #print(v.size)
+        #print(v)
         vals[i] = np.mean(v[inds])
     return vals
 
@@ -94,7 +105,7 @@ def get_earliness(cpstat, t, trans_starttimes):
         else: # take the closest transition happening after t
             return min(np.min(possible_earlinesses), earliness_notrans)
 
-def keep_in_sample(cpstat, it, t, trans_starttimes):
+def keep_in_sample(cpstat, it, t, trans_starttimes, reject_times):
     '''
     Says if this timestep for this composition must be kept in the training+evaluation sample
     '''
@@ -112,7 +123,6 @@ def keep_in_sample(cpstat, it, t, trans_starttimes):
     #print(np.any(np.logical_and(t >= cpstat.stable_borders_timeranges[:, 0] + max(watchrange, cpstat.sw_width_sec), 
     #                          t <= cpstat.stable_borders_timeranges[:, 1])))
     #print(it < cpstat.n_t_bins - 1)
-
     return (cpstat.area >= 100 and # exclude very small compositions
             (cpstat.frac_pixdiff_inst_vs_swref.val[it] < trans_param[0] or 
              cpstat.frac_pixdiff_inst_vs_swref.ratio_to_sw_mean[it] < trans_param[1]) and # excludes times where the composition has transition-like values for frac_pixdiff
@@ -124,14 +134,96 @@ def keep_in_sample(cpstat, it, t, trans_starttimes):
             # t must be in a timerange where the border_path is relatively stable, and at least [watchrange] and [sw_width] later than the start of this timerange 
             np.any(np.logical_and(t >= cpstat.stable_borders_timeranges[:, 0] + max(watchrange, cpstat.sw_width_sec), 
                                t <= cpstat.stable_borders_timeranges[:, 1])) and
-            it < cpstat.n_t_bins - 1 # exclude the last time interval, that has a different size
+            it < cpstat.n_t_bins - 1 and # exclude the last time interval, that has a different size
+            # exclude time that overlap in space and time with another composition
+            np.all((t > reject_times[:,1]) | (t < reject_times[:,0]))
             # must be below absolute transition threshold (not the relative one) for a duration > sliding_window_width right before this time
             #and np.all(cpstat.frac_pixdiff_inst_vs_swref.val[(it-cpstat.sw_width) : it] < trans_param[0])
             )
 
+file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all.pickle') 
+
+def get_all_AtlasInfo():
+    path = os.path.join(var.DATA_PATH, 'canvas_compositions_statistics_all.pickle') 
+    infos = []
+    with open(path, 'rb') as f:
+        canvas_parts = pickle.load(f)
+        for cp in canvas_parts:
+            infos.append(cp.info)
+    gc.collect()
+    return infos
+
+def duplicate_place_and_time():
+    with open(file_path, 'rb') as f:
+        cpstats = pickle.load(f)
+
+        # get border_path associated to each cpstat
+        infos_list = []
+        for icps, cps in enumerate(cpstats):
+            if not hasattr(cps, 'info'): # this won't be needed with the new CanvasPartStatistics
+                if icps == 0:
+                    infos = get_all_AtlasInfo()
+                found = False
+                for inf in infos:
+                    if inf.id == cps.id:
+                        infos_list.append(inf)
+                        found = True
+                        break
+                if not found:
+                    infos_list.append(AtlasInfo()) # dummy here, these compositions won't reject any duplicates
+            else:
+                infos_list.append(cps.info)
+        
+        rejected_times_border_overlaps = np.zeros(len(cpstats), dtype=object)
+        # first loop on each border_path of each cpstats 
+        for icps in range(len(cpstats)):
+            #print(icps)
+            borders = infos_list[icps]
+            for bpath, btimes in zip(borders.border_path, borders.border_path_times):
+                if bpath.size == 0: # not needed when we will run with the new cpstats
+                    continue
+                # second loop on each border_path of each cpstats 
+                for icps2 in range(len(cpstats)):
+                    if icps2 <= icps: # only triangular 2D test
+                        continue
+                    borders2 = infos_list[icps2]
+                    for bpath2, btimes2 in zip(borders2.border_path, borders2.border_path_times):
+                        if bpath2.size == 0: # not needed when we will run with the new cpstats
+                            continue
+
+                        # now we have a specific border_path for both cpstats, let's compare them, first their time overlap
+                        times_overlap = [max(btimes[0], btimes2[0]), min(btimes[1], btimes2[1])]
+                        if times_overlap[0] < times_overlap[1]:
+                            # then their physical overlap (fraction of overlapping pixels)
+                            borders_overlap = compare_border_paths(bpath, bpath2)
+                            if borders_overlap > 0.9:
+                                # for these overlapping compositions, keep the one with the earliest start time
+                                icps_reject = icps2 if (btimes[0] < btimes2[0] or (np.isclose(btimes[0], btimes2[0]) and btimes[1] >= btimes2[1])) else icps
+                                if rejected_times_border_overlaps[icps_reject] == 0:
+                                    rejected_times_border_overlaps[icps_reject] = [times_overlap]
+                                else:
+                                    rejected_times_border_overlaps[icps_reject].append(times_overlap)
+                                print('        ',icps,icps2,icps_reject,borders_overlap,times_overlap)
+                                #print('        ',bpath,bpath2)
+                                print('        ',btimes,btimes2)
+                                print(borders.id, borders2.id)
+
+        return rejected_times_border_overlaps    
+
+# rejected times due to overlapping compositions
+run_rejecttimes = False
+file_path_rejecttimes = os.path.join(var.DATA_PATH, 'reject_times_from_overlap.pickle')
+if run_rejecttimes:
+    reject_times_all = duplicate_place_and_time()
+    with open(file_path_rejecttimes, 'wb') as f:
+        pickle.dump(reject_times_all, f, protocol=pickle.HIGHEST_PROTOCOL)
+    print('# of overlaps =', np.count_nonzero(reject_times_all))
+else:
+    with open(file_path_rejecttimes, 'rb') as f:
+        reject_times_all = pickle.load(f)
+
 
 # grab canvas_part_statistics object
-file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all.pickle') 
 with open(file_path, 'rb') as f:
     cpstat0 = pickle.load(f)[0]
     f.close()
@@ -194,7 +286,6 @@ n_cpstatvars_coarse = np.count_nonzero(coarse_timerange == 1)
 n_trainingvars = n_cpstatvars * n_traintimes + n_cpstatvars_coarse * n_traintimes_coarse
 
 
-
 ncompmax = 14222 if var.year == 2022 else 6720
 nevents_max = 4000000 # hard-coded (conservative) !!
 inputvals = np.full((nevents_max, n_trainingvars), -1, dtype=np.float32)
@@ -219,16 +310,23 @@ for p in range(0, math.ceil(ncompmax/period)):
     gc.collect()
 
     for icps_tmp, cps in enumerate(cpstats):
-        n_keptcomps += 1
         icps = icps_tmp + p*period
         print('cpstat #', icps, ' id ',cps.id, ' area ', cps.area)
+        #if icps<340:
+        #    continue
         id_dict[icps] = cps.id
+        cps.stable_borders_timeranges[:, 0] = np.maximum(cps.stable_borders_timeranges[:, 0], cps.tmin)
 
-        cps.fill_timeseries_info()
+        #cps.fill_timeseries_info()
         # all variables from this cpstat
         allvars = variables_from_cpstat(cps)
         trans_starttimes = tran.transition_start_time_simple(cps)
-
+        reject_times = reject_times_all[icps]
+        if reject_times == 0:
+            reject_times = [[1e8, -1]]
+        elif len(reject_times) == 0:
+            reject_times = [[1e8, -1]]
+        reject_times = np.array(reject_times)
 
         # enter names for all training variables
         if icps == 0: 
@@ -248,7 +346,8 @@ for p in range(0, math.ceil(ncompmax/period)):
 
         i_event_thiscomp = 0
         for it, t in enumerate(cps.t_lims):
-            if keep_in_sample(cps, it, t, trans_starttimes):
+            #print(it,t)
+            if keep_in_sample(cps, it, t, trans_starttimes, reject_times):
                 i_event += 1
                 i_event_thiscomp += 1
 
@@ -257,6 +356,7 @@ for p in range(0, math.ceil(ncompmax/period)):
 
                 vars_thistime = []
                 for kendall, coarse, ratio_to_av, v in zip(allvars[3], allvars[2], allvars[1], allvars[0]):
+                    #print(i_event, kendall, coarse, ratio_to_av)
                     vals = get_vals_from_var(v.kendall_tau if kendall else v.ratio_to_sw_mean if ratio_to_av else v.val, it, coarse)
                     vars_thistime.extend(vals)
                 # input variables
@@ -272,6 +372,9 @@ for p in range(0, math.ceil(ncompmax/period)):
                 eventtime[i_event] = t
                 #print(icps, it, t, outputval[-1], cps.frac_pixdiff_inst_vs_swref.val[it], cps.frac_pixdiff_inst_vs_swref_forwardlook.val[it], inputvals[-1][0:7] )
                 id_idx[i_event] = icps
+        
+        if i_event_thiscomp > 0:
+            n_keptcomps += 1    
         print("Added",i_event_thiscomp,"timesteps from this compo. Now there are ",i_event,"events")
 
 
