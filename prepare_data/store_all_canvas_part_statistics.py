@@ -53,8 +53,6 @@ def store_comp_stats(beg, end):
                     del f
 
             cancomp = canvas_compositions[i]
-            if cancomp.info.id == '4839' or cancomp.info.id == '3252':
-                continue
             #print('beginning:  RAM memory % used:', psutil.virtual_memory()[2],   '   ',psutil.virtual_memory()[3]/1000000000)
             print('CanvasComp # ' + str(beg+p*periodsave+i) + ' , id '+ str(cancomp.info.id) + ' , #pixch = ', len(cancomp.pixel_changes))
             if len(cancomp.pixel_changes) > 50000:

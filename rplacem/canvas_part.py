@@ -197,6 +197,7 @@ class CanvasPart(object):
         else:
             self._get_bounded_coords(show_coords=show_coords)
         # reject times where a canvas quarter was off, for pixels in these canvas sections
+        self.info.border_path_times[:, 0] = np.maximum(self.info.border_path_times[:, 0], self.min_max_time()[0])
         if verbose:
             print('_reject_off_times()')
         self._reject_off_times()
@@ -312,7 +313,6 @@ class CanvasPart(object):
             for i in range(0,len(self.coords_timerange)):
                 res[i] = np.array(self.coords_timerange[i], dtype=np.float64)
             self.coords_timerange = res
-
 
     def _find_pixel_changes_in_boundary(self, pixel_changes_all, verbose):
         '''
@@ -684,9 +684,13 @@ class CanvasPart(object):
         '''
         Returns list of continuous timeranges in which the border_path changes at most of 10%
         '''
+        if not self.is_from_atlas():
+            return None
+        
         stab_timeranges = []
         for i in np.arange(0, len(self.info.border_path)):
             times = self.info.border_path_times[i]
+            times[0] = max(times[0], self.tmin_quadrant())
 
             if i == 0 or (not np.isclose(times[0], stab_timeranges[-1][1])):
                 stab_timeranges.append(times) # simply add this timerange if it is the first or if there is a gap with the previous timerange
@@ -816,7 +820,7 @@ def get_atlas_border(id_index=-1, id='', atlas=None, addtime_before=0, addtime_a
     vals = []
     for k,v in paths.items():
         if (k == 'T:0-1' or k == 'T') and (len(paths.keys()) == 1): # if there is only one path and it has weird time tag, set it to widest timerange
-            times.append([0., var.TIME_TOTAL]) # TODO: should cause issues if comp is in other than 1st quadrant
+            times.append([0., var.TIME_TOTAL]) # wrong if comp is in other than 1st quadrant, but is corrected at later stages
             vals.append(v)
             break
         t0t1_list = k.split(',')
@@ -884,6 +888,13 @@ def compare_border_paths(b1, b2):
     xmax = max(b1[:,0].max(), b2[:,0].max())
     ymin = min(b1[:,1].min(), b2[:,1].min())
     ymax = max(b1[:,1].max(), b2[:,1].max())
+
+    if ((b1[:,0].max() < b2[:,0].min()) or
+        (b1[:,1].max() < b2[:,1].min()) or
+        (b2[:,0].max() < b1[:,0].min()) or
+        (b2[:,1].max() < b1[:,1].min())
+        ):
+        return 0
 
     mask1 = np.zeros((ymax-ymin+1, xmax-xmin+1))
     mask2 = np.zeros((ymax-ymin+1, xmax-xmin+1))
@@ -1015,3 +1026,78 @@ def load_canvas_part(file_name):
         canpart = pickle.load(f)
 
     return canpart
+
+def clean_all_compositions(filepath, filepathnew):
+    canvas_parts = None
+    with open(filepath, 'rb') as f:
+        canvas_parts = pickle.load(f)
+        f.close()
+    print('clean',len(canvas_parts),'compositions')
+    
+    # change the ids of compositions that are different but have the same id
+    np.random.seed(0)
+    ids = []
+    for i,cp in enumerate(canvas_parts):
+        if cp.info.id in ids:
+            newid = cp.info.id + '_' + str(np.random.randint(100))
+            canvas_parts[i].info.id = newid
+        ids.append(canvas_parts[i].info.id)
+
+    # list of all AtlasInfo's
+    infos_list = []
+    for cp in canvas_parts:
+        infos_list.append(cp.info)
+    infos_list_new = copy.deepcopy(infos_list)
+
+    # find duplicate compositions to remove, with exact same border_path
+    for icps in range(len(canvas_parts)):
+        borders = infos_list[icps]
+        print(icps, borders.id)
+        for icps2 in range(len(canvas_parts)):
+            if icps2 <= icps: # only triangular 2D test
+                continue
+            borders2 = infos_list[icps2]
+
+            # same border_path (>99% similar) and exact same border_path_times is needed for being a duplicate here
+            duplicate = False
+            if borders.border_path_times.shape == borders2.border_path_times.shape and np.allclose(borders.border_path_times, borders2.border_path_times):
+                if borders.border_path.shape == borders2.border_path.shape and np.allclose(borders.border_path, borders2.border_path):
+                    duplicate = True
+                elif len(borders.border_path) == len(borders2.border_path):
+                    similar_bp = True
+                    for ib in range(len(borders.border_path)):
+                        similar_bp = similar_bp and compare_border_paths(borders.border_path[ib], borders2.border_path[ib]) > 0.99
+                    duplicate = similar_bp
+
+            if duplicate:
+                # merge the two AtlasInfo
+                def merge_dict(d1,d2):
+                    d3 = dict(d1)
+                    d2new = copy.deepcopy(d2)
+                    for k in d2.keys():
+                        d2new[k+'_2'] = d2new.pop(k)
+                    d3.update(d2new)
+                    return d3
+                infos_list_new[icps] = AtlasInfo(id=infos_list[icps].id+infos_list[icps2].id,
+                                                 border_path=infos_list[icps].border_path,
+                                                 border_path_times=infos_list[icps].border_path_times,
+                                                 border_path_orig=infos_list[icps].border_path_orig,
+                                                 border_path_times_orig=infos_list[icps].border_path_times_orig,
+                                                 description=(infos_list[icps].description + ' --- other description: ' + infos_list[icps2].description),
+                                                 atlasname=(infos_list[icps].atlasname + ' --- other atlasname: ' + infos_list[icps2].atlasname),
+                                                 links=merge_dict(infos_list[icps].links, infos_list[icps2].links),
+                                                 )
+                print(icps, icps2, infos_list_new[icps].links, infos_list_new[icps].description, infos_list_new[icps].atlasname)
+                infos_list_new[icps2] = None
+
+    canvas_parts_new = []
+    for i,cp in enumerate(canvas_parts):
+        if infos_list_new[i] is not None:
+            cp.info = infos_list_new[i]
+            canvas_parts_new.append(cp)
+
+    print('found ',len(canvas_parts_new),' clean compositions')
+
+    with open(filepathnew, 'wb') as f:
+        pickle.dump(canvas_parts_new, f, protocol=pickle.HIGHEST_PROTOCOL)
+

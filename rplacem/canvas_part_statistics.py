@@ -23,6 +23,8 @@ class CanvasPartStatistics(object):
         Is unique for compositions (where it is = cpart.id) and for rectangles (cpart.is_rectangle == True)
         Can designate different canvas parts in other cases.
             Set in __init__()
+    info : AtlasInfo
+        Direct AtlasInfo object from the CanvasPart
     compute_vars: dictionary (string to int)
         says what level of information to compute and store for each variable.
         The keys for the computed variables are:
@@ -358,6 +360,7 @@ class CanvasPartStatistics(object):
             If True, then uses the most stable image over the specified time range as the reference image, rather than a sliding window reference image.
         '''
 
+        self.info = cpart.info
         self.id = cpart.out_name()
         if compute_vars['stability'] < 3 and compute_vars['entropy'] < 3:
             renew = False

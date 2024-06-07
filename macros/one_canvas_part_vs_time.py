@@ -24,7 +24,7 @@ if not cp_fromfile:
     pixel_changes_all = util.get_all_pixel_changes()
     atlas, num = util.load_atlas()
 
-id = '12' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
+id = 'tx0gt3' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
 
 x1 = var.CANVAS_MINMAX[-1, 0, 0]
 x2 = var.CANVAS_MINMAX[-1, 0, 1]
@@ -53,7 +53,7 @@ if cp_fromfile:
 
 else:
     if fromatlas:
-        atlas_info_separated = cp.get_atlas_border(id=id, atlas=atlas, addtime_before=10*3600, addtime_after=7*3600)
+        atlas_info_separated = cp.get_atlas_border(id=id, atlas=atlas, addtime_before=10*3600, addtime_after=4*3600)
         canvas_comps = []
         for ainfo in atlas_info_separated:
             # actual canvas composition here
@@ -70,11 +70,11 @@ else:
 
 # Get CanvasPartStatistics
 if cps_fromfile:
-    file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_0to99.pickle') 
+    file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all.pickle') 
     with open(file_path, 'rb') as f:
         cpstats = pickle.load(f)
     
-    for cps in cpstats:
+    for i,cps in enumerate(cpstats):
         if cps.id != id:
             continue
         else:
@@ -83,8 +83,8 @@ if cps_fromfile:
     
 else: 
     cpstat = stat.CanvasPartStatistics(canpart, t_interval=300, #tmax=30000,
-                                        compute_vars={'stability': 1, 'entropy' :3, 'transitions' : 1, 'attackdefense' : 1, 'other' : 1, 
-                                                      'ews' : 1, 'inout':1, 'lifetime_vars':1, 'void_attack':1},
+                                        compute_vars={'stability': 1, 'entropy' :1, 'transitions' : 1, 'attackdefense' : 1, 'other' : 1, 
+                                                      'ews' : 1, 'inout':0, 'lifetime_vars':0, 'void_attack':0},
                                         sliding_window=int(2.5*3600), 
                                         verbose=True, dont_keep_dir=False, compression='DEFLATE_BMP_PNG', flattening='ravel')
     
@@ -95,6 +95,8 @@ if savecpstat:
         pickle.dump(cpstat,
                     handle,
                     protocol=pickle.HIGHEST_PROTOCOL)
+
+print(cpstat.stable_borders_timeranges)
 
 plt.figure()
 plt.plot(cpstat.frac_pixdiff_inst_vs_inst_norm.val[1:])
@@ -117,6 +119,8 @@ def printrho(v1, v2, v1n, v2n):
     plt.savefig(os.path.join(var.FIGS_PATH, str(cpstat.id), 'test_correlation_'+v1n+'_'+v2n))
     plt.close()
 
+print('rhos')
+
 printrho(cpstat.variance2.val, cpstat.variance_multinom.val, 'variance2', 'variance_multinom')
 printrho(cpstat.variance2.val, cpstat.variance_subdom.val, 'variance2', 'variance_subdom')
 printrho(cpstat.variance2.val, cpstat.instability_norm[0].val, 'variance2', 'instability_norm')
@@ -129,6 +133,7 @@ printrho(cpstat.autocorr_bycase.val, cpstat.autocorr_multinom.val, 'autocorr_byc
 printrho(cpstat.autocorr_multinom.val, cpstat.autocorr_subdom.val, 'autocorr_multinom', 'autocorr_subdom')
 printrho(cpstat.autocorr_multinom.val, cpstat.autocorr_dissimil.val, 'autocorr_multinom', 'autocorr_dissimil')
 
+print('figs')
 
 cpstat.fill_timeseries_info()
 for cpstat in [cpstat]:#cpstats
@@ -175,6 +180,8 @@ for cpstat in [cpstat]:#cpstats
         plt.savefig(os.path.join(var.FIGS_PATH, str(cpstat.id),  'frac_pixdiff_inst_vs_swref_forwardlook_transition'+str(j)))
         plt.close()
 
+print('other figs')
+
 itmin = np.argmax(cpstat.t_lims >= cpstat.tmin)
 plt.figure()
 plt.plot(cpstat.t_lims[itmin:], cpstat.frac_pixdiff_inst_vs_stable_norm.val[itmin:], label='inst. vs stable / 5 min')
@@ -218,6 +225,7 @@ cpstat.frac_cooldowncheat_changes.plot1d(ymin=0)
 cpstat.frac_redundant_color_changes.plot1d(ymin=0)
 cpstat.frac_redundant_coloranduser_changes.plot1d(ymin=0)
 
+plot.cpstat_tseries(cpstat, nrows=11, ncols=2, figsize=(8,11.5), fontsize=10, save=True)
 plot.cpstat_tseries(cpstat, nrows=11, ncols=2, figsize=(8,11.5), fontsize=10, save=True)
 
 #OLD EWS
