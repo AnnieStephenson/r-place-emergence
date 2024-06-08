@@ -360,6 +360,8 @@ def main_variables(cpart,
         users_vst[i] = np.array([], dtype=np.int32)
     users_sw_unique = np.array([], dtype=np.int32)
     stable_colors = np.empty((cpart.num_pix(), var.NUM_COLORS), dtype=np.int8)
+    if ews > 0:
+        stable_colors_prev = np.empty((cpart.num_pix(), var.NUM_COLORS), dtype=np.int8)
     stable_timefrac_prev = np.empty((cpart.num_pix(), var.NUM_COLORS))
 
     # Output
@@ -555,10 +557,11 @@ def main_variables(cpart,
 
         # CLASSIC EWS VARIABLES
         if ews > 0:
-            compute_classic_ews(cpst, i, i_replace, inds_coor_active, 
+            compute_classic_ews(cpst, i, inds_coor_active, 
                                 stable_timefrac, stable_timefrac_prev,
-                                stable_colors, previous_colors, current_color )
-
+                                stable_colors, stable_colors_prev, 
+                                previous_colors, current_color )
+            stable_colors_prev = np.copy(stable_colors)
             
 
         # ATTACK/DEFENSE VS REFERENCE IMAGE
@@ -567,7 +570,7 @@ def main_variables(cpart,
             cpst.cumul_attack_timefrac.val[i] = cumulative_attack_timefrac(time_spent_in_color, ref_color,
                                                                            inds_coor_active, cpst.t_interval)
 
-            cpst.returnrate.val[i] = returnrate(current_color, previous_colors[(i_replace - 1) % cpst.sw_width, inds_coor_active],
+            cpst.returnrate.val[i] = returnrate(current_color, previous_colors[(i - 1) % cpst.sw_width],
                                                 ref_color, inds_coor_active, last_time_installed_sw, t_lims, i)
             returnt = returntime(last_time_installed_sw, last_time_removed_sw,
                                 current_color, ref_color,
@@ -609,7 +612,6 @@ def main_variables(cpart,
             cpst.diff_pixels_inst_vs_swref.val[i] = np.count_nonzero(current_color[inds_coor_active] - ref_color[inds_coor_active])
             if i >= cpst.sw_width:
                 cpst.diff_pixels_inst_vs_swref_forwardlook.val[i - cpst.sw_width] = np.count_nonzero(previous_colors[i_replace, inds_coor_active] - ref_color[inds_coor_active])
-            previous_colors[i_replace] = np.copy(current_color)
         if stab > 0 and instant > 0:
             cpst.diff_pixels_stable_vs_swref.val[i] = np.count_nonzero(stable_colors[inds_coor_active, 0] - ref_color[inds_coor_active])
             cpst.diff_pixels_inst_vs_stable.val[i] = np.count_nonzero(current_color[inds_coor_active] - previous_stable_color[inds_coor_active])
@@ -634,6 +636,8 @@ def main_variables(cpart,
                 #cpst.size_compressed_ref.val[i] = entropy.calc_compressed_size(ref_color, flattening=flattening, compression=compression) 
                 cpst.size_compressed.val[i] = entropy.calc_compressed_size(pix_tmp, flattening=flattening, compression=compression)
                 cpst.size_uncompressed.val[i] = entropy.calc_size(pix_tmp)
+        if tran > 0 or instant > 0:
+            previous_colors[i_replace] = np.copy(current_color)
 
         # END CORE COMPUTATIONS. Magic ends
 
@@ -682,13 +686,13 @@ def main_variables(cpart,
                 util.pixels_to_image(cpst.stable_image[i], cpart_dir(out_dir_stab), 'MostStableColor_' + timerange_str + '.png')
                 util.pixels_to_image(cpst.second_stable_image[i], cpart_dir(out_dir_stab), 'SecondMostStableColor_' + timerange_str + '.png')
                 util.pixels_to_image(cpst.third_stable_image[i], cpart_dir(out_dir_stab), 'ThirdMostStableColor_' + timerange_str + '.png')
-
-                
+            
         del inds_coor_active
         if stab > 0:
             del stable_timefrac
         del time_spent_in_color
 
+    
     # FRACTAL DIMENSION
     if instant > 0:
         [cpst.fractal_dim_mask_median.val,
@@ -768,12 +772,13 @@ def main_variables(cpart,
     if delete_dir and not dir_exist_already:
         os.rmdir(out_path)
 
-def compute_classic_ews(cpst, i, i_replace, inds_coor_active, 
+def compute_classic_ews(cpst, i, inds_coor_active, 
                         stable_timefrac, stable_timefrac_prev,
-                        stable_colors, previous_colors, current_color):
+                        stable_colors, stable_colors_prev, 
+                        previous_colors, current_color):
 
     mode_color = stable_colors[inds_coor_active, 0]
-    prev_color = previous_colors[(i_replace - 1) % cpst.sw_width, inds_coor_active]
+    prev_color = previous_colors[(i - 1) % cpst.sw_width, inds_coor_active]
     curr_color = current_color[inds_coor_active]
 
     # autocorrelation averaged over pixels
@@ -793,30 +798,38 @@ def compute_classic_ews(cpst, i, i_replace, inds_coor_active,
     denom = np.sum(autocorr_denom_per_pix)
     cpst.autocorr_bycase_norm.val[i] = np.sum(autocorr_norm_per_pix) / denom if denom != 0 else 0
 
+    timefrac = stable_timefrac[inds_coor_active]
+    timefrac_prev = stable_timefrac_prev[inds_coor_active]
+    # get stable_timefrac in the standard color order
+    if i > 1:
+        indspix = np.arange(len(inds_coor_active))
+        timefrac[indspix[:,np.newaxis], stable_colors[indspix, :]] = stable_timefrac[inds_coor_active]
+        timefrac_prev[indspix[:,np.newaxis], stable_colors_prev[indspix, :]] = stable_timefrac_prev[inds_coor_active]
+
 
     ## variance normalized per pixel (different definition from 1-stability)
     ## this sums the time fractions over each color for a given pixel, takes the inverse, then the mean over pixels
-    #sum2_stable_timefrac = np.sum(stable_timefrac[inds_coor_active, :]**2, axis=1)
+    #sum2_stable_timefrac = np.sum(timefrac**2, axis=1)
     #cpst.variance.val[i] = np.mean(np.reciprocal(sum2_stable_timefrac)) if len(inds_coor_active) > 0 else 1
 
     # variance of entire state
     # this sums the time fractions over each pixel, averaged over all colors, then takes the inverse
-    cpst.variance2.val[i] = 1 / np.mean(stable_timefrac[inds_coor_active, :]**2) / var.NUM_COLORS if len(inds_coor_active) > 0 else 1
+    cpst.variance2.val[i] = 1 / np.mean(timefrac**2) / var.NUM_COLORS if len(inds_coor_active) > 0 else 1
 
     # variance defined as for a multinomial distribution: sum_{color i}{ p_i(1-p_i) } = 1 - sum(p_i^2)
-    cpst.variance_multinom.val[i] = np.mean( stable_timefrac[inds_coor_active, :] * (1-stable_timefrac[inds_coor_active, :]) ) * var.NUM_COLORS
+    cpst.variance_multinom.val[i] = np.mean( timefrac * (1-timefrac) ) * var.NUM_COLORS
     # autocorrelation defined in analogy with the variance of multinomial distribution: sum_{color i}{ p^t_i * (1-p_^{t-1}_i) }
-    if i == 0:
-        stable_timefrac_prev = stable_timefrac
-    cpst.autocorr_multinom.val[i] = np.mean( stable_timefrac_prev[inds_coor_active, :] * (1-stable_timefrac[inds_coor_active, :]) ) * var.NUM_COLORS
+    if i > 1:
+        cpst.autocorr_multinom.val[i] = np.mean( timefrac_prev * (1-timefrac) ) * var.NUM_COLORS
 
-    # autocorrelation based on chi^2 dissimilarity between the two distributions: sum_{color i}{ 0.5* (p^t_i - p_^{t-1}_i) ^2 }
-    cpst.autocorr_dissimil.val[i] = 0.5 * np.mean( (stable_timefrac_prev[inds_coor_active, :] - stable_timefrac[inds_coor_active, :])**2 ) * var.NUM_COLORS
+        # autocorrelation based on chi^2 dissimilarity between the two distributions: sum_{color i}{ 0.5* (p^t_i - p_^{t-1}_i) ^2 }
+        cpst.autocorr_dissimil.val[i] = 0.5 * np.mean( (timefrac_prev - timefrac)**2 ) * var.NUM_COLORS
 
     # variance and autocorrelation based on subdominant dot product. Sum of squares of X_i Y_i, excluding the color with the largest X_i Y_i term 
     subdom_sum = lambda a : np.mean( np.sum(a, axis=1) - np.max(a, axis=1) )
-    cpst.variance_subdom.val[i] = subdom_sum( stable_timefrac[inds_coor_active, :]**2 )
-    cpst.autocorr_subdom.val[i] = subdom_sum( stable_timefrac[inds_coor_active, :] * stable_timefrac_prev[inds_coor_active, :] )
+    if i > 1:
+        cpst.autocorr_subdom.val[i] = subdom_sum( timefrac * timefrac_prev )
+    cpst.variance_subdom.val[i] = subdom_sum( timefrac**2 )
 
     if i > 0:
         np.copyto(stable_timefrac_prev, stable_timefrac)
@@ -1033,8 +1046,9 @@ def create_files_and_get_sizes(t_lims, t_step, pixels,
         os.remove(impath_png)
 
 def returnrate(current_color, prev_color, ref_color, inds_coor_active, last_time_installed_sw, t_lims, tstep):
-    inds_att_prev = np.intersect1d(inds_coor_active, np.where(prev_color != ref_color))
+    inds_att_prev = np.intersect1d(inds_coor_active, np.where(prev_color != ref_color)[0])
     n_att_prev = len(inds_att_prev)
+
     if n_att_prev == 0:
         return 1
     else:

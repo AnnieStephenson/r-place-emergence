@@ -195,5 +195,7 @@ def calc_kendall_tau(variable):
     '''
     x = np.arange(len(variable))
     y = np.array(variable)
-    res = scipy.stats.kendalltau(x, y, variant='c')
-    return res.statistic
+    res = scipy.stats.kendalltau(x, y, variant='c').statistic
+    if np.isnan(res):
+        res = 0
+    return res

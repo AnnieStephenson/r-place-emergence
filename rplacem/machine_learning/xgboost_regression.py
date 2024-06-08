@@ -480,7 +480,7 @@ def ROCAUC_1and3h_maxFPR0p2and1(pred, dtrain):
 
 
 # extract data from file
-file_path = os.path.join(var.DATA_PATH, 'training_data_330variables.pickle')
+file_path = os.path.join(var.DATA_PATH, 'training_data_387variables.pickle')
 with open(file_path, 'rb') as f:
     [inputvals, outputval, varnames, eventtime, id_idx, id_dict,
      coarse_timerange, 
@@ -497,6 +497,7 @@ if ml_param.test2023:
         kendall_tau,
         n_traintimes, n_traintimes_coarse
         ] = pickle.load(f) 
+print(varnames)
 
 # correct a bug
 for iv in range(len(varnames)):
@@ -509,7 +510,7 @@ for iv in range(len(varnames)):
 nmaxcomp = 1e5
 
 # keep only certain variables
-vars_toremove = [5,6,8,13,23,24,25,26,27,28]#[5,6,8,13,14,23,24,25,26,27,28]
+vars_toremove = [5,10,14,15,19,29,30,31,32,33]#[5,6,8,13,14,23,24,25,26,27,28]
 vars_touse = []
 keptvars = []
 i_current = 0
@@ -528,12 +529,19 @@ select = np.where(np.array(id_idx) < nmaxcomp)[0]
 outputval_orig = np.array(outputval[select])
 outputval = ml_param.transform_target(outputval_orig)
 inputvals = inputvals[select][:, keptvars]
+inputvals = np.nan_to_num(inputvals)
 if ml_param.test2023:
     outputval_orig_2023 = np.array(outputval_2023)
     outputval_2023 = ml_param.transform_target(outputval_orig_2023)
     inputvals_2023 = inputvals_2023[:, keptvars]
 varnames = varnames[keptvars]
 coarse_timerange = coarse_timerange[vars_touse]
+
+print(np.where(np.isnan(inputvals))[0][::3][0:100])
+print(len(np.where(np.isnan(inputvals))[1])/3)
+print(np.where(np.isnan(inputvals))[1][:100])
+print(varnames)
+print(varnames[138],varnames[150],varnames[162],)
 
 id_idx = np.array(id_idx)[select]
 ididx_unique, ididx_pointer2unique = np.unique(id_idx, return_inverse=True) #needed because there are compositions that are totally skipped
