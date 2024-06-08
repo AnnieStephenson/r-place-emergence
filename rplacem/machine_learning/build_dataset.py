@@ -24,22 +24,22 @@ def variables_from_cpstat(cps):
                  (cps.instability_norm[0],              0, 0, 0),
                  (cps.instability_norm[3],              0, 0, 0),#
                  (cps.variance2,                        0, 0, 0),
-                 #(cps.variance_multinom,                0, 0, 0),#n
-                 #(cps.variance_subdom,                  0, 0, 0),#n
-                 #(cps.variance_from_frac_pixdiff_inst,  0, 0, 0),#n
+                 (cps.variance_multinom,                0, 0, 0),#n
+                 (cps.variance_subdom,                  0, 0, 0),#n
+                 (cps.variance_from_frac_pixdiff_inst,  0, 0, 0),#n
                  (cps.runnerup_timeratio[0],            0, 0, 0),#
                  (cps.runnerup_timeratio[3],            0, 0, 0),
                  (cps.n_used_colors[0],                 0, 0, 0),
                  (cps.n_used_colors[3],                 0, 1, 0),
-                 #(cps.autocorr_bycase,                  1, 0, 0),  # the difference is taken instead of the ratio for autocorrelation
-                 #(cps.autocorr_bycase_norm,             1, 0, 0),# # the difference is taken instead of the ratio for autocorrelation
-                 #(cps.autocorr_multinom,                0, 0, 0),#n
-                 #(cps.autocorr_subdom,                  0, 0, 0),#n
-                 #(cps.autocorr_dissimil,                0, 0, 0),#n
-                 (cps.cumul_attack_timefrac,            0, 1, 0),
+                 (cps.autocorr_bycase,                  1, 0, 0),#  # the difference is taken instead of the ratio for autocorrelation
+                 (cps.autocorr_bycase_norm,             1, 0, 0),# # the difference is taken instead of the ratio for autocorrelation
+                 (cps.autocorr_multinom,                0, 0, 0),#n
+                 (cps.autocorr_subdom,                  0, 0, 0),#n
+                 (cps.autocorr_dissimil,                0, 0, 0),#n
+                 (cps.cumul_attack_timefrac,            0, 1, 0),#
                  (cps.returntime[0],                    0, 1, 0),
                  (cps.returntime[3],                    0, 1, 0),
-                 #(cps.returnrate,                       0, 0, 0),#n
+                 (cps.returnrate,                       0, 0, 0),#n
                  (cps.n_users_sw_norm,                  0, 1, 0),
                  (cps.changes_per_user_sw,              0, 1, 0),
                  (cps.frac_users_new_vs_sw,             0, 0, 0),
@@ -49,8 +49,8 @@ def variables_from_cpstat(cps):
                  (cps.variance2,                        0, 0, 1),#
                  (cps.returntime[0],                    0, 0, 1),#
                  (cps.instability_norm[0],              0, 0, 1),#
-                 #(cps.autocorr_bycase,                  0, 0, 1),#
-                 #(cps.autocorr_bycase_norm,             0, 0, 1),#
+                 (cps.autocorr_bycase,                  0, 0, 1),#
+                 (cps.autocorr_bycase_norm,             0, 0, 1),#
                 ]
     
     vars = np.array([v[0] for v in vars_full])
@@ -77,14 +77,10 @@ def get_vals_from_var(v, tidx, coarse=False):
     '''
     n_times = n_traintimes_coarse if coarse else n_traintimes
     vals = np.empty(n_times, dtype=np.float64)
+    v = np.nan_to_num(v) ####### TODO To be removed when using updated cpart stats
 
     for i in range(0, n_times):
-        #print('tidx',tidx)
         inds = tidx + (watch_timeindrange_coarse if coarse else watch_timeindrange)[i]
-        #print(inds.size)
-        #print(inds)
-        #print(v.size)
-        #print(v)
         vals[i] = np.mean(v[inds])
     return vals
 
@@ -285,7 +281,6 @@ n_cpstatvars = np.count_nonzero(coarse_timerange == 0)
 n_cpstatvars_coarse = np.count_nonzero(coarse_timerange == 1)
 n_trainingvars = n_cpstatvars * n_traintimes + n_cpstatvars_coarse * n_traintimes_coarse
 
-
 ncompmax = 14222 if var.year == 2022 else 6720
 nevents_max = 4000000 # hard-coded (conservative) !!
 inputvals = np.full((nevents_max, n_trainingvars), -1, dtype=np.float32)
@@ -300,7 +295,8 @@ i_event = -1
 n_keptcomps = 0
 
 period = 1000
-for p in range(0, math.ceil(ncompmax/period)):
+istart = 0 
+for p in range(istart, math.ceil(ncompmax/period)):
     
     # grab canvas_part_statistics object
     with open(file_path, 'rb') as f:
@@ -312,12 +308,12 @@ for p in range(0, math.ceil(ncompmax/period)):
     for icps_tmp, cps in enumerate(cpstats):
         icps = icps_tmp + p*period
         print('cpstat #', icps, ' id ',cps.id, ' area ', cps.area)
-        #if icps<340:
+        #if icps<252:
         #    continue
         id_dict[icps] = cps.id
         cps.stable_borders_timeranges[:, 0] = np.maximum(cps.stable_borders_timeranges[:, 0], cps.tmin)
 
-        #cps.fill_timeseries_info()
+        cps.fill_timeseries_info()
         # all variables from this cpstat
         allvars = variables_from_cpstat(cps)
         trans_starttimes = tran.transition_start_time_simple(cps)
@@ -329,7 +325,7 @@ for p in range(0, math.ceil(ncompmax/period)):
         reject_times = np.array(reject_times)
 
         # enter names for all training variables
-        if icps == 0: 
+        if icps == istart: 
             for (coarse, v) in zip(allvars[2], allvars[0]):
                 timeidx = watch_timeidx_coarse if coarse else watch_timeidx
                 n_times = n_traintimes_coarse if coarse else n_traintimes
@@ -337,16 +333,9 @@ for p in range(0, math.ceil(ncompmax/period)):
                     varnames.append(v.label + '_t' + 
                                     ((str(timeidx[i]) + str(timeidx[i+1]-1)) if (i < n_times-1) else '-0-0'))
 
-        # correct a bug
-        #print(len(allvars[0]), len(varnames))
-        #for iv in range(len(varnames)):
-        #    if varnames[iv][0:6] == 'autoco':
-        #        print(np.where(allvars[0][iv].val > 1e1))
-        #        allvars[0][iv].val[np.where(allvars[0][iv].val > 1e1)[0], iv] = 0
 
         i_event_thiscomp = 0
         for it, t in enumerate(cps.t_lims):
-            #print(it,t)
             if keep_in_sample(cps, it, t, trans_starttimes, reject_times):
                 i_event += 1
                 i_event_thiscomp += 1
@@ -356,7 +345,6 @@ for p in range(0, math.ceil(ncompmax/period)):
 
                 vars_thistime = []
                 for kendall, coarse, ratio_to_av, v in zip(allvars[3], allvars[2], allvars[1], allvars[0]):
-                    #print(i_event, kendall, coarse, ratio_to_av)
                     vals = get_vals_from_var(v.kendall_tau if kendall else v.ratio_to_sw_mean if ratio_to_av else v.val, it, coarse)
                     vars_thistime.extend(vals)
                 # input variables
@@ -365,14 +353,10 @@ for p in range(0, math.ceil(ncompmax/period)):
                 # earliness output
                 outputval[i_event] = get_earliness(cps, t, trans_starttimes)
 
-                if cps.id == '3':
-                    print(t, outputval[i_event]) 
-
                 # time of this recorded event
                 eventtime[i_event] = t
-                #print(icps, it, t, outputval[-1], cps.frac_pixdiff_inst_vs_swref.val[it], cps.frac_pixdiff_inst_vs_swref_forwardlook.val[it], inputvals[-1][0:7] )
                 id_idx[i_event] = icps
-        
+                
         if i_event_thiscomp > 0:
             n_keptcomps += 1    
         print("Added",i_event_thiscomp,"timesteps from this compo. Now there are ",i_event,"events")
