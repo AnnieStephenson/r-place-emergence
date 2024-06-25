@@ -2,12 +2,12 @@ import numpy as np
 import zlib
 import math
 from hilbertcurve.hilbertcurve import HilbertCurve
-#from numba import jit
-#import sweetsourcod
-#from sweetsourcod.lempel_ziv import lempel_ziv_complexity
-#from sweetsourcod.hilbert import get_hilbert_mask
-#from sweetsourcod.zipper_compress import get_comp_size_bytes
-#from sweetsourcod.block_entropy import block_entropy
+from numba import jit
+import sweetsourcod
+from sweetsourcod.lempel_ziv import lempel_ziv_complexity
+from sweetsourcod.hilbert import get_hilbert_mask
+from sweetsourcod.zipper_compress import get_comp_size_bytes
+from sweetsourcod.block_entropy import block_entropy
 
 
 def calc_size(pixels):
@@ -146,11 +146,11 @@ def calc_Q_delta_vst(canvas_part_stat, flattening='hilbert_sweetsourcod', compre
 # https://github.com/martiniani-lab/sweetsourcod/blob/master/examples/simple.py
 # which is an example file from the sweetsourcod package developed by Stefano Martiniani et al.
 ###############################################################################################
-'''
+
 @jit(nopython=True)
 def mask_array(lattice, mask):
     return np.array([lattice[i] for i in mask])
-'''
+
 
 def _get_entropy_rate(c, nsites, norm=1, alphabetsize=2, method='lz77'):
     """
