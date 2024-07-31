@@ -6,6 +6,7 @@ from rplacem import var as var
 import pickle
 from rplacem import utilities as util
 import scipy
+import matplotlib.pyplot as plt
 
 
 # GLOBAL
@@ -34,8 +35,9 @@ def get_all_pixel_changes_mc(data_file=var.FULL_DATA_FILE,
     pixel_changes_all : numpy structured array
             Contains all of the pixel change data from the entire dataset
     '''
+ 
     pixel_changes_all_npz = np.load(os.path.join(var.DATA_PATH, data_file))
-
+  
     # save pixel changes as a structured array
     pixel_changes_all = np.zeros(len(pixel_changes_all_npz['seconds']),
                                  dtype=np.dtype([('seconds', np.float64),
@@ -49,7 +51,7 @@ def get_all_pixel_changes_mc(data_file=var.FULL_DATA_FILE,
     pixel_changes_all['seconds'] = np.array(pixel_changes_all_npz['seconds'])
     pixel_changes_all['xcoor'] = np.array(pixel_changes_all_npz['pixelXpos'])
     pixel_changes_all['ycoor'] = np.array(pixel_changes_all_npz['pixelYpos'])
-
+    
     if random_pos:
         x_min = np.min(pixel_changes_all['xcoor'])
         y_min = np.min(pixel_changes_all['ycoor'])
@@ -116,7 +118,7 @@ def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl'):
     data_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..' ,'data', map_name)
     files = os.listdir(data_path)
     if map_name in files:
-        data_map = np.load(os.path.join(data_file_path), map_name, allow_pickle=True)
+        #data_map = np.load(os.path.join(data_file_path), map_name, allow_pickle=True)
         with open(data_file_path , 'rb') as f:
             data_map = pickle.load(f)
         comp_pix_tm_map = data_map['comp_pix_tm_map']
@@ -138,7 +140,8 @@ def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl'):
             times_uniq = np.concatenate((times_uniq, np.unique(comp_coords_times)))
         times_uniq = np.unique(times_uniq)
 
-        comp_pix_tm_map = -1*np.ones((2000, 2000, len(times_uniq)))
+        num_overlaps = 2
+        comp_pix_tm_map = -1*np.ones((2000, 2000, len(times_uniq), num_overlaps), dtype=np.int16)
         veclen = np.vectorize(len)
         large_neg_num = -1000000
         n_comps = len(canvas_comp_list)
@@ -149,6 +152,7 @@ def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl'):
             # Get the start and end time for this time step of the map
             tstart = times_uniq[j]
             tend = times_uniq[j + 1]
+            
             for i in range(0, n_comps):
                 # Get the array of coords for each composition: shape (n_coords)
                 comp_coords = canvas_comp_list[i].coords 
@@ -189,11 +193,25 @@ def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl'):
                 # Set the pixel coordinate in the map to the composition number
                 # This will overwrite if the pixel is already taken by a previous composition
                 # It will use the last composition in the loop as the composition, which is arbitrary
-                # TODO add another dimension of map to account for overlaps 
-                comp_pix_tm_map[coords_to_set_to_i[0, :], coords_to_set_to_i[1, :], j] = i
+
+                # TODO 
+                # add another dimension of map to account for overlaps 
+                # for now, just account for overlap of 2 compositions; this should capture most cases. 
+                # if any values indexed using the line below are not -1, then there is an overlap (use np.isin?)
+                # so fill the second dimension of the map with the second composition number. 
+                # if there is a third overlap, then the second dimension will be overwritten.
+                if np.all(comp_pix_tm_map[coords_to_set_to_i[0, :], coords_to_set_to_i[1, :], j, 0]==-1):
+                    comp_pix_tm_map[coords_to_set_to_i[0, :], coords_to_set_to_i[1, :], j, 0] = i
+                else:
+                    comp_pix_tm_map[coords_to_set_to_i[0, :], coords_to_set_to_i[1, :], j, 1] = i
             # find where the map is still -1
-            coords_no_comp_x, coords_no_comp_y = np.where(comp_pix_tm_map[:, :, j] == -1)
+            coords_no_comp_x, coords_no_comp_y = np.where(comp_pix_tm_map[:, :, j, 0] == -1)
             coords_comp_time_dict[(-1, j)] = np.vstack((coords_no_comp_x, coords_no_comp_y))
+
+            coords_no_comp_x, coords_no_comp_y = np.where(comp_pix_tm_map[:, :, j, 1] == -1)
+            # note that we use -2 to designate where there is a minus one on the map in the overlap dimension
+            # not the most elegant solution, but it works for now
+            coords_comp_time_dict[(-2, j)] = np.vstack((coords_no_comp_x, coords_no_comp_y))
 
     to_save = {'comp_pix_tm_map': comp_pix_tm_map, 'times_uniq': times_uniq, 'coords_comp_time_dict': coords_comp_time_dict}
     with open(data_file_path, 'wb') as f:
@@ -390,7 +408,7 @@ def calc_coords_loyalty(pixel_changes_all, comp_pix_tm_map, times_uniq, coords_c
     return pixel_changes_loyalty
 
 
-def calc_coords_area(pixel_changes_all, comp_pix_tm_map, times_uniq):
+def calc_coords_area(pixel_changes_all, comp_pix_tm_map, times_uniq, exp=1):
     '''
     Gets the pixel changes assuming that each pixel probability is weighted
     by the area of the composition that contains it
@@ -403,6 +421,7 @@ def calc_coords_area(pixel_changes_all, comp_pix_tm_map, times_uniq):
         counts = np.bincount(comp_pix_tm_map[:, :, i].flatten().astype('int') + 1)
         prob[:,i] = counts[comp_pix_tm_map[:, :, i].flatten().astype('int') + 1]
         prob[prob[:,i] == counts[0]] = 0
+        prob[:,i] = prob[:,i]**exp
         tstart = times_uniq[i]
         tend = times_uniq[i + 1]
         t_inds = np.where((pixel_changes_all['seconds'] >= tstart) & (pixel_changes_all['seconds'] < tend))[0]
@@ -419,7 +438,78 @@ def calc_coords_area(pixel_changes_all, comp_pix_tm_map, times_uniq):
         pixel_changes_area['ycoor'][t_inds] = samp_coords_y
     return pixel_changes_area
 
-def get_all_pixel_changes_mc():
+def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq, coords_comp_time_dict):
+    num_overlaps = 2
+    prob = np.zeros((tot_pix, len(times_uniq), num_overlaps))
+    coords_flat = np.arange(0, tot_pix)
+    pixel_changes_perim = pixel_changes_all.copy()
+
+    for t in range(len(times_uniq)-1):
+        print('\n')
+        print('t: ' + str(t))
+        i=0
+        for k in range(num_overlaps): # overlap dimension
+            if t>0:
+                diff = comp_pix_tm_map[:,:,t-1, k] - comp_pix_tm_map[:,:,t, k]
+                indsx, indsy  = np.where(diff!=0)
+                c_ints = np.unique(comp_pix_tm_map[indsx, indsy, t, k])
+                prob[:, t, k] = np.copy(prob[:, t-1, k]) 
+            else:
+                c_ints = np.unique(comp_pix_tm_map[:,:,t, k])
+            for c in c_ints:
+                #print('c num: ' + str(i))
+                if c == -1:
+                    coords_x, coords_y = coords_comp_time_dict[(c-k,t)]
+                    coords_comb = coords_y.astype('int64') + coords_x.astype('int64')*(x_max_q1234 + 1)
+                    prob[coords_comb, t, k] = 0
+                else:
+                    coords_x, coords_y = coords_comp_time_dict[(c,t)]
+                    coords_comb = coords_y.astype('int64') + coords_x.astype('int64')*(x_max_q1234 + 1)
+                    mask = (comp_pix_tm_map[:,:,t,k] == c)
+                    eroded_mask = scipy.ndimage.binary_erosion(mask)
+                    perimeter_mask = mask & ~eroded_mask
+                    perimeter_count = np.sum(perimeter_mask)
+                    #if c==5604:# or (c==13272)  
+                    #    print('t: ' + str(t))
+                    #    print('c int: ' + str(c))
+                    #    print('perim: ' + str(perimeter_count))
+                    #    print('area: ' + str(np.sum(mask)))
+                    #    print('area alt: ' + str(len(coords_x)))
+                    #    coords_comb_osu = np.copy(coords_comb)
+                    #    plt.figure()
+                    #    plt.title('t: ' + str(t) + ' c: ' + str(c) + ' area: ' + str(np.sum(mask)))
+                    #    plt.imshow(mask)
+                    #    plt.figure()
+                    #    plt.title('t: ' + str(t) + ' c: ' + str(c) + ' perim: ' + str(perimeter_count))
+                    #    plt.imshow(perimeter_mask)
+                    prob[coords_comb, t, k] = perimeter_count
+                    
+                i += 1
+                
+        tstart = times_uniq[t]
+        tend = times_uniq[t + 1]
+        t_inds = np.where((pixel_changes_all['seconds'] >= tstart) & (pixel_changes_all['seconds'] < tend))[0]
+        #plt.figure()
+        #plt.semilogx(prob[:, t, 0]/np.sum(prob[:, t, 0]),alpha=0.4)
+        #plt.plot(prob[:, t, 1]/np.sum(prob[:, t, 1]),alpha=0.4)
+        #prob_sum_ov = np.sum(prob[:, t, :], axis=1)
+        #print('prob osu k0: ' +str(prob[coords_comb_osu,t,0]))
+        #print('prob osu k1: ' +str(prob[coords_comb_osu,t,1]))
+        #print('prob osu: ' +str(prob_sum_ov[coords_comb_osu]))
+        #plt.plot(prob_sum_ov/np.sum(prob_sum_ov),alpha=0.4)
+        samp_coord_inds = np.random.choice(coords_flat, size = len(t_inds), p = prob_sum_ov/np.sum(prob_sum_ov))
+        
+        # translate the coords back to x and y
+        samp_coords_x = samp_coord_inds // (x_max_q1234 + 1) 
+        samp_coords_y = samp_coord_inds % (y_max_q1234 + 1) 
+
+        # set the new sampled x and y coords
+        pixel_changes_perim['xcoor'][t_inds] = samp_coords_x
+        pixel_changes_perim['ycoor'][t_inds] = samp_coords_y
+
+    return pixel_changes_perim
+
+#def get_all_pixel_changes_mc():
     '''
     Calls the previous 3 functions
     Takes a model_type as input to pass to calc_prob_pix_time()

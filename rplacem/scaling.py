@@ -22,14 +22,17 @@ def plot_loglog_fit(x_data_unfilt,
                     x_data_filter_min=0,
                     y_data_filter_min=0,
                     z_data_filter_min=0,
+                    cmap='viridis',
                     x_data_filter_max=None,
                     y_data_filter_max=None,
                     data_color=[0.3, 0.3, 0.3],
                     line_color=[0, 0, 0],
                     markersize=2,
+                    markersize_bin=4,
                     alpha_data=0.15,
                     alpha_line=0.7,
                     alpha_error=0.3,
+                    elinewidth=0,
                     linewidth=2.5,
                     nbins=None,
                     bin_type='average', # 'average'
@@ -64,13 +67,11 @@ def plot_loglog_fit(x_data_unfilt,
         z_data_unfilt = np.array(z_data_unfilt)
 
     # filter
-    x_data = x_data_unfilt[(x_data_unfilt > x_data_filter_min) & (
-        y_data_unfilt > y_data_filter_min)]
-    y_data = y_data_unfilt[(x_data_unfilt > x_data_filter_min) & (
-        y_data_unfilt > y_data_filter_min)]
+    x_data = x_data_unfilt[(x_data_unfilt > x_data_filter_min) & (y_data_unfilt > y_data_filter_min)]
+    y_data = y_data_unfilt[(x_data_unfilt > x_data_filter_min) & (y_data_unfilt > y_data_filter_min)]
     if z_data_unfilt is not None:
         # [(z_data_unfilt > z_data_filter_min) & (z_data_unfilt > z_data_filter_min)]
-        z_data = z_data_unfilt
+        z_data = z_data_unfilt[(x_data_unfilt > x_data_filter_min) & (y_data_unfilt > y_data_filter_min)]
 
     if y_data_filter_max is not None:
         x_data = x_data[y_data < y_data_filter_max]
@@ -109,7 +110,7 @@ def plot_loglog_fit(x_data_unfilt,
             x_data,
             y_data,
             c=np.log10(z_data),
-            cmap="viridis",
+            cmap=cmap,
             s=markersize,
             alpha=alpha_data,
         )
@@ -133,9 +134,9 @@ def plot_loglog_fit(x_data_unfilt,
     log_x_data, log_y_data, log_x_sem, log_y_sem = handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=max_bin_size)
     
     if plot_bin_data:
-        plt.plot(10**log_x_data, 10**log_y_data, '.', color=line_color)
+        plt.plot(10**log_x_data, 10**log_y_data, '.', color=line_color, markersize = markersize_bin)
         plt.errorbar(10**log_x_data, 10**log_y_data, yerr=10**(2*log_y_sem), #xerr=10**log_x_sem,
-                     ecolor=line_color, elinewidth=1,
+                     ecolor=line_color, elinewidth=elinewidth, 
                      capsize=0, linewidth=0)
 
     if fit_type=='bilinear':
@@ -220,9 +221,10 @@ def plot_loglog_fit(x_data_unfilt,
             conf_intervals.append((param - ci_width, param + ci_width))
         slope_conf = conf_intervals[0]
         intercept_conf = conf_intervals[1]
-
+    print('\n')
     print('Fit parameters and roughly estimateed confidence intervals: ')
     print("intercept: " + str(intercept) + ', conf. interval: ' + str(intercept_conf))
+    print("scaling: " + str(10**intercept))
     print("exponent: " + str(slope) + ', conf. interval: ' + str(slope_conf))
 
     x_line_data = np.linspace(np.log10(np.min(x_data)), np.log10(np.max(x_data)), num=500)
@@ -347,69 +349,6 @@ def handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10)
         result = [y_log_values_clip, x_log_values_clip, y_log_sem_vals, x_log_sem_vals]
 
     return result
-
-
-def calc_min_max_entropy(compression="LZ77",
-                         flattening="ravel",
-                         num_iter=10,
-                         len_max=370):
-    """
-    Calculate the min and max entropy for 16 and 32 colors
-    """
-    # define array sequences for each length, using 16, 32, or all black
-    squares = np.arange(1, len_max)**2
-    entropy_16 = np.zeros(len(squares))
-    entropy_32 = np.zeros(len(squares))
-
-    for i in range(0, len(squares)):
-        sq_len = squares[i]
-
-        flat_black = np.zeros(sq_len)
-        flat_black = flat_black.reshape(int(np.sqrt(sq_len)),
-                                        int(np.sqrt(sq_len)))
-
-        entropy_16_range = np.zeros(num_iter)
-        entropy_32_range = np.zeros(num_iter)
-        # entropy_black_range = np.zeros(num_iter)
-
-        for j in range(num_iter):
-            rand_flat_16 = np.random.choice(16, size=sq_len)
-            rand_flat_16 = rand_flat_16.reshape(int(np.sqrt(sq_len)),
-                                                int(np.sqrt(sq_len)))
-            len_comp = ent.calc_compressed_size(rand_flat_16,
-                                                flattening=flattening,
-                                                compression=compression)
-            entropy_16_range[j] = len_comp / sq_len
-
-            rand_flat_32 = np.random.choice(32, size=sq_len)
-            rand_flat_32 = rand_flat_32.reshape(int(np.sqrt(sq_len)),
-                                                int(np.sqrt(sq_len)))
-            len_comp = ent.calc_compressed_size(rand_flat_32,
-                                                flattening=flattening,
-                                                compression=compression)
-            entropy_32_range[j] = len_comp / sq_len
-
-            # len_comp = ent.calc_compressed_size(flat_black, flattening=flattening, compression=compression)
-            # entropy_black_range[j] = len_comp/sq_len
-
-        entropy_16[i] = np.mean(entropy_16_range)
-        entropy_32[i] = np.mean(entropy_32_range)
-
-    f_entropy_min = scipy.interpolate.interp1d(squares,
-                                               1 / squares,
-                                               kind="linear")
-    f_entropy_max_16 = scipy.interpolate.interp1d(squares,
-                                                  entropy_16,
-                                                  kind="linear")
-    f_entropy_max_32 = scipy.interpolate.interp1d(squares,
-                                                  entropy_32,
-                                                  kind="linear")
-    # entropy_black[i] = np.mean(entropy_black_range)
-    # flat_white = np.ones(sq_len, dtype='int32')
-    # flat_white = flat_white.reshape(int(np.sqrt(sq_len)), int(np.sqrt(sq_len)))
-    # len_comp = ent.calc_compressed_size(flat_white, flattening=flattening, compression=compression)
-    # entropy_white[i] = len_comp/sq_len
-    return f_entropy_min, f_entropy_max_16, f_entropy_max_32
 
 
 def calc_user_attn(canvas_comp):
@@ -538,6 +477,8 @@ def get_comp_scaling_data(
     with open(canvas_parts_stats_file, "rb") as file:
         canvas_part_stats_list = pickle.load(file)
 
+    print(len(canvas_comp_list))
+    print(len(canvas_part_stats_list))
     atlas, atlas_size = util.load_atlas()
 
     names = []
@@ -569,6 +510,7 @@ def get_comp_scaling_data(
 
     instab = []
     streamer = []
+    flag = []
     alliance = []
     tmin = []
     tmax = []
@@ -599,11 +541,15 @@ def get_comp_scaling_data(
         print(i)
 
         cpart_stat = canvas_part_stats_list[i]
-        canvas_comp = canvas_comp_list[i]
+        #canvas_comp = canvas_comp_list[i]
 
-        def_ch = np.sum(cpart_stat.n_defense_changes.val)
+        if cpart_stat.n_defense_changes.val is None:
+            def_ch = 0
+            def_ch_st =0
+        else:
+            def_ch = np.sum(cpart_stat.n_defense_changes.val)
+            def_ch_st = np.sum(cpart_stat.n_defense_changes.val[0:start_t_ind])
         att_ch = np.sum(cpart_stat.n_changes.val) - def_ch
-        def_ch_st = np.sum(cpart_stat.n_defense_changes.val[0:start_t_ind])
         att_ch_st = np.sum(cpart_stat.n_changes.val[0:start_t_ind]) - def_ch_st
 
         in_ch = np.sum(cpart_stat.n_ingroup_changes.val)
@@ -611,28 +557,32 @@ def get_comp_scaling_data(
         in_ch_st = np.sum(cpart_stat.n_ingroup_changes.val[0:start_t_ind])
         out_ch_st = np.sum(cpart_stat.n_changes.val[0:start_t_ind]) - in_ch_st
 
-        if len(canvas_comp.info.links
-               ) != 0 and "subreddit" in canvas_comp.info.links:
-            subreddit.append(canvas_comp.info.links["subreddit"])
+        if len(cpart_stat.info.links
+               ) != 0 and "subreddit" in cpart_stat.info.links:
+            subreddit.append(cpart_stat.info.links["subreddit"])
         else:
             subreddit.append("NA")
 
+        flag_flag = 0
+        if ("flat" in cpart_stat.info.description):
+            flag_flag = 1
+
         streamer_flag = 0
-        if ("streamer" in canvas_comp.info.description) or (
-                "stream" in canvas_comp.info.description):
+        if ("streamer" in cpart_stat.info.description) or (
+                "stream" in cpart_stat.info.description):
             streamer_flag = 1
 
         alliance_flag = 0
-        if (("alliance" in canvas_comp.info.description)
-                or ("ally" in canvas_comp.info.description)
-                or ("allies" in canvas_comp.info.description)):
+        if (("alliance" in cpart_stat.info.description)
+                or ("ally" in cpart_stat.info.description)
+                or ("allies" in cpart_stat.info.description)):
             alliance_flag = 1
-        elif subreddit[-1] != "NA" and (("Alliance" in canvas_comp.info.links)
-                                        or ("ally" in canvas_comp.info.links)):
+        elif subreddit[-1] != "NA" and (("Alliance" in cpart_stat.info.links)
+                                        or ("ally" in cpart_stat.info.links)):
             alliance_flag = 1
 
         # dist_total, dist_mean, dist_central_mean, delta_t, speed_ave = calc_user_distance(canvas_comp)
-        mean_attn, med_attn, pix_norm_attn = calc_user_attn(canvas_comp)
+        #mean_attn, med_attn, pix_norm_attn = calc_user_attn(canvas_comp)
 
         recovery_time_black, start_t_black, end_t_black = calc_recovery_time(
             cpart_stat, cpart_stat.frac_black_px.val,
@@ -649,11 +599,12 @@ def get_comp_scaling_data(
         end_purple.append(end_t_purple)
         recovery_purple.append(recovery_time_purple)
         recovery_black.append(recovery_time_black)
-        names.append(canvas_comp.info.atlasname)
+        names.append(cpart_stat.info.atlasname)
         streamer.append(streamer_flag)
+        flag.append(flag_flag)
         alliance.append(alliance_flag)
         n_users_total.append(np.sum(cpart_stat.n_users_total))
-        size_pixels.append(canvas_comp.num_pix())
+        size_pixels.append(cpart_stat.area)
 
         n_defense_changes.append(def_ch)
         n_attack_changes.append(att_ch)
@@ -662,9 +613,14 @@ def get_comp_scaling_data(
         n_defenseonly_users.append(cpart_stat.n_defenseonly_users_lifetime)
         n_attackonly_users.append(cpart_stat.n_attackonly_users_lifetime)
         n_bothattdef_users.append(cpart_stat.n_bothattdef_users_lifetime)
-        n_defenseonly_users_start.append(np.mean(cpart_stat.n_defenseonly_users.val[1:start_t_ind]))
-        n_attackonly_users_start.append(np.mean(cpart_stat.n_attackonly_users.val[1:start_t_ind]))
-        n_bothattdef_users_start.append(np.mean(cpart_stat.n_bothattdef_users.val[1:6]))
+        if cpart_stat.n_defenseonly_users.val is None:
+            n_defenseonly_users_start.append(0)
+            n_attackonly_users_start.append(0)
+            n_bothattdef_users_start.append(0)
+        else:
+            n_defenseonly_users_start.append(np.mean(cpart_stat.n_defenseonly_users.val[1:start_t_ind]))
+            n_attackonly_users_start.append(np.mean(cpart_stat.n_attackonly_users.val[1:start_t_ind]))
+            n_bothattdef_users_start.append(np.mean(cpart_stat.n_bothattdef_users.val[1:6]))
 
         n_ingroup_changes.append(in_ch)
         n_outgroup_changes.append(out_ch)
@@ -679,18 +635,18 @@ def get_comp_scaling_data(
 
         tmin.append(cpart_stat.tmin)
         tmax.append(cpart_stat.tmax)
-        tmin_quad.append(canvas_comp.tmin_quadrant())
+        #tmin_quad.append(canvas_comp.tmin_quadrant())
         stability.append(cpart_stat.stability[0].val)  # may be an array
-        instab.append(np.mean(
-            cpart_stat.instability_norm[0].val))  # may be an array
-        compressed_size.append(np.mean(
-            cpart_stat.size_compressed.val))  # may be an array
+        instab.append(np.mean(cpart_stat.instability_norm[0].val))  # may be an array
+        if cpart_stat.size_compressed.val is None:
+            compressed_size.append(0)
+        else:
+            compressed_size.append(np.mean(cpart_stat.size_compressed.val))  # may be an array
         entropy.append(np.mean(cpart_stat.entropy.val))  # may be an array
-        fractal_dim.append(np.mean(
-            cpart_stat.fractal_dim_weighted.val))  # may be an array
-        mean_attns.append(mean_attn)
-        med_attns.append(med_attn)
-        pix_norm_attns.append(pix_norm_attn)
+        fractal_dim.append(np.mean(cpart_stat.fractal_dim_weighted.val))  # may be an array
+        #mean_attns.append(mean_attn)
+        #med_attns.append(med_attn)
+        #pix_norm_attns.append(pix_norm_attn)
         # dist_totals.append(dist_total)
         # dist_means.append(dist_mean)
         # dist_central_means.append(dist_central_mean)
@@ -726,22 +682,24 @@ def get_comp_scaling_data(
 
         "Instability": instab,
         "Streamer": streamer,
+        "Flag": flag,
         "Alliance": alliance,
         "Start time (s)": tmin,
         "End time (s)": tmax,
-        "Start time quadrant (s)": tmin_quad,
+        #"Start time quadrant (s)": tmin_quad,
         "Stability": stability,
         "Compressed size": compressed_size,
         "Entropy": entropy,
+        "Fractal dimension": fractal_dim,
         "End time (black)": end_black,
         "End time (purple)": end_purple,
         "Start time (black)": start_black,
         "Start time (purple)": start_purple,
         "Recovery time (black)": recovery_black,
         "Recovery time (purple)": recovery_purple,
-        "Mean Attention": mean_attns,
-        "Median Attention": med_attns,
-        "Pixel Norm Attention": pix_norm_attns,
+        #"Mean Attention": mean_attns,
+        #"Median Attention": med_attns,
+        #"Pixel Norm Attention": pix_norm_attns,
     }
 
     df = pd.DataFrame(data)

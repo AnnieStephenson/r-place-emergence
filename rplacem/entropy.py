@@ -8,6 +8,10 @@ from sweetsourcod.lempel_ziv import lempel_ziv_complexity
 from sweetsourcod.hilbert import get_hilbert_mask
 from sweetsourcod.zipper_compress import get_comp_size_bytes
 from sweetsourcod.block_entropy import block_entropy
+import scipy
+from rplacem import var as var
+import os
+import pickle
 
 
 def calc_size(pixels):
@@ -73,6 +77,123 @@ def calc_compressed_size(pixels, flattening='hilbert_sweetsourcod', compression=
         len_compressed = len(compressed_data)
 
     return len_compressed
+
+def normalize_entropy(entropy, area, time, 
+                      compression="LZ77", flattening="ravel", num_iter=10, len_max=370):
+    '''
+    Normalize the entropy
+    '''
+    (f_entropy_min, 
+    f_entropy_max_16, 
+    f_entropy_max_24, 
+    f_entropy_max_32) = calc_min_max_entropy(compression=compression, 
+                                             flattening=flattening,
+                                             num_iter=num_iter,
+                                             len_max=len_max)
+    
+    if time >= var.TIME_16COLORS and time < var.TIME_24COLORS:
+        entropy_norm = (entropy - f_entropy_min(area)) / (f_entropy_max_16(area) - f_entropy_min(area))
+    elif time >= var.TIME_24COLORS and time < var.TIME_32COLORS:
+        entropy_norm = (entropy - f_entropy_min(area)) / (f_entropy_max_24(area) - f_entropy_min(area))
+    elif time >= var.TIME_32COLORS:
+        entropy_norm = (entropy - f_entropy_min(area)) / (f_entropy_max_32(area) - f_entropy_min(area))
+
+    return entropy_norm
+
+def calc_min_max_entropy(compression="LZ77",
+                         flattening="ravel",
+                         num_iter=10,
+                         len_max=370):
+    """
+    Calculate the min and max entropy for 16, 24, and 32 colors
+    if the functions are already saved in a pickle file, load them
+    """
+    files = os.listdir(var.DATA_PATH)
+    if 'entropy_min_max.pkl' in files:
+        with open(os.path.join(var.DATA_PATH, 'entropy_min_max.pkl'), 'rb') as f:
+            f_entropy_min = pickle.load(f)
+            f_entropy_max_16 = pickle.load(f)
+            f_entropy_max_24 = pickle.load(f)
+            f_entropy_max_32 = pickle.load(f)
+    
+    else:
+        # define array sequences for each length, using 16, 32, or all black
+        squares = np.arange(1, len_max)**2
+        entropy_16 = np.zeros(len(squares))
+        entropy_24 = np.zeros(len(squares))
+        entropy_32 = np.zeros(len(squares))
+
+        for i in range(0, len(squares)):
+            sq_len = squares[i]
+
+            flat_black = np.zeros(sq_len)
+            flat_black = flat_black.reshape(int(np.sqrt(sq_len)),
+                                            int(np.sqrt(sq_len)))
+
+            entropy_16_range = np.zeros(num_iter)
+            entropy_24_range = np.zeros(num_iter)
+            entropy_32_range = np.zeros(num_iter)
+            # entropy_black_range = np.zeros(num_iter)
+
+            for j in range(num_iter):
+                rand_flat_16 = np.random.choice(16, size=sq_len)
+                rand_flat_16 = rand_flat_16.reshape(int(np.sqrt(sq_len)),
+                                                    int(np.sqrt(sq_len)))
+                len_comp = calc_compressed_size(rand_flat_16,
+                                                    flattening=flattening,
+                                                    compression=compression)
+                entropy_16_range[j] = len_comp / sq_len
+
+
+                rand_flat_24 = np.random.choice(24, size=sq_len)
+                rand_flat_24 = rand_flat_24.reshape(int(np.sqrt(sq_len)),
+                                                    int(np.sqrt(sq_len)))
+                len_comp = calc_compressed_size(rand_flat_24,
+                                                    flattening=flattening,
+                                                    compression=compression)
+                entropy_24_range[j] = len_comp / sq_len
+
+                rand_flat_32 = np.random.choice(32, size=sq_len)
+                rand_flat_32 = rand_flat_32.reshape(int(np.sqrt(sq_len)),
+                                                    int(np.sqrt(sq_len)))
+                len_comp = calc_compressed_size(rand_flat_32,
+                                                    flattening=flattening,
+                                                    compression=compression)
+                entropy_32_range[j] = len_comp / sq_len
+
+                # len_comp = ent.calc_compressed_size(flat_black, flattening=flattening, compression=compression)
+                # entropy_black_range[j] = len_comp/sq_len
+
+            entropy_16[i] = np.mean(entropy_16_range)
+            entropy_24[i] = np.mean(entropy_24_range)
+            entropy_32[i] = np.mean(entropy_32_range)
+
+        f_entropy_min = scipy.interpolate.interp1d(squares,
+                                                1 / squares,
+                                                kind="linear")
+        f_entropy_max_16 = scipy.interpolate.interp1d(squares,
+                                                    entropy_16,
+                                                    kind="linear")
+        f_entropy_max_24 = scipy.interpolate.interp1d(squares,
+                                                    entropy_24,
+                                                    kind="linear")
+        f_entropy_max_32 = scipy.interpolate.interp1d(squares,
+                                                    entropy_32,
+                                                    kind="linear")
+        # entropy_black[i] = np.mean(entropy_black_range)
+        # flat_white = np.ones(sq_len, dtype='int32')
+        # flat_white = flat_white.reshape(int(np.sqrt(sq_len)), int(np.sqrt(sq_len)))
+        # len_comp = ent.calc_compressed_size(flat_white, flattening=flattening, compression=compression)
+        # entropy_white[i] = len_comp/sq_lenm
+
+        # save the functions to a pickle file
+        with open(os.path.join(var.DATA_PATH, 'entropy_min_max.pkl'), 'wb') as f:
+            pickle.dump(f_entropy_min, f)
+            pickle.dump(f_entropy_max_16, f)
+            pickle.dump(f_entropy_max_24, f)
+            pickle.dump(f_entropy_max_32, f) 
+
+    return f_entropy_min, f_entropy_max_16, f_entropy_max_24, f_entropy_max_32
 
 
 def randomize(pixels):
