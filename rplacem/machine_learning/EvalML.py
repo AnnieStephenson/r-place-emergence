@@ -206,7 +206,7 @@ class EvalML:
             return a
         if addelements:
             a = np.concatenate(([begpoint], a, [endpoint]))
-        increase = (a[-2] > a[1])
+        increase = (a[-2] > a[2])
         a[0], a[-1] = (begpoint, endpoint) if increase else (endpoint, begpoint)
         return a
     
@@ -264,8 +264,8 @@ class EvalML:
             TPRtmp = self.complete_endpoints(self.TPR[self.FPR <= maxFPR], 0, TPRatMaxFPR, True)
             FPRtmp = self.complete_endpoints(self.FPR[self.FPR <= maxFPR], 0, maxFPR, True)
             if verbose:
-                print(TPRtmp, FPRtmp,  simpson(TPRtmp, FPRtmp))
-            auc = simpson(TPRtmp, FPRtmp) / maxFPR
+                print(TPRtmp, FPRtmp,  np.abs(simpson(TPRtmp, FPRtmp)))
+            auc = np.abs(simpson(TPRtmp, FPRtmp)) / maxFPR
             if maxFPR == 1:
                 self.ROCAUC = auc
         return auc if maxFPR != 1 else self.ROCAUC
@@ -280,6 +280,9 @@ class EvalML:
     def FPRatSomeTPR(self, TPRval=0.5):
         self.set_FPR()
         self.set_TPR()
+        if self.TPR[3] < self.TPR[2] and self.FPR[3] < self.FPR[2]:
+            self.TPR = self.TPR[::-1]
+            self.FPR = self.FPR[::-1]
         return np.interp(TPRval, self.TPR, self.FPR)
 
     def printResults(self):

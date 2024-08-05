@@ -34,6 +34,7 @@ class AtlasInfo(object):
                  border_path_times=np.array([[0, var.TIME_TOTAL]]),
                  border_path_orig=[[[]]],
                  border_path_times_orig=np.array([[0, var.TIME_TOTAL]]),
+                 border_path_times_orig_disjoint=np.array([[0, var.TIME_TOTAL]]),
                  description='',
                  atlasname='',
                  links=''
@@ -45,6 +46,7 @@ class AtlasInfo(object):
         self.border_path_times = np.array(border_path_times, np.float64)
         self.border_path_orig = border_path_orig
         self.border_path_times_orig = border_path_times_orig
+        self.border_path_times_orig_disjoint = border_path_times_orig_disjoint
 
         # check if path is fully inside canvas
         if self.border_path.shape[2] > 0:
@@ -662,9 +664,10 @@ class CanvasPart(object):
         for e in range(var.N_ENLARGE):
             if len(self.canvassection_coordinds[e]) > 0:
                 tmin = var.TIME_ENLARGE[e]
+                quart = e
                 break
 
-        return tmin
+        return tmin, quart
 
     def min_max_time(self, tmax_global=var.TIME_WHITEOUT):
         '''
@@ -672,10 +675,10 @@ class CanvasPart(object):
         '''
 
         if self.is_from_atlas():
-            tmin = max(np.min(self.info.border_path_times[:, 0]), self.tmin_quadrant())
+            tmin = max(np.min(self.info.border_path_times[:, 0]), self.tmin_quadrant()[0])
             tmax = min(np.max(self.info.border_path_times[:, 1]), tmax_global)
         else:
-            tmin = self.tmin_quadrant()
+            tmin = self.tmin_quadrant()[0]
             tmax = tmax_global
 
         return tmin, tmax
@@ -690,7 +693,7 @@ class CanvasPart(object):
         stab_timeranges = []
         for i in np.arange(0, len(self.info.border_path)):
             times = self.info.border_path_times[i]
-            times[0] = max(times[0], self.tmin_quadrant())
+            times[0] = max(times[0], self.tmin_quadrant()[0])
 
             if i == 0 or (not np.isclose(times[0], stab_timeranges[-1][1])):
                 stab_timeranges.append(times) # simply add this timerange if it is the first or if there is a gap with the previous timerange
@@ -868,7 +871,8 @@ def get_atlas_border(id_index=-1, id='', atlas=None, addtime_before=0, addtime_a
         # AtlasInfo with the new border_path
         atlas_info_out.append( AtlasInfo(id=str(id) + ('' if n_paths == 1 else ('_part'+str(j+1))),
                                          border_path=bp, border_path_times=bpt,
-                                         border_path_orig=vals, border_path_times_orig=times,
+                                         border_path_orig=vals, border_path_times_orig=times, 
+                                         border_path_times_orig_disjoint=np.array(paths_time[j], dtype=np.float64),
                                          description=description, atlasname=atlasname,
                                          links=links)
                               )
@@ -1078,7 +1082,7 @@ def clean_all_compositions(filepath, filepathnew):
                         d2new[k+'_2'] = d2new.pop(k)
                     d3.update(d2new)
                     return d3
-                infos_list_new[icps] = AtlasInfo(id=infos_list[icps].id+infos_list[icps2].id,
+                infos_list_new[icps] = AtlasInfo(id=infos_list[icps].id+'_'+infos_list[icps2].id,
                                                  border_path=infos_list[icps].border_path,
                                                  border_path_times=infos_list[icps].border_path_times,
                                                  border_path_orig=infos_list[icps].border_path_orig,

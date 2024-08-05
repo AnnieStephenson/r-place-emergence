@@ -79,7 +79,7 @@ def calc_compressed_size(pixels, flattening='hilbert_sweetsourcod', compression=
     return len_compressed
 
 def normalize_entropy(entropy, area, time, 
-                      compression="LZ77", flattening="ravel", num_iter=10, len_max=370):
+                      compression="LZ77", flattening="ravel", num_iter=10, len_max=1000, minmax_entropy=None):
     '''
     Normalize the entropy
     '''
