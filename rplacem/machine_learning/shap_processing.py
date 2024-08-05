@@ -45,6 +45,7 @@ def calc_results_per_comp(compoID_idx, true_times, time, predicted_times, id_dic
     meanvari_pervar_percomp = np.zeros((t_inst_lim, len(shap_varnames)))
     shap_varrank_percomp_unfilt_sig = np.zeros((t_inst_lim, len(shap_varnames)))
     shap_varrank_percomp_unfilt = np.zeros((t_inst_lim, len(shap_varnames)))
+    pred_comp_no_trans = []
 
     n_sections = np.zeros(len(thresholds)) # number of sequences of length true_threshold in all compositions
     n_trans = 0
@@ -62,9 +63,13 @@ def calc_results_per_comp(compoID_idx, true_times, time, predicted_times, id_dic
 
         # separate indices for a composition that has multiple transitions
         true_comp = true_times[inds]
+        #print('true_comp: ', true_comp)
         separate = np.where(np.diff(true_comp) > 0.1)[0] + 1
         separate = [0]+list(separate)+[len(inds)]
         #print('separate = ',separate)
+        if np.all(true_comp == 43200.008):
+            pred_comp_no_trans.append(predicted_times[inds])
+            print('no transition in this composition')
 
         # loop over transitions
         for s in range(1, len(separate)):
@@ -209,7 +214,7 @@ def calc_results_per_comp(compoID_idx, true_times, time, predicted_times, id_dic
             shap_varrank_percomp_unfilt,
             shap_varrank_percomp_unfilt_sig,
             ROCAUC_percomp, PRAUC_percomp,
-            signalfrac_percomp, comp_ids]
+            signalfrac_percomp, comp_ids, pred_comp_no_trans]
 
 
 def calc_frac_var_rankings(trans_filter_ROC, shap_varrank_percomp, plot=False):
