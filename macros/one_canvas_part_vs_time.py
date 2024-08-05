@@ -8,8 +8,7 @@ import rplacem.compute_variables as comp
 import matplotlib.colors as pltcolors
 import rplacem.utilities as util
 import rplacem.plot_utilities as plot
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -18,13 +17,13 @@ import seaborn as sns
 fromatlas = True
 cp_fromfile = True
 cp_fromatlasfile = True
-cps_fromfile =False
+cps_fromfile =True
 
 if not cp_fromfile:
     pixel_changes_all = util.get_all_pixel_changes()
     atlas, num = util.load_atlas()
 
-id = 'tx0gt3' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
+id = '6' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
 
 x1 = var.CANVAS_MINMAX[-1, 0, 0]
 x2 = var.CANVAS_MINMAX[-1, 0, 1]
@@ -33,44 +32,45 @@ y2 = var.CANVAS_MINMAX[-1, 1, 1]
 
 
 # Get CanvasPart
-if cp_fromfile:
-    if cp_fromatlasfile:
-        file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
-        with open(file_path, 'rb') as f:
-            canvas_parts = pickle.load(f)
-        
-        for canp in canvas_parts:
-            if canp.info.id != str(id):
-                continue
-            else:
-                canpart = canp
-                break
-    else:
-        file_path = os.path.join(var.DATA_PATH, 'CanvasPart_rectangle_'+str(x1)+'.'+str(y1)+'_to_'+str(x2)+'.'+str(y2)+'.pickle') 
-        with open(file_path, 'rb') as f:
-            canpart = pickle.load(f)
-            f.close()
+if not cps_fromfile:
+    if cp_fromfile:
+        if cp_fromatlasfile:
+            file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
+            with open(file_path, 'rb') as f:
+                canvas_parts = pickle.load(f)
+            
+            for canp in canvas_parts:
+                if canp.info.id != str(id):
+                    continue
+                else:
+                    canpart = canp
+                    break
+        else:
+            file_path = os.path.join(var.DATA_PATH, 'CanvasPart_rectangle_'+str(x1)+'.'+str(y1)+'_to_'+str(x2)+'.'+str(y2)+'.pickle') 
+            with open(file_path, 'rb') as f:
+                canpart = pickle.load(f)
+                f.close()
 
-else:
-    if fromatlas:
-        atlas_info_separated = cp.get_atlas_border(id=id, atlas=atlas, addtime_before=10*3600, addtime_after=4*3600)
-        canvas_comps = []
-        for ainfo in atlas_info_separated:
-            # actual canvas composition here
-            #print(ainfo.id, ainfo.border_path, ainfo.border_path_times)
-            canvas_comps.append( cp.CanvasPart(atlas_info=ainfo, pixel_changes_all=pixel_changes_all, verbose=False, save=True) )
-        canpart = canvas_comps[0]
     else:
-        # here, assume the whole canvas is wanted
-        info = cp.AtlasInfo(border_path=[[[x1, y1], [x1, y2], [x2, y2], [x2, y1]]])
-        canpart = cp.CanvasPart(atlas_info=info,
-                                pixel_changes_all=pixel_changes_all,
-                                verbose=True, save=True)
+        if fromatlas:
+            atlas_info_separated = cp.get_atlas_border(id=id, atlas=atlas, addtime_before=10*3600, addtime_after=4*3600)
+            canvas_comps = []
+            for ainfo in atlas_info_separated:
+                # actual canvas composition here
+                #print(ainfo.id, ainfo.border_path, ainfo.border_path_times)
+                canvas_comps.append( cp.CanvasPart(atlas_info=ainfo, pixel_changes_all=pixel_changes_all, verbose=False, save=True) )
+            canpart = canvas_comps[0]
+        else:
+            # here, assume the whole canvas is wanted
+            info = cp.AtlasInfo(border_path=[[[x1, y1], [x1, y2], [x2, y2], [x2, y1]]])
+            canpart = cp.CanvasPart(atlas_info=info,
+                                    pixel_changes_all=pixel_changes_all,
+                                    verbose=True, save=True)
 
 
 # Get CanvasPartStatistics
 if cps_fromfile:
-    file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all.pickle') 
+    file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all_3h-SW.pickle') 
     with open(file_path, 'rb') as f:
         cpstats = pickle.load(f)
     
@@ -83,11 +83,12 @@ if cps_fromfile:
     
 else: 
     cpstat = stat.CanvasPartStatistics(canpart, t_interval=300, #tmax=30000,
-                                        compute_vars={'stability': 1, 'entropy' :1, 'transitions' : 1, 'attackdefense' : 1, 'other' : 1, 
+                                        compute_vars={'stability': 1, 'entropy' :3, 'transitions' : 1, 'attackdefense' : 1, 'other' : 1, 
                                                       'ews' : 1, 'inout':0, 'lifetime_vars':0, 'void_attack':0},
-                                        sliding_window=int(2.5*3600), 
+                                        sliding_window=int(3*3600), 
                                         verbose=True, dont_keep_dir=False, compression='DEFLATE_BMP_PNG', flattening='ravel')
     
+
 savecpstat = False
 if savecpstat:
     file_path = os.path.join(var.DATA_PATH, 'CanvasPartStatistics_'+ canpart.out_name() + '.pickle')
@@ -96,7 +97,32 @@ if savecpstat:
                     handle,
                     protocol=pickle.HIGHEST_PROTOCOL)
 
-print(cpstat.stable_borders_timeranges)
+print(cpstat.sw_width_sec)
+print(np.any(cpstat.autocorr_bycase.val < 0))
+cpstat.entropy.set_ratio_to_sw_average()
+plt.figure()
+plt.plot(cpstat.t_lims, cpstat.entropy.val)
+plt.xlim([0,295000])
+#plt.ylim([0,1])
+plt.savefig(os.path.join(var.FIGS_PATH, str(cpstat.id), 'entropy'))
+
+plt.figure()
+plt.plot(cpstat.t_lims, cpstat.entropy.ratio_to_sw_mean)
+plt.xlim([0,295000])
+plt.ylim([0,3])
+plt.savefig(os.path.join(var.FIGS_PATH, str(cpstat.id), 'entropy_ratio_to_sw_mean'))
+
+plt.figure()
+plt.plot(cpstat.t_lims, cpstat.frac_redundant_color_changes.val)
+plt.xlim([0,295000])
+plt.ylim([0,1])
+plt.savefig(os.path.join(var.FIGS_PATH, str(cpstat.id), 'frac_redundant_color_changes'))
+
+plt.figure()
+plt.plot(cpstat.t_lims[cpstat.t_lims < 60000], cpstat.frac_pixdiff_inst_vs_swref.val[cpstat.t_lims < 60000])
+plt.xlim([0,60000])
+plt.ylim([0,1])
+plt.savefig(os.path.join(var.FIGS_PATH, str(cpstat.id), 'frac_pixdiff_vs_swref'))
 
 plt.figure()
 plt.plot(cpstat.frac_pixdiff_inst_vs_inst_norm.val[1:])
@@ -211,7 +237,7 @@ plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'Fraction_of_differing_pixels
 cpstat.instability_norm[0].plot1d(ymin=0)
 cpstat.n_users_norm.plot1d(ymin=0)
 cpstat.n_changes_norm.plot1d(ymin=0)
-cpstat.entropy.plot1d(ymin=0)
+#cpstat.entropy.plot1d(ymin=0)
 cpstat.frac_attack_changes.plot1d(ymin=0, ymax=1, hline=0.5)
 cpstat.frac_attackonly_users.plot1d(ymin=0, ymax=1)
 cpstat.frac_defenseonly_users.plot1d(ymin=0, ymax=1)
@@ -226,17 +252,6 @@ cpstat.frac_redundant_color_changes.plot1d(ymin=0)
 cpstat.frac_redundant_coloranduser_changes.plot1d(ymin=0)
 
 plot.cpstat_tseries(cpstat, nrows=11, ncols=2, figsize=(8,11.5), fontsize=10, save=True)
-plot.cpstat_tseries(cpstat, nrows=11, ncols=2, figsize=(8,11.5), fontsize=10, save=True)
-
-#OLD EWS
-'''
-varchange = ews.ratio_to_slidingmean(cpstat.diff_stable_pixels_vst, cpstat.t_interval, slidingrange=21600)
-
-ews.ews_2Dsignificance_1comp(cpstat, cpstat.diff_stable_pixels_vst, 'differing_stable_pixels')
-ews.ews_2Dsignificance_allcomp(cpstats, warning_cooldown = 14400, ews_slidingwindow=4000)
-ews.ews_2Dsignificance_allcomp([cpstat], warning_cooldown = 14400, ews_slidingwindow=4000, singlecompsave=True)
-print(ews.firing_times(cpstat, cpstat.diff_stable_pixels_vst, 300, 27))
-'''
 
 # STUDY OF BMP FILE SIZE
 

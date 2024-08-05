@@ -3,10 +3,39 @@ import pickle
 import os, sys
 from rplacem import var as var
 import rplacem.transitions as tran
+import rplacem.entropy as entropy
 import math
 import gc
 import matplotlib.pyplot as plt
-from rplacem.canvas_part import compare_border_paths, AtlasInfo
+from rplacem.canvas_part import compare_border_paths, AtlasInfo, avoid_location_jump
+
+def border_corner_center(xmin,xmax,ymin,ymax):
+    cond_border = np.zeros((var.N_ENLARGE))
+    cond_corner = np.zeros((var.N_ENLARGE))
+    cond_center = np.zeros((var.N_ENLARGE))
+    margin = 3
+    for e in range(var.N_ENLARGE):
+        cond_border[e] = ((xmin < var.CANVAS_MINMAX[e, 0, 0] + margin) |
+                            (ymin < var.CANVAS_MINMAX[e, 1, 0] + margin) |
+                            (xmax > var.CANVAS_MINMAX[e, 0, 1] - margin) |
+                            (ymax > var.CANVAS_MINMAX[e, 1, 1] - margin) ) 
+        cond_corner[e] = (
+                            ((xmin < var.CANVAS_MINMAX[e, 0, 0] + margin) &
+                            (ymin < var.CANVAS_MINMAX[e, 1, 0] + margin)) |
+                            ((xmax > var.CANVAS_MINMAX[e, 0, 1] - margin) &
+                            (ymax > var.CANVAS_MINMAX[e, 1, 1] - margin) ) |
+                            ((xmin < var.CANVAS_MINMAX[e, 0, 0] + margin) &
+                            (ymax > var.CANVAS_MINMAX[e, 1, 1] - margin) ) |
+                            ((xmax > var.CANVAS_MINMAX[e, 0, 1] - margin) &
+                            (ymin < var.CANVAS_MINMAX[e, 1, 0] + margin) )
+                         )
+        x_center = (var.CANVAS_MINMAX[e, 0, 0] + var.CANVAS_MINMAX[e, 0, 1]) / 2
+        y_center = (var.CANVAS_MINMAX[e, 1, 0] + var.CANVAS_MINMAX[e, 1, 1]) / 2
+        cond_center[e] = ((xmin < x_center + margin) & 
+                            (xmax > x_center - margin) &
+                            (ymin < y_center + margin) & 
+                            (ymax > y_center - margin) )
+    return cond_border, cond_corner, cond_center
 
 def variables_from_cpstat(cps):
     '''
@@ -17,35 +46,35 @@ def variables_from_cpstat(cps):
     The third says if the kendall tau of the variable must be taken
     '''
 
-    vars_full = [(cps.frac_pixdiff_inst_vs_swref,       0, 0, 0),
-                 (cps.frac_pixdiff_inst_vs_stable_norm, 0, 0, 0),
-                 (cps.frac_attack_changes,              0, 0, 0),
-                 (cps.n_changes_norm,                   0, 1, 0),
-                 (cps.instability_norm[0],              0, 0, 0),
-                 (cps.instability_norm[3],              0, 0, 0),#
-                 (cps.variance2,                        0, 0, 0),
-                 (cps.variance_multinom,                0, 0, 0),#n
-                 (cps.variance_subdom,                  0, 0, 0),#n
-                 (cps.variance_from_frac_pixdiff_inst,  0, 0, 0),#n
-                 (cps.runnerup_timeratio[0],            0, 0, 0),#
-                 (cps.runnerup_timeratio[3],            0, 0, 0),
-                 (cps.n_used_colors[0],                 0, 0, 0),
-                 (cps.n_used_colors[3],                 0, 1, 0),
-                 (cps.autocorr_bycase,                  1, 0, 0),#  # the difference is taken instead of the ratio for autocorrelation
-                 (cps.autocorr_bycase_norm,             1, 0, 0),# # the difference is taken instead of the ratio for autocorrelation
-                 (cps.autocorr_multinom,                0, 0, 0),#n
-                 (cps.autocorr_subdom,                  0, 0, 0),#n
-                 (cps.autocorr_dissimil,                0, 0, 0),#n
-                 (cps.cumul_attack_timefrac,            0, 1, 0),#
-                 (cps.returntime[0],                    0, 1, 0),
-                 (cps.returntime[3],                    0, 1, 0),
-                 (cps.returnrate,                       0, 0, 0),#n
-                 (cps.n_users_sw_norm,                  0, 1, 0),
-                 (cps.changes_per_user_sw,              0, 1, 0),
-                 (cps.frac_users_new_vs_sw,             0, 0, 0),
-                 (cps.frac_redundant_color_changes,     0, 0, 0),
-                 (cps.entropy,                          1, 0, 0),
-                 (cps.fractal_dim_weighted,             1, 0, 0),
+    vars_full = [(cps.frac_pixdiff_inst_vs_swref,       0, 0, 0),#0
+                 (cps.frac_pixdiff_inst_vs_stable_norm, 0, 0, 0),#1
+                 (cps.frac_attack_changes,              0, 0, 0),#2
+                 (cps.n_changes_norm,                   0, 1, 0),#3
+                 (cps.instability_norm[0],              0, 0, 0),#4
+                 (cps.instability_norm[3],              0, 0, 0),#5
+                 (cps.variance2,                        0, 0, 0),#6
+                 (cps.variance_multinom,                0, 0, 0),#7
+                 (cps.variance_subdom,                  0, 0, 0),#8
+                 (cps.variance_from_frac_pixdiff_inst,  0, 1, 0),#9
+                 (cps.runnerup_timeratio[0],            0, 0, 0),#10
+                 (cps.runnerup_timeratio[3],            0, 0, 0),#11
+                 (cps.n_used_colors[0],                 0, 0, 0),#12
+                 (cps.n_used_colors[3],                 0, 1, 0),#13
+                 (cps.autocorr_bycase,                  1, 0, 0),#14# the difference is taken instead of the ratio for autocorrelation
+                 (cps.autocorr_bycase_norm,             1, 0, 0),#15#   # the difference is taken instead of the ratio for autocorrelation
+                 (cps.autocorr_multinom,                0, 0, 0),#16
+                 (cps.autocorr_subdom,                  0, 0, 0),#17
+                 (cps.autocorr_dissimil,                0, 0, 0),#18
+                 (cps.cumul_attack_timefrac,            0, 1, 0),#19
+                 (cps.returntime[0],                    0, 1, 0),#20
+                 (cps.returntime[3],                    0, 1, 0),#21
+                 (cps.returnrate,                       0, 0, 0),#22
+                 (cps.n_users_sw_norm,                  0, 1, 0),#23
+                 (cps.changes_per_user_sw,              0, 1, 0),#24
+                 (cps.frac_users_new_vs_sw,             0, 0, 0),#25
+                 (cps.frac_redundant_color_changes,     0, 0, 0),#26
+                 (cps.entropy,                          1, 0, 0),#27
+                 (cps.fractal_dim_weighted,             1, 0, 0),#28
                  (cps.variance2,                        0, 0, 1),#
                  (cps.returntime[0],                    0, 0, 1),#
                  (cps.instability_norm[0],              0, 0, 1),#
@@ -59,6 +88,16 @@ def variables_from_cpstat(cps):
     take_kendall = np.array([v[3] for v in vars_full])
 
     return(vars, take_ratio_to_average, coarse_timeranges, take_kendall)
+
+def additional_vars_from_cpstat(cps, t, it, timerange, quart, special_pos): # TODO change to cps.quart after re-running cpart stats
+    entropy_sw = entropy.normalize_entropy(cps.entropy.val[it] / cps.entropy.ratio_to_sw_mean[it], 
+                                      cps.area, t, minmax_entropy=minmax_entropy)
+    quadrant_time = np.searchsorted(var.TIME_ENLARGE, t) - 1
+    pos_importance = special_pos[0][quadrant_time] + special_pos[1][quadrant_time] + special_pos[2][quadrant_time]
+    return [np.log10(cps.area), t - timerange[0], quart, entropy_sw, pos_importance ]
+
+def additional_vars_names():
+    return ['log(area)', 'age', 'canvas_quadrant', 'entropy_sw', 'border_corner_center']
 
 def set_kendalls_and_ratio(vars, take_ratio, take_kendall):
     for i in np.arange(vars.shape[0]):
@@ -77,7 +116,7 @@ def get_vals_from_var(v, tidx, coarse=False):
     '''
     n_times = n_traintimes_coarse if coarse else n_traintimes
     vals = np.empty(n_times, dtype=np.float64)
-    v = np.nan_to_num(v) ####### TODO To be removed when using updated cpart stats
+    #v = np.nan_to_num(v) ####### TODO To be removed when using updated cpart stats
 
     for i in range(0, n_times):
         inds = tidx + (watch_timeindrange_coarse if coarse else watch_timeindrange)[i]
@@ -92,55 +131,59 @@ def get_earliness(cpstat, t, trans_starttimes):
     earliness_notrans = 12*3600 # high earliness value given to events in no-transition compositions or events with a transition and high earliness
 
     if cpstat.n_transitions == 0: # no transitions
-        return earliness_notrans
+        return - earliness_notrans
     else:
         possible_earlinesses = trans_starttimes - t
         possible_earlinesses = possible_earlinesses[possible_earlinesses >= 0]
         if len(possible_earlinesses) == 0: # all transitions are before time t
-            return earliness_notrans 
+            return - earliness_notrans 
         else: # take the closest transition happening after t
-            return min(np.min(possible_earlinesses), earliness_notrans)
+            return - min(np.min(possible_earlinesses), earliness_notrans)
 
-def keep_in_sample(cpstat, it, t, trans_starttimes, reject_times):
+def keep_in_sample(cpstat, it, t, trans_starttimes, reject_times, atlas_timerange):
     '''
     Says if this timestep for this composition must be kept in the training+evaluation sample
     '''
     trans_param = cpstat0.transition_param
-    #print()
-    #print(cpstat.area >= 100 ) # exclude very small compositions
-    #print(cpstat.frac_pixdiff_inst_vs_swref.val[it] < trans_param[0] or 
-    #     cpstat.frac_pixdiff_inst_vs_swref.ratio_to_sw_mean[it] < trans_param[1])
-    #print(cpstat.n_transitions == 0 or np.all(np.logical_or(t < trans_starttimes, 
-    #                                                       t >= np.maximum(cpstat.transition_times[:, 1], 
-    #                                                                       trans_starttimes + cpstat.sw_width_sec)))) 
-    #print(t <= var.TIME_GREYOUT)
-    #print(cpstat.area_vst.val[it] > 0) # non-zero active area
-    #print(cpstat.stable_borders_timeranges)
-    #print(np.any(np.logical_and(t >= cpstat.stable_borders_timeranges[:, 0] + max(watchrange, cpstat.sw_width_sec), 
-    #                          t <= cpstat.stable_borders_timeranges[:, 1])))
-    #print(it < cpstat.n_t_bins - 1)
-    return (cpstat.area >= 100 and # exclude very small compositions
+
+    return ((cpstat.area >= 100 and # exclude very small compositions
+            # exclude times after official end of composition in the atlas. Leave some margin for transition at the end of compositions
+            t < atlas_timerange[1] + (3600 if np.any(trans_starttimes) > atlas_timerange[1] else 0) and 
+            # exclude times before official beginning of composition in the atlas + sw_width
+            t > atlas_timerange[0] + cpstat.sw_width_sec and
+
+            # excludes times where the composition has transition-like values for frac_pixdiff
             (cpstat.frac_pixdiff_inst_vs_swref.val[it] < trans_param[0] or 
-             cpstat.frac_pixdiff_inst_vs_swref.ratio_to_sw_mean[it] < trans_param[1]) and # excludes times where the composition has transition-like values for frac_pixdiff
-            (cpstat.n_transitions == 0 or np.all(np.logical_or(t < trans_starttimes, 
-                                                               t >= np.maximum(cpstat.transition_times[:, 1], 
-                                                                               trans_starttimes + cpstat.sw_width_sec)))) and # exclude times within transition periods, and within sw_width of the start of the transition
+             cpstat.frac_pixdiff_inst_vs_swref.ratio_to_sw_mean[it] < trans_param[1]) and 
+             # exclude times within sw_width of the start of a transition
+            (cpstat.n_transitions == 0 or 
+             np.all(np.logical_or(t < trans_starttimes, t >= trans_starttimes + cpstat.sw_width_sec))) and 
+
+            # t must be in a timerange where the border_path is relatively stable, and at least [watchrange + sw_width] later than the start of this timerange 
+            # stable_borders_timeranges lower time limit cannot be < tmin_quadrant. 
+            # the earliest timerange of stable_borders_timeranges is artificially lower with addtime_before, so this criterium is irrelevant for the first timerange borderpath, except close to tmin_quadrant
+            np.any(np.logical_and(t >= cpstat.stable_borders_timeranges[:, 0] + watchrange + cpstat.sw_width_sec, 
+                                  t <= cpstat.stable_borders_timeranges[:, 1])) and
+            # exclude time that overlap in space and time with another composition
+            np.all((t > reject_times[:,1]) | (t < reject_times[:,0])) and 
+
             t <= var.TIME_GREYOUT and # exclude white-only period
             cpstat.area_vst.val[it] > 0 and # non-zero active area
-            # t must be in a timerange where the border_path is relatively stable, and at least [watchrange] and [sw_width] later than the start of this timerange 
-            np.any(np.logical_and(t >= cpstat.stable_borders_timeranges[:, 0] + max(watchrange, cpstat.sw_width_sec), 
-                               t <= cpstat.stable_borders_timeranges[:, 1])) and
-            it < cpstat.n_t_bins - 1 and # exclude the last time interval, that has a different size
-            # exclude time that overlap in space and time with another composition
-            np.all((t > reject_times[:,1]) | (t < reject_times[:,0]))
+            it < cpstat.n_t_bins - 1 # exclude the last time interval, that has a different size
             # must be below absolute transition threshold (not the relative one) for a duration > sliding_window_width right before this time
             #and np.all(cpstat.frac_pixdiff_inst_vs_swref.val[(it-cpstat.sw_width) : it] < trans_param[0])
+            ),
+
+            # keep info about more secure time margin after atlas start or previous transition
+            (t > atlas_timerange[0] + watchrange + cpstat.sw_width_sec),
+            (cpstat.n_transitions == 0 or 
+             np.all(np.logical_or(t < trans_starttimes, t >= trans_starttimes + watchrange + cpstat.sw_width_sec)))
             )
 
-file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all.pickle') 
+file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all_3h-SW.pickle') 
 
 def get_all_AtlasInfo():
-    path = os.path.join(var.DATA_PATH, 'canvas_compositions_statistics_all.pickle') 
+    path = os.path.join(var.DATA_PATH, 'canvas_compositions_statistics_all_3h-SW.pickle') 
     infos = []
     with open(path, 'rb') as f:
         canvas_parts = pickle.load(f)
@@ -156,19 +199,7 @@ def duplicate_place_and_time():
         # get border_path associated to each cpstat
         infos_list = []
         for icps, cps in enumerate(cpstats):
-            if not hasattr(cps, 'info'): # this won't be needed with the new CanvasPartStatistics
-                if icps == 0:
-                    infos = get_all_AtlasInfo()
-                found = False
-                for inf in infos:
-                    if inf.id == cps.id:
-                        infos_list.append(inf)
-                        found = True
-                        break
-                if not found:
-                    infos_list.append(AtlasInfo()) # dummy here, these compositions won't reject any duplicates
-            else:
-                infos_list.append(cps.info)
+            infos_list.append(cps.info)
         
         rejected_times_border_overlaps = np.zeros(len(cpstats), dtype=object)
         # first loop on each border_path of each cpstats 
@@ -214,10 +245,10 @@ if run_rejecttimes:
     with open(file_path_rejecttimes, 'wb') as f:
         pickle.dump(reject_times_all, f, protocol=pickle.HIGHEST_PROTOCOL)
     print('# of overlaps =', np.count_nonzero(reject_times_all))
+    sys.exit()
 else:
     with open(file_path_rejecttimes, 'rb') as f:
         reject_times_all = pickle.load(f)
-
 
 # grab canvas_part_statistics object
 with open(file_path, 'rb') as f:
@@ -279,22 +310,24 @@ coarse_timerange = cpstatvars[2]
 kendall_tau = cpstatvars[3]
 n_cpstatvars = np.count_nonzero(coarse_timerange == 0)
 n_cpstatvars_coarse = np.count_nonzero(coarse_timerange == 1)
-n_trainingvars = n_cpstatvars * n_traintimes + n_cpstatvars_coarse * n_traintimes_coarse
+n_trainingvars = n_cpstatvars * n_traintimes + n_cpstatvars_coarse * n_traintimes_coarse + 5
 
-ncompmax = 14222 if var.year == 2022 else 6720
-nevents_max = 4000000 # hard-coded (conservative) !!
+ncompmax = 14300 if var.year == 2022 else 6950
+nevents_max = 3600000 # hard-coded (conservative) !!
 inputvals = np.full((nevents_max, n_trainingvars), -1, dtype=np.float32)
+safetimemargin = np.full((nevents_max, 2), -1, dtype=np.float32)
 outputval = np.full((nevents_max), -1, dtype=np.float32)
 
 varnames = []
 eventtime = np.full((nevents_max), -1, dtype=np.float64)
 id_idx = np.full((nevents_max), -1, dtype=np.int16)
 id_dict = np.full(ncompmax, '', dtype='object')
+minmax_entropy = entropy.calc_min_max_entropy()
 
 i_event = -1
 n_keptcomps = 0
 
-period = 1000
+period = 500
 istart = 0 
 for p in range(istart, math.ceil(ncompmax/period)):
     
@@ -307,9 +340,9 @@ for p in range(istart, math.ceil(ncompmax/period)):
 
     for icps_tmp, cps in enumerate(cpstats):
         icps = icps_tmp + p*period
-        print('cpstat #', icps, ' id ',cps.id, ' area ', cps.area)
-        #if icps<252:
+        #if icps<3443:
         #    continue
+        print('cpstat #', icps, ' id ',cps.id, ' area ', cps.area)
         id_dict[icps] = cps.id
         cps.stable_borders_timeranges[:, 0] = np.maximum(cps.stable_borders_timeranges[:, 0], cps.tmin)
 
@@ -332,11 +365,36 @@ for p in range(istart, math.ceil(ncompmax/period)):
                 for i in range(0, n_times):
                     varnames.append(v.label + '_t' + 
                                     ((str(timeidx[i]) + str(timeidx[i+1]-1)) if (i < n_times-1) else '-0-0'))
+            varnames.extend(additional_vars_names())
 
+        # TODO to be removed when re-running canvas parts, replace by atlas_starttime = [cps.info.border_path_times_orig_disjoint[0][0], ...[-1][1] ]
+        atlas_timerange = [ cps.info.border_path_times_orig[0][0], cps.info.border_path_times_orig[-1][1] ]
+        if 'part' in cps.info.id:
+            (paths, paths_time) = avoid_location_jump(border_path=cps.info.border_path_orig, border_path_times=cps.info.border_path_times_orig)
+            if len(paths_time) > 1:
+                partnum = cps.info.id.split('part')[1].split('_')[0]
+                try:
+                    ipath = int(partnum) - 1 if int(partnum) < 100 else 0
+                except:
+                    ipath = 0
+                atlas_timerange = [ paths_time[ipath][0][0], paths_time[ipath][-1][1] ]
+
+        # TODO remove this after rerunning cpart stats. Replace with cps.quadrant
+        xmin, xmax = np.min(cps.info.border_path[:,:, 0]), np.max(cps.info.border_path[:,:, 0])
+        ymin, ymax = np.min(cps.info.border_path[:,:, 1]), np.max(cps.info.border_path[:,:, 1])
+        for e in range(var.N_ENLARGE):
+            cond = ((xmin >= var.CANVAS_MINMAX[e, 0, 0]) & (xmax <= var.CANVAS_MINMAX[e, 0, 1]) &
+                    (ymin >= var.CANVAS_MINMAX[e, 1, 0]) & (ymax <= var.CANVAS_MINMAX[e, 1, 1]))
+            if cond:
+                quart = e
+                break
+        
+        special_pos = border_corner_center(xmin,xmax,ymin,ymax)
 
         i_event_thiscomp = 0
         for it, t in enumerate(cps.t_lims):
-            if keep_in_sample(cps, it, t, trans_starttimes, reject_times):
+            keep = keep_in_sample(cps, it, t, trans_starttimes, reject_times, atlas_timerange)
+            if keep[0]:
                 i_event += 1
                 i_event_thiscomp += 1
 
@@ -347,6 +405,9 @@ for p in range(istart, math.ceil(ncompmax/period)):
                 for kendall, coarse, ratio_to_av, v in zip(allvars[3], allvars[2], allvars[1], allvars[0]):
                     vals = get_vals_from_var(v.kendall_tau if kendall else v.ratio_to_sw_mean if ratio_to_av else v.val, it, coarse)
                     vars_thistime.extend(vals)
+                vars_thistime.extend(additional_vars_from_cpstat(cps, t, it, atlas_timerange, quart, special_pos))
+                varsadd = additional_vars_from_cpstat(cps, t, it, atlas_timerange, quart, special_pos)
+
                 # input variables
                 inputvals[i_event] = vars_thistime
 
@@ -356,11 +417,13 @@ for p in range(istart, math.ceil(ncompmax/period)):
                 # time of this recorded event
                 eventtime[i_event] = t
                 id_idx[i_event] = icps
-                
+
+                # flags for the safer margin after start of composition or after last transition
+                safetimemargin[i_event] = [keep[1], keep[2]]
+               
         if i_event_thiscomp > 0:
             n_keptcomps += 1    
-        print("Added",i_event_thiscomp,"timesteps from this compo. Now there are ",i_event,"events")
-
+            print("Added",i_event_thiscomp,"timesteps from this compo. Now there are ",i_event,"events")
 
 print('# events total = ', i_event, 'from',n_keptcomps,'compositions')
 
@@ -368,6 +431,7 @@ varnames = np.array(varnames)
 inputvals = inputvals[0:i_event+1]
 outputval = outputval[0:i_event+1]
 eventtime = eventtime[0:i_event+1]
+safetimemargin = safetimemargin[0:i_event+1]
 id_idx = id_idx[0:i_event+1]
 
 #for i in range(0, len(inputvals)):
@@ -379,9 +443,9 @@ print(inputvals.shape)
 print(outputval.shape)
 #print(outputval)
 
-file_path = os.path.join(var.DATA_PATH, 'training_data_'+str(n_trainingvars)+'variables.pickle')
+file_path = os.path.join(var.DATA_PATH, 'training_data_'+str(n_trainingvars)+'variables_3h-SW_widertimefromstart.pickle')
 with open(file_path, 'wb') as handle:
-    pickle.dump([inputvals, outputval, varnames, eventtime, id_idx, id_dict, coarse_timerange, kendall_tau, n_traintimes, n_traintimes_coarse],
+    pickle.dump([inputvals, outputval, varnames, eventtime, id_idx, id_dict, coarse_timerange, kendall_tau, n_traintimes, n_traintimes_coarse, safetimemargin],
                 handle,
                 protocol=pickle.HIGHEST_PROTOCOL)
 
