@@ -79,7 +79,7 @@ def calc_compressed_size(pixels, flattening='hilbert_sweetsourcod', compression=
     return len_compressed
 
 def normalize_entropy(entropy, area, time, 
-                      compression="LZ77", flattening="ravel", num_iter=10, len_max=370):
+                      compression="LZ77", flattening="ravel", num_iter=10, len_max=370, minmax_entropy=None):
     '''
     Normalize the entropy
     '''
@@ -89,9 +89,10 @@ def normalize_entropy(entropy, area, time,
     f_entropy_max_32) = calc_min_max_entropy(compression=compression, 
                                              flattening=flattening,
                                              num_iter=num_iter,
-                                             len_max=len_max)
+                                             len_max=len_max) if minmax_entropy is None else minmax_entropy
     
-    if time >= var.TIME_16COLORS and time < var.TIME_24COLORS:
+    area = min(area, 136160)
+    if time >= 0 and time < var.TIME_24COLORS: # var.TIME_16COLORS
         entropy_norm = (entropy - f_entropy_min(area)) / (f_entropy_max_16(area) - f_entropy_min(area))
     elif time >= var.TIME_24COLORS and time < var.TIME_32COLORS:
         entropy_norm = (entropy - f_entropy_min(area)) / (f_entropy_max_24(area) - f_entropy_min(area))

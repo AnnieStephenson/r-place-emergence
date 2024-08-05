@@ -22,24 +22,28 @@ ml_param = eval.AlgoParam(type='regression', # or 'classification
                           n_features=None,
                           num_rounds=None, 
                           learning_rate=0.05, 
-                          max_depth=8, 
+                          max_depth=9, 
                           min_child_weight=None, 
-                          subsample=0.8, 
-                          colsample=0.75, 
+                          subsample=0.8, #0.8
+                          colsample=0.75, #0.75
                           log_subtract_transform=1.5, 
-                          weight_highEarliness=0.2,
+                          weight_highEarliness=0.4,
                           calibrate_pred=True)
-ml_param.num_rounds = 80 if ml_param.test2023 else 140 # Max number of boosting rounds (iterations)
-ml_param.min_child_weight = 3.1 if ml_param.type == 'regression' else 4
+ml_param.num_rounds = 80 if ml_param.test2023 else 105 # Max number of boosting rounds (iterations)
+ml_param.min_child_weight = 20 if ml_param.type == 'regression' else 4
 
-warning_threshold_sec = 1200
+warning_threshold_sec = 3600
 warning_threshold = ml_param.transform_target(warning_threshold_sec)
 makeplots = False if (ml_param.type != 'regression') else True
 make_shap_plots = True
 savefiles = True
+corrplots = False
 emax_test_hist2d = 1.3e3
 
-
+file_excludedvars = os.path.join(var.DATA_PATH, 'excluded_variables_fromSHAP.txt')
+exclude_timefeats = os.path.exists(file_excludedvars) if not corrplots else False
+remove_worstSHAP = True
+only_safetimemargin = False
 
 
 # PLOTTING ROUTINES
@@ -140,8 +144,8 @@ def hist_true_vs_pred(true, pred, zmax=2e3,
 
     H, xedges, yedges = np.histogram2d( 100. + true,
                                         100. + pred,
-                                        bins=[np.logspace(np.log10(emin), np.log10(emax), 50),
-                                        np.logspace(np.log10(emin), np.log10(emax), 50)])
+                                        bins=[np.logspace(np.log10(emin), np.log10(emax), 40),
+                                        np.logspace(np.log10(emin), np.log10(emax), 40)])
     H = H.T
     # normalize by columns
     if normalize_cols:
@@ -188,7 +192,7 @@ def hist_true_vs_pred(true, pred, zmax=2e3,
     #plt.text(7e4, 1000, r'$\bf{not\ \ predictable}$', color='green', fontsize=14, rotation=90)
 
     plt.plot(100+np.array(addx),100+np.array(addy), color='blue')
-    
+
     plt.savefig(os.path.join(var.FIGS_PATH, 'ML', ('log_' if loge else '') + 'earliness_pred_vs_true_hist'+('_trainingsamples' if trainsamples else '')+addsavename+'.pdf'), 
                 dpi=350, bbox_inches='tight')
 
@@ -224,10 +228,10 @@ def extremes_colormap(min=0):
     newcmp = colors.ListedColormap(newcols)
     return newcmp
 
-def correlation_heatmap(correlations, summary=False, zoom_extremes=True, vnames=None):
+def correlation_heatmap(correlations, summary=False, zoom_extremes=True, vnames=None, annot=False):
     fig= plt.subplots(figsize=(10,10), num=1, clear=True)
     sns.heatmap(correlations, vmax=1.0, vmin=-1.0, center=0, cmap=extremes_colormap(60 if zoom_extremes else 0), fmt='.2f', 
-                square=True, linewidths=.5, annot=False, cbar_kws={"shrink": .70},
+                square=True, linewidths=.5, annot=annot, annot_kws={"fontsize":4}, cbar_kws={"shrink": .70},
                 xticklabels=vnames,
                 yticklabels=vnames,
                 )
@@ -334,11 +338,11 @@ def SHAP_featureDependence(target, shapvals, targetsort, varname, varnum, ml_par
             xmin = 1e-2 if xmin<1e-2 else xmin
             x[x<xmin] = 1.01*xmin
             xlog = True
-        if (varname[0:7] == 'varianc'):
-            xmin = 0.9 if xmin<0.9 else xmin
-            x[x<xmin] = xmin+1e-3
-            xmax = 1.15 if xmax>1.15 else xmax
-            x[x>xmax] = xmax-1e-3
+        #if (varname[0:12] == 'variance_all'):
+        #    xmin = 0.9 if xmin<0.9 else xmin
+        #    x[x<xmin] = xmin+1e-3
+        #    xmax = 1.15 if xmax>1.15 else xmax
+        #    x[x>xmax] = xmax-1e-3
         if (varname[0:16] == 'returntime_meant'):
             xmax = 5000 if xmax>5000 else xmax
             x[x>xmax] = 5000-1
@@ -351,7 +355,7 @@ def SHAP_featureDependence(target, shapvals, targetsort, varname, varnum, ml_par
     
     xmin, xmax, xlog = xrange_lims(shapvals.data[:, varnum])
 
-    f = plt.figure(num=1, clear=True)
+    f = plt.figure(num=1, clear=True, figsize=(10,8))
 
     x = shapvals.data[targetsort, varnum]
     y = shapvals.values[targetsort, varnum]
@@ -370,6 +374,7 @@ def SHAP_featureDependence(target, shapvals, targetsort, varname, varnum, ml_par
     invtransf_targ = ml_param.invtransform_target(c)
     is_sig = np.where(invtransf_targ <= e_threshold)[0]
     is_bkg = np.where(invtransf_targ > e_threshold)[0]
+
 
     meanbkg = scipy.stats.binned_statistic(x[is_bkg], y[is_bkg], bins=(np.logspace(np.log10(xmin), np.log10(xmax), 120) if xlog else np.linspace(xmin, xmax, 120)), statistic='mean')
     mean_valbkg = meanbkg.statistic
@@ -391,7 +396,7 @@ def SHAP_featureDependence(target, shapvals, targetsort, varname, varnum, ml_par
     plt.legend(fontsize=9, framealpha=0.3)
 
     plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP', 
-                             'SHAP_scatter'+('_onlyStableTimes' if onlyStableTimes else ''), 'SHAP_scatter_'+varname+'.png'), 
+                             'SHAP_scatter'+('_onlyStableTimes' if onlyStableTimes else '')+('_excludeworstSHAP' if exclude_timefeats else ''), 'SHAP_scatter_'+varname+'.png'), 
                              dpi=250, bbox_inches='tight')
     plt.clf()
     f.clear()
@@ -468,36 +473,37 @@ def ROCAUC_1and3h_maxFPR0p2and1(pred, dtrain):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 # extract data from file
-file_path = os.path.join(var.DATA_PATH, 'training_data_387variables.pickle')
+print('get input data')
+file_path = os.path.join(var.DATA_PATH, 'training_data_389variables_3h-SW_widertimefromstart.pickle')
 with open(file_path, 'rb') as f:
     [inputvals, outputval, varnames, eventtime, id_idx, id_dict,
      coarse_timerange, 
      kendall_tau,
-     n_traintimes, n_traintimes_coarse
+     n_traintimes, n_traintimes_coarse,
+     safetimemargin
      ] = pickle.load(f) 
+outputval = -outputval
+inputvals[:, varnames=='area'] = np.log10(inputvals[:, varnames=='area']) #TODO remove when rerunning build_dataset.py
+varnames[varnames=='area'] = 'log(area)' #TODO remove when rerunning build_dataset.py
+if only_safetimemargin:
+    outputval = outputval[np.all(safetimemargin, axis=1)] # satisfy both conditions of safetimemargin for each kept time instance
+    inputvals = inputvals[np.all(safetimemargin, axis=1)] # satisfy both conditions of safetimemargin for each kept time instance
+    eventtime = eventtime[np.all(safetimemargin, axis=1)] # satisfy both conditions of safetimemargin for each kept time instance
+    id_idx = id_idx[np.all(safetimemargin, axis=1)] # satisfy both conditions of safetimemargin for each kept time instance
+
     
 # extract data from 2023 file
 if ml_param.test2023:
-    file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),'..','..','data','2023', 'training_data_330variables.pickle')
+    file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),'..','..','data','2023', 'training_data_389variables_3h-SW_widertimefromstart.pickle')
     with open(file_path, 'rb') as f:
         [inputvals_2023, outputval_2023, varnames, eventtime_2023, id_idx_2023, id_dict_2023,
         coarse_timerange, 
         kendall_tau,
-        n_traintimes, n_traintimes_coarse
+        n_traintimes, n_traintimes_coarse,
+        safetimemargin
         ] = pickle.load(f) 
-print(varnames)
+    outputval_2023 = -outputval_2023
 
 # correct a bug
 for iv in range(len(varnames)):
@@ -510,21 +516,38 @@ for iv in range(len(varnames)):
 nmaxcomp = 1e5
 
 # keep only certain variables
-vars_toremove = [5,10,14,15,19,29,30,31,32,33]#[5,6,8,13,14,23,24,25,26,27,28]
+# old variable selection [5,7,8,9,10,15,16,17,18,22,29,30,31,32,33]# old selection with old dataset [5,6,8,13,23,24,25,26,27,28]# best var selection [4,5,6,7,10,11,15,16,18,19,29,30,31,32,33]#[5,10,14,15,19,29,30,31,32,33]#[4,5,6,8,10,14,15,18,19,29,30,31,32,33]# 19 cumul, 4 instead of 5
+vars_toremove = [4,6,7,8,10,11,15,16,18,19,29,30,31,32,33] #unsure: 7,15,17
+# exclude features with low SHAP values, from previous runs
+if exclude_timefeats:
+    with open(file_excludedvars, 'r') as f:
+        features_toremove = [l[:-1] for l in f.readlines()]
+        print('removing these features: ', features_toremove)
+else:
+    features_toremove = []
+varnames[varnames=='variance_from_frac_pixdiff_inst'] = 'variance_frac_pixdiff_inst' # TODO remove after rerunning cpart stats
+
+# build the list of kept variables
 vars_touse = []
 keptvars = []
+feat_varchange = [0]
 i_current = 0
 for i_var in range(len(coarse_timerange)):
     timesteps_thisvar = n_traintimes_coarse if coarse_timerange[i_var] else n_traintimes
     if i_var not in vars_toremove:
-        keptvars += range(i_current, i_current+timesteps_thisvar)
+        vars_toadd = [i for i in range(i_current, i_current+timesteps_thisvar) if varnames[i] not in features_toremove] 
+        keptvars += vars_toadd
+        feat_varchange.append(len(keptvars))
         vars_touse.append(i_var)
     i_current += timesteps_thisvar
+keptvars += range(len(varnames)-5, len(varnames))
+
 keptvars = np.array(keptvars)
 ml_param.n_features = len(keptvars)
 #print(varnames[keptvars])
 
 # SELECT KEPT VARIABLES
+print('select kept variables')
 select = np.where(np.array(id_idx) < nmaxcomp)[0]
 outputval_orig = np.array(outputval[select])
 outputval = ml_param.transform_target(outputval_orig)
@@ -536,12 +559,6 @@ if ml_param.test2023:
     inputvals_2023 = inputvals_2023[:, keptvars]
 varnames = varnames[keptvars]
 coarse_timerange = coarse_timerange[vars_touse]
-
-print(np.where(np.isnan(inputvals))[0][::3][0:100])
-print(len(np.where(np.isnan(inputvals))[1])/3)
-print(np.where(np.isnan(inputvals))[1][:100])
-print(varnames)
-print(varnames[138],varnames[150],varnames[162],)
 
 id_idx = np.array(id_idx)[select]
 ididx_unique, ididx_pointer2unique = np.unique(id_idx, return_inverse=True) #needed because there are compositions that are totally skipped
@@ -560,7 +577,7 @@ if ml_param.test2023:
 
 # EVENT WEIGHTS
 weights = np.ones(n_events)
-xbreak1 = 2e4
+xbreak1 = 3*3600
 xbreak2 = np.max(outputval_orig) # 12h
 weights[outputval_orig >= xbreak2] = ml_param.weight_highEarliness
 # power-law interpolation between these two limits
@@ -572,14 +589,17 @@ if ml_param.test2023:
     weights_2023[outputval_orig_2023 >= xbreak2] = ml_param.weight_highEarliness
     powerlaw_inds_2023 = np.where((outputval_orig_2023 > xbreak1) & (outputval_orig_2023 < xbreak2))
     weights_2023[powerlaw_inds_2023] = np.power(outputval_orig_2023[powerlaw_inds_2023] / xbreak1, powerexp)
+weights[outputval_orig > 11.99*3600] *= 1.
+weights[outputval_orig < 3600] *= 1.
 
-
+# normalize the min_child_weight by the sum of weights
+ml_param.min_child_weight *= np.sum(weights) / weights.size
 
 # SPLIT THE DATA into training and testing sets
 test_size = 0 if ml_param.test2023 else 0.2 # 20% of data for testing
 valid_size = 0.1 if ml_param.test2023 else 0.2
 # need to split in terms of compositions and not events, so that there are no train-test correlations (ie events from the same compo both in train and test sample)
-np.random.seed(42)
+np.random.seed(1)
 shuf = np.random.permutation(ncomp)
 test_inds = np.where(shuf[ididx_pointer2unique] < test_size * ncomp)[0]
 train_inds = np.where(shuf[ididx_pointer2unique] >= test_size * ncomp)[0] # max(test_size, valid_size)
@@ -604,6 +624,7 @@ else:
     y_test = ((outputval_2023 if ml_param.test2023 else outputval[test_inds]) < warning_threshold).astype(int)
     #y_valid = (outputval[valid_inds] < warning_threshold).astype(int)
 del outputval, weights
+gc.collect()
 # DMatrix input for XGBoost
 # no weights for binary classification
 dtrain = xg.DMatrix(data = X_train, label = y_train, weight=(w_train if ml_param.type == 'regression' else None), feature_names=varnames)
@@ -612,52 +633,93 @@ dtest = xg.DMatrix(data = X_test, label = y_test, weight=(w_test if ml_param.typ
 
 del w_train, w_test
 if ml_param.test2023:
-    del outputval_2023, weights_2023#,outputval_orig_2023, inputvals_2023
+    del outputval_2023, weights_2023, outputval_orig_2023, inputvals_2023
 gc.collect()
 
-if makeplots:
+if makeplots and corrplots:
     # plot correlation between variables
-    #print('plot correlations')
-    corrs = np.corrcoef(X_train, rowvar=False)
+    print('plot correlations')
+
+    a_forcorrs = np.hstack((X_train,y_train[:,np.newaxis]))
+    corrs = np.corrcoef(a_forcorrs, rowvar=False)
     # correlation matrix for features
-    #correlation_heatmap(corrs, 
-    #                    zoom_extremes=True, vnames=varnames)
-    # correlation matrix for variables
-    corrmat_pervar = np.zeros((len(coarse_timerange), len(coarse_timerange)))
-
-    i_current, j_current = 0,0
-    vnames_eachvar = []
-    for i_var in range(len(coarse_timerange)):
-        vnames_eachvar.append(varnames[i_current].split('_t-')[0])
-        i_timesteps_thisvar = n_traintimes_coarse if coarse_timerange[i_var] else n_traintimes
-        j_current = 0
-        for j_var in range(len(coarse_timerange)):
-            j_timesteps_thisvar = n_traintimes_coarse if coarse_timerange[j_var] else n_traintimes
-            
-            if i_timesteps_thisvar == j_timesteps_thisvar:
-                correlations_tosum = corrs[range(i_current, i_current+i_timesteps_thisvar), 
-                                           range(j_current, j_current+j_timesteps_thisvar)]
-            else: # keep only timesteps that are the same in both variables (coarse timeranges or not)
-                correlations_tosum = corrs[list(range(i_current, i_current+4))+[i_current+i_timesteps_thisvar-1], 
-                                           list(range(j_current, j_current+4))+[j_current+j_timesteps_thisvar-1]]
-            corrmat_pervar[i_var, j_var] = np.mean(correlations_tosum)
+    correlation_heatmap(corrs, 
+                        zoom_extremes=True, vnames=varnames)
     
-            j_current += j_timesteps_thisvar
-        i_current += i_timesteps_thisvar
+    # correlation matrix for variables
+    corrmat_pervar = np.zeros((len(feat_varchange)+5, len(feat_varchange)+5))
 
-    correlation_heatmap(corrmat_pervar, summary=True, zoom_extremes=False, vnames=vnames_eachvar)
+    vnames_eachvar = []
+    for i_var in range(len(feat_varchange)+5):
+        ivar_fullbkw = i_var-len(feat_varchange)-4
+        vname = varnames[feat_varchange[i_var]].split('_t-')[0] if i_var < len(feat_varchange)-1 else (varnames[ivar_fullbkw] if ivar_fullbkw < 0 else 'time-to-transition')
+        vnames_eachvar.append(vname)
+
+        for j_var in range(len(feat_varchange)+5):
+            jvar_fullbkw = j_var-len(feat_varchange)-4
+            i_tokeep, j_tokeep = [], []
+
+            # handle correlations with time-to-trans
+            if i_var >= len(feat_varchange) - 1 and j_var >= len(feat_varchange) - 1:
+                corrmat_pervar[i_var, j_var] = corrs[ivar_fullbkw-1, jvar_fullbkw-1]
+            else:
+                if i_var >= len(feat_varchange) - 1:
+                    i_tokeep, j_tokeep = ivar_fullbkw-1, range(feat_varchange[j_var], feat_varchange[j_var+1])
+                elif j_var >= len(feat_varchange) - 1:
+                    i_tokeep, j_tokeep = range(feat_varchange[i_var], feat_varchange[i_var+1]), jvar_fullbkw-1
+                else:
+                    for i in range(feat_varchange[i_var], feat_varchange[i_var+1]):
+                        feattime = varnames[i].split('_t-')[1]
+                        try: # test if this time feature is present in the j list of time features
+                            feattime_for_varj = [varnames[j].split('_t-')[1] for j in range(feat_varchange[j_var], feat_varchange[j_var+1])].index(feattime)
+                            i_tokeep.append(i)
+                            j_tokeep.append(feat_varchange[j_var] + feattime_for_varj)
+                        except:
+                            pass
+
+                correlations_tosum = corrs[np.array(i_tokeep), np.array(j_tokeep)]
+                corrmat_pervar[i_var, j_var] = np.mean(correlations_tosum)
+
+
+    correlation_heatmap(corrmat_pervar, summary=True, zoom_extremes=False, vnames=vnames_eachvar, annot=True)
     with open(os.path.join(var.DATA_PATH, 'correlation_matrix.pickle'), 'wb') as f:
         pickle.dump([corrmat_pervar, vnames_eachvar], f, protocol=pickle.HIGHEST_PROTOCOL)
     #print('plot training variables')
     #plot_training_vars(inputvals=inputvals, outputval_orig=outputval_orig, varnames=varnames, earliness_thres=warning_threshold_sec)
+    del a_forcorrs
 
-sys.exit()
 del X_train
-if ml_param.test2023:
-    del inputvals_2023
-else:
-    del inputvals#, X_valid, outputval_orig, 
+if not ml_param.test2023:
+    del inputvals, outputval_orig#, X_valid
 gc.collect()
+
+if corrplots:
+    # plot all variables at t_0-0 versus time-to-transition
+    fig, axis = plt.subplots(6, 4, figsize=(7, 10))
+    plt.subplots_adjust(wspace=0.1, hspace=0.6)
+    plt.xticks(fontsize=6)
+    plt.yticks(fontsize=6)
+    fig.text(0.06, 0.5, 'log(100 + time-to-transition) - 1.5', ha='center', va='center', rotation='vertical', fontsize=16)
+    iaxis=0
+    for v in range(len(varnames)):
+        if not 't-0-0' in varnames[v] and 't-' in varnames[v]:
+            continue
+
+        ax = axis[int(iaxis)//4, int(iaxis)%4]
+        xlimits = np.percentile(X_test[:,v], [0.5, 99.5 if (varnames[v]!='log(area)') else 99.9])
+        xlimits += np.array([-0.03, 0.03]) * (xlimits[1]-xlimits[0])
+        nbins=50
+        ax.hist2d(X_test[:,v],y_test,     bins=nbins,             norm=colors.LogNorm()     ,range=[xlimits, [0.5,3.2]])
+        ax.set_xlim(xlimits)
+        ax.set_ylim(0.5,3.2)
+        ax.set_title(varnames[v][:-6] if 't-0-0' in varnames[v] else varnames[v], fontsize=8)
+
+        xmean = scipy.stats.binned_statistic(y_test, X_test[:,v], bins=nbins, range=[0.5,3.2], statistic='mean')
+        xmeanerr = scipy.stats.binned_statistic(y_test, X_test[:,v], bins=nbins, range=[0.5,3.2], statistic=scipy.stats.sem)
+        ax.plot(xmean.statistic,(xmean.bin_edges[1:] + xmean.bin_edges[:-1])/2, color='red')
+        ax.fill_betweenx((xmean.bin_edges[1:] + xmean.bin_edges[:-1])/2, xmean.statistic - xmeanerr.statistic, xmean.statistic + xmeanerr.statistic, edgecolor='none', facecolor='red', alpha=0.5)
+        iaxis += 1
+    plt.savefig(os.path.join(var.FIGS_PATH, 'ML','all_variables_0-0_vs_earliness.pdf'))
 
 # XGBOOST REGRESSOR PARAMETERS
 params = {
@@ -694,6 +756,7 @@ print('done training')
 predictions = model.predict(dtest)
 predictions_train = model.predict(dtrain)
 #predictions_valid = model.predict(dvalid)
+del dtrain, dtest
 
 # return earliness from its transformation used in training
 true_test = ml_param.invtransform_target(y_test) if ml_param.type == 'regression' else y_test
@@ -705,26 +768,15 @@ pred_train = ml_param.invtransform_target(predictions_train) if ml_param.type ==
 # calibration done on transformed (log) earliness
 if ml_param.type == 'regression' and ml_param.calibrate_pred:
 
-    keepinds = np.array((((100+pred_test) < 3*3600) | 
-                         ((100+true_test > 3600) & ((100+pred_test) < 3*(100+true_test)))))
+    keepinds = np.array(pred_test < 3600 + 3.5*true_test)
     kept_y = y_test[keepinds]
     kept_pred = predictions[keepinds]
     nonkept_y = y_test[~keepinds]
     nonkept_pred = predictions[~keepinds]
 
-    '''
-    fix_x1 = 0
-    fix_y1 = 0
-    fix_x2 = 0
-    fix_y2 = 0
-    def func(x, a, b, c):
-        return a * np.exp(-b * x) + c
-    popt, pcov = curve_fit(func, xdata, ydata, bounds=(0, [3., 1., 0.5]))
-    plt.plot(xdata, func(xdata, *popt)
-    '''
-
+    # median prediction at each true value
     pred_valid_calib_binstats = scipy.stats.binned_statistic(kept_y, kept_pred,
-                                                             bins=100, statistic='median')
+                                                             bins=np.linspace(np.min(kept_y), np.max(kept_y)*1.01, 45), statistic='median')
 
     pred_medianpred = pred_valid_calib_binstats.statistic
     y_medianpred = pred_valid_calib_binstats.bin_edges
@@ -732,24 +784,42 @@ if ml_param.type == 'regression' and ml_param.calibrate_pred:
     # remove nan's
     y_medianpred = np.delete(y_medianpred, np.where(np.isnan(pred_medianpred))[0])
     pred_medianpred = np.delete(pred_medianpred, np.where(np.isnan(pred_medianpred))[0])
-    y_medianpred = np.concatenate(([ml_param.transform_target(0)], y_medianpred, [ml_param.transform_target(20*3600)]))
-    pred_medianpred = np.concatenate(([ml_param.transform_target(0)], pred_medianpred, [ml_param.transform_target(15*3600)]))#np.max(pred_medianpred)]))
 
-    w_splinefit = np.ones(len(y_medianpred))
-    w_splinefit[[0, len(y_medianpred)-1]] = 100
-    pred_calib_spline = UnivariateSpline(y_medianpred, pred_medianpred, w=w_splinefit, k=5)
+    # linear fit
+    def fitfct(x, xbreak, ybreak, xfin, yfin, ymin):
+        offset = 2 - ml_param.log_subtract_transform
+        xnew = x - offset
+        xbreaknew = ml_param.transform_target(xbreak) - offset
+        ybreaknew = ml_param.transform_target(ybreak) - offset
+        yminnew = ml_param.transform_target(ymin) - offset
+        xfinnew = ml_param.transform_target(xfin) - offset
+        yfinnew = ml_param.transform_target(yfin) - offset - yminnew
 
+        y = np.zeros(x.shape)
+        y[xnew < xbreaknew] = yminnew + ybreaknew * xnew[xnew < xbreaknew] / xbreaknew
+        slope2 = (yfinnew-ybreaknew) / (xfinnew-xbreaknew)
+        y[xnew >= xbreaknew] = yminnew + ybreaknew + slope2 * (xnew[xnew >= xbreaknew] - xbreaknew)
+        return y + offset
 
-    #print(pred_calib_spline)
-    pred_calib_transformer = pred_calib_spline#np.poly1d(pred_calib_spline)
-    y_valid_bincenters = np.linspace(ml_param.transform_target(0), ml_param.transform_target(22*3600), 100)
-    pred_valid_calib_vals = pred_calib_transformer(y_valid_bincenters)
-    print('done spline fit')
+    maxtruecalib = 20*3600
+    def fitfct_constr(x, xbreak, ybreak):
+        return fitfct(x, xbreak, ybreak, xfin=maxtruecalib, 
+                      yfin=np.max(ml_param.invtransform_target(kept_pred)), 
+                      ymin=np.min(ml_param.invtransform_target(kept_pred)))
+    
+    # actual fit
+    popt, pcov = curve_fit(fitfct_constr, y_medianpred, pred_medianpred, 
+                           bounds=([0.3*3600, 0.5*3600],
+                                   [5*3600, 4*3600]))
+
+    y_valid_bincenters = np.linspace(ml_param.transform_target(0), ml_param.transform_target(maxtruecalib), 100)
+    pred_valid_calib_vals = fitfct_constr(y_valid_bincenters, *popt)
+    print('calib fit parameters: ', popt)
 
     if makeplots:
         fig = plt.figure(num=1, clear=True)
-        plt.ylabel(r'100 + $\bf{predicted}$ earliness [s]', fontsize=12)
-        plt.xlabel(r'100 + $\bf{true}$ earliness [s]', fontsize=12)
+        plt.ylabel(r'100 + $\bf{predicted}$ time-to-transition [s]', fontsize=12)
+        plt.xlabel(r'100 + $\bf{true}$ time-to-transition [s]', fontsize=12)
         emin = 100.
         emax = 20*3600
         plt.xlim(emin, emax)
@@ -758,16 +828,17 @@ if ml_param.type == 'regression' and ml_param.calibrate_pred:
         plt.yscale('log')
 
         plt.scatter(100+ml_param.invtransform_target(kept_y),
-                    100+ml_param.invtransform_target(kept_pred), s=0.1)
+                    100+ml_param.invtransform_target(kept_pred), s=0.1, label='kept for calibration')
         plt.scatter(100+ml_param.invtransform_target(nonkept_y),
-                    100+ml_param.invtransform_target(nonkept_pred), s=0.1, c='red')
+                    100+ml_param.invtransform_target(nonkept_pred), s=0.1, c='red', label='rejected for calibration')
 
         plt.plot(np.linspace(emin,emax,10), np.linspace(emin,emax,10), color='black', linestyle='dashed', linewidth=0.5)
-        plt.plot(100+ml_param.invtransform_target(y_valid_bincenters), 100+ml_param.invtransform_target(pred_valid_calib_vals), color='black')
-        plt.plot(100+ml_param.invtransform_target(y_medianpred), 100+ml_param.invtransform_target(pred_medianpred), color='green')
+        plt.plot(100+ml_param.invtransform_target(y_valid_bincenters), 100+ml_param.invtransform_target(pred_valid_calib_vals), color='black', label='calibration fit')
+        plt.plot(100+ml_param.invtransform_target(y_medianpred), 100+ml_param.invtransform_target(pred_medianpred), color='green', label='median predicted')
         plt.grid(color='black', linewidth=0.3, linestyle='dotted')
+        plt.legend(loc='lower right')
 
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'log_earliness_pred_vs_true_scatter'+('_test2023' if ml_param.test2023 else '')+'.png'), 
+        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'log_earliness_pred_vs_true_scatter'+('_test2023' if ml_param.test2023 else '')+('_excludeworstSHAP' if exclude_timefeats else '')+'.png'), 
                     dpi=250, bbox_inches='tight')
 
         # show calibration vs uncalibrated true vs predicted 2D histo
@@ -844,12 +915,12 @@ if makeplots or make_shap_plots:
     #scatter_true_vs_pred(true_test, pred_test, id_idx, test_inds, loge=True)
     #scatter_true_vs_pred(true_test, pred_test, id_idx, test_inds, loge=False)
     hist_true_vs_pred(true_test, pred_test, zmax=emax_test_hist2d, 
-                    loge=True, normalize_cols=True, addsavename='_highEweight'+str(ml_param.weight_highEarliness)+('_test2023' if ml_param.test2023 else ''))
+                    loge=True, normalize_cols=True, addsavename='_highEweight'+str(ml_param.weight_highEarliness)+('_test2023' if ml_param.test2023 else '')+('_excludeworstSHAP' if exclude_timefeats else ''))
     print('another 2D histogram')
     # check for overtraining with true vs pred_test for training sample
     #scatter_true_vs_pred(true_train, pred_train, id_idx, train_inds, loge=True, trainsamples=True)
     hist_true_vs_pred(true_train, pred_train, zmax=emax_test_hist2d*(3 if ml_param.test2023 else (1-test_size)/test_size), 
-                    loge=True, trainsamples=True, normalize_cols=True, addsavename='_highEweight'+str(ml_param.weight_highEarliness)+('_test2023' if ml_param.test2023 else ''))
+                    loge=True, trainsamples=True, normalize_cols=True, addsavename='_highEweight'+str(ml_param.weight_highEarliness)+('_test2023' if ml_param.test2023 else '')+('_excludeworstSHAP' if exclude_timefeats else ''))
 
     if make_shap_plots:
         del y_train, true_test, true_train, pred_test, pred_train, id_idx, eventtime
@@ -860,154 +931,176 @@ if makeplots or make_shap_plots:
         # SHAP values for feature importance
         explainer = shap.Explainer(model, feature_names=varnames)
         shap_values = explainer(X_test)
-        #print(shap_values)
-        #print(shap_values.data.shape)
 
-        print('aggregate shap')
-        # Aggregate SHAP values by variable or by timerange
-        shap_eachvar = copy.deepcopy(shap_values)
-        shap_eachrange = copy.deepcopy(shap_values)
-        shap_eachrange_coarse = copy.deepcopy(shap_values)
+        if not exclude_timefeats:
+            print('aggregate shap')
+            # Aggregate SHAP values by variable or by timerange
+            shap_eachvar = copy.deepcopy(shap_values)
+            shap_eachrange = copy.deepcopy(shap_values)
+            shap_eachrange_coarse = copy.deepcopy(shap_values)
 
-        nvar_tintegrated = len(coarse_timerange)
-        varmap_eachvar = []
-        varmap_eachrange_coarse = np.empty((n_traintimes_coarse, np.count_nonzero(coarse_timerange)), dtype=int)
-        varmap_eachrange = np.empty((n_traintimes, nvar_tintegrated - np.count_nonzero(coarse_timerange)), dtype=int)
-        varnames_eachvar = []
-        varnames_eachrange = []
-        varnames_eachrange_coarse = []
+            nvar_tintegrated = len(feat_varchange)-1
+            varmap_eachvar = []
+            varmap_eachrange_coarse = np.empty((n_traintimes_coarse, np.count_nonzero(coarse_timerange)), dtype=int)
+            varmap_eachrange = np.empty((n_traintimes, nvar_tintegrated - np.count_nonzero(coarse_timerange)), dtype=int)
+            varnames_eachvar = []
+            varnames_eachrange = []
+            varnames_eachrange_coarse = []
 
-        featidx = 0
-        v_coarse = 0
-        v_noncoarse = 0
-        for v in range(nvar_tintegrated):
-            varnames_eachvar.append(varnames[featidx].split('_t-')[0])
-            if coarse_timerange[v]:
-                varmap_eachvar.append(np.arange(featidx, featidx+n_traintimes_coarse))
-                for i in range(n_traintimes_coarse):
-                    varmap_eachrange_coarse[i][v_coarse] = featidx + i
-                if len(varnames_eachrange_coarse) == 0:
-                    varnames_eachrange_coarse = [ 'time' + varnames[featidx+i].split('_t-')[1] for i in range(n_traintimes_coarse)]
-                featidx += n_traintimes_coarse
-                v_coarse += 1
-            else:
-                varmap_eachvar.append(np.arange(featidx, featidx+n_traintimes))
-                for i in range(n_traintimes):
-                    varmap_eachrange[i][v_noncoarse] = featidx + i
-                if len(varnames_eachrange) == 0:
-                    varnames_eachrange = [ 'time' + varnames[featidx+i].split('_t-')[1] for i in range(n_traintimes)]
-                featidx += n_traintimes
-                v_noncoarse += 1
+            featidx = 0
+            v_coarse = 0
+            v_noncoarse = 0
+            for v in range(nvar_tintegrated):
+                varnames_eachvar.append(varnames[featidx].split('_t-')[0])
+                if coarse_timerange[v]:
+                    varmap_eachvar.append(np.arange(featidx, featidx+n_traintimes_coarse))
+                    for i in range(n_traintimes_coarse):
+                        varmap_eachrange_coarse[i][v_coarse] = featidx + i
+                    if len(varnames_eachrange_coarse) == 0:
+                        varnames_eachrange_coarse = [ 'time' + varnames[featidx+i].split('_t-')[1] for i in range(n_traintimes_coarse)]
+                    featidx += n_traintimes_coarse
+                    v_coarse += 1
+                else:
+                    varmap_eachvar.append(np.arange(featidx, featidx+n_traintimes))
+                    for i in range(n_traintimes):
+                        varmap_eachrange[i][v_noncoarse] = featidx + i
+                    if len(varnames_eachrange) == 0:
+                        varnames_eachrange = [ 'time' + varnames[featidx+i].split('_t-')[1] for i in range(n_traintimes)]
+                    featidx += n_traintimes
+                    v_noncoarse += 1
 
-        print('end aggregate shap. Compute SHAP per variable')
-        # New SHAP values for each variable
-        shap_eachvar_vals = np.empty((shap_values.shape[0], nvar_tintegrated))
-        shap_eachvar_data = np.empty((shap_values.shape[0], nvar_tintegrated))
-        for v in range(nvar_tintegrated):
-            shap_eachvar_vals[:, v] = np.sum(shap_values.values[:,varmap_eachvar[v]], axis=1)
-            shap_eachvar_data[:, v] = np.mean(shap_values.data[:,varmap_eachvar[v]], axis=1)
-        shap_eachvar.values = shap_eachvar_vals
-        shap_eachvar.data = shap_eachvar_data
-        shap_eachvar.feature_names=varnames_eachvar
+            print('end aggregate shap. Compute SHAP per variable')
+            # New SHAP values for each variable
+            shap_eachvar_vals = np.empty((shap_values.shape[0], nvar_tintegrated))
+            shap_eachvar_data = np.empty((shap_values.shape[0], nvar_tintegrated))
+            for v in range(nvar_tintegrated):
+                shap_eachvar_vals[:, v] = np.sum(shap_values.values[:,varmap_eachvar[v]], axis=1)
+                shap_eachvar_data[:, v] = np.mean(shap_values.data[:,varmap_eachvar[v]], axis=1)
+            shap_eachvar.values = np.hstack((shap_eachvar_vals, shap_values.values[:, -5:]))
+            shap_eachvar.data = np.hstack((shap_eachvar_data, shap_values.data[:, -5:]))
+            shap_eachvar.feature_names = varnames_eachvar+shap_values.feature_names[-5:]
 
-        print('Compute SHAP per timerange')
-        # New SHAP values for each time range
-        shap_eachrange_vals = np.empty((shap_values.shape[0], n_traintimes))
-        shap_eachrange_data = np.empty((shap_values.shape[0], n_traintimes))
-        for v in range(n_traintimes):
-            shap_eachrange_vals[:, v] = np.sum(shap_values.values[:,varmap_eachrange[v]], axis=1)
-            shap_eachrange_data[:, v] = np.mean(shap_values.data[:,varmap_eachrange[v]], axis=1) # this is not correct but is only used to show the feature value in the plots
-        shap_eachrange.values = shap_eachrange_vals
-        shap_eachrange.data = shap_eachrange_data
-        shap_eachrange.feature_names=varnames_eachrange
+            print('Compute SHAP per timerange')
+            # New SHAP values for each time range
+            shap_eachrange_vals = np.empty((shap_values.shape[0], n_traintimes))
+            shap_eachrange_data = np.empty((shap_values.shape[0], n_traintimes))
+            for v in range(n_traintimes):
+                shap_eachrange_vals[:, v] = np.sum(shap_values.values[:,varmap_eachrange[v]], axis=1)
+                shap_eachrange_data[:, v] = np.mean(shap_values.data[:,varmap_eachrange[v]], axis=1) # this is not correct but is only used to show the feature value in the plots
+            shap_eachrange.values = shap_eachrange_vals
+            shap_eachrange.data = shap_eachrange_data
+            shap_eachrange.feature_names=varnames_eachrange
 
-        # New SHAP values for each coarse time range
-        shap_eachrange_coarse_vals = np.empty((shap_values.shape[0], n_traintimes_coarse))
-        shap_eachrange_coarse_data = np.empty((shap_values.shape[0], n_traintimes_coarse))
-        for v in range(n_traintimes_coarse):
-            shap_eachrange_coarse_vals[:, v] = np.sum(shap_values.values[:,varmap_eachrange_coarse[v]], axis=1)
-            shap_eachrange_coarse_data[:, v] = np.mean(shap_values.data[:,varmap_eachrange_coarse[v]], axis=1) # this is not correct but is only used to show the feature value in the plots
-        shap_eachrange_coarse.values = shap_eachrange_coarse_vals
-        shap_eachrange_coarse.data = shap_eachrange_coarse_data
-        shap_eachrange_coarse.feature_names=varnames_eachrange_coarse
+            # New SHAP values for each coarse time range
+            shap_eachrange_coarse_vals = np.empty((shap_values.shape[0], n_traintimes_coarse))
+            shap_eachrange_coarse_data = np.empty((shap_values.shape[0], n_traintimes_coarse))
+            for v in range(n_traintimes_coarse):
+                shap_eachrange_coarse_vals[:, v] = np.sum(shap_values.values[:,varmap_eachrange_coarse[v]], axis=1)
+                shap_eachrange_coarse_data[:, v] = np.mean(shap_values.data[:,varmap_eachrange_coarse[v]], axis=1) # this is not correct but is only used to show the feature value in the plots
+            shap_eachrange_coarse.values = shap_eachrange_coarse_vals
+            shap_eachrange_coarse.data = shap_eachrange_coarse_data
+            shap_eachrange_coarse.feature_names=varnames_eachrange_coarse
 
         inds_onlyStableTimes = SHAP_reject_messy_times(shap_values)
 
         # SAVE SHAP VALUES
         if savefiles:
-            with open(os.path.join(var.DATA_PATH, 'SHAP_values.pickle'), 'wb') as f:
-                pickle.dump([shap_values, shap_eachvar, shap_eachrange, shap_eachrange_coarse, inds_onlyStableTimes, ml_param],
+            with open(os.path.join(var.DATA_PATH, 'SHAP_values'+('_excludeworstSHAP' if exclude_timefeats else '')+'.pickle'), 'wb') as f:
+                pickle.dump([shap_values, shap_eachvar, shap_eachrange, shap_eachrange_coarse, inds_onlyStableTimes, ml_param] if not exclude_timefeats else [shap_values, inds_onlyStableTimes, ml_param],
                             f, protocol=pickle.HIGHEST_PROTOCOL)
-
-        print('Scatter plot of all instances for each feature')
         
+        # get the 10 least performing (and not too correlated) features
+        if remove_worstSHAP:
+            shap_meanabs_perfeature = np.mean(np.abs(shap_values.values), axis=0)
+            feature_idx_sortedshap = np.argsort(shap_meanabs_perfeature)
+            feat_idx_mayexclude = feature_idx_sortedshap[0:30]
+            corr_badSHAP = np.corrcoef(X_test[:, feat_idx_mayexclude], rowvar=False)
+            feat_idx_exclude = [0]
+            for i in range(1, len(feat_idx_mayexclude)):
+                print('corrs with previous vars', corr_badSHAP[feat_idx_exclude, i])
+                if np.max(np.abs(corr_badSHAP[feat_idx_exclude, i])) < 0.6:
+                    feat_idx_exclude.append(i)
+                    print('add',i)
+                if len(feat_idx_exclude) == 10:
+                    break
+            print(np.array(feat_idx_exclude))
+            feat_idx_exclude = feat_idx_mayexclude[np.array(feat_idx_exclude)]
+            print(np.array(feat_idx_exclude))
+            print('lowest abs mean shap value = ', shap_meanabs_perfeature[feat_idx_exclude])
+
+            feature_names_toexclude = varnames[feat_idx_exclude]
+            print('write down these variables for future exclusion: ', feature_names_toexclude)
+            with open(os.path.join(var.DATA_PATH, 'excluded_variables_fromSHAP.txt'), 'a') as f:
+                for line in feature_names_toexclude:
+                    f.write(f"{line}\n")
 
         print('shap_values')
         f = plt.figure(num=1, clear=True)
         targetsort = np.argsort(y_test)[::-1]
         targetsort_onlyStableTimes = np.argsort(y_test[inds_onlyStableTimes])[::-1]
 
+        if not exclude_timefeats:
+            print('shap figure 1')
+            plt.figure(num=1, clear=True)
+            shap.plots.bar(shap_eachvar, show=False, max_display=40)
+            plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_timeIntegrated.pdf'), dpi=250, bbox_inches='tight')
 
-        for v in range(shap_values.shape[1]):
-            print(v, varnames[v], end='\r')
-            #SHAP_featureDependence(y_test, shap_values, targetsort, varnames[v], v, ml_param, 3600, onlyStableTimes=False)
-            SHAP_featureDependence(y_test[inds_onlyStableTimes], shap_values[inds_onlyStableTimes], targetsort_onlyStableTimes, varnames[v], v, ml_param, 3600, onlyStableTimes=True)
-        print('shap_eachvar')
-        for v in range(shap_eachvar.shape[1]):
-            print(v, varnames[v], end='\r')
-            #SHAP_featureDependence(y_test, shap_eachvar, targetsort, varnames_eachvar[v], v, ml_param, 3600, onlyStableTimes=False)
-            SHAP_featureDependence(y_test[inds_onlyStableTimes], shap_eachvar[inds_onlyStableTimes], targetsort_onlyStableTimes, varnames_eachvar[v], v, ml_param, 3600, onlyStableTimes=True)
+            #plt.figure(num=1, clear=True)
+            #shap.plots.beeswarm(shap_eachrange, show=False, max_display=40)
+            #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_perTimerange.pdf'), dpi=250, bbox_inches='tight')
 
-        sys.exit()
+            print('shap figure 2')
+            plt.figure(num=1, clear=True)
+            shap.plots.bar(shap_eachrange, show=False, max_display=40)
+            plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_perTimerange.pdf'), dpi=250, bbox_inches='tight')
 
-        print('shap figure 1')
-        plt.figure(num=1, clear=True)
-        shap.plots.bar(shap_eachvar, show=False, max_display=40)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_timeIntegrated.pdf'), dpi=250, bbox_inches='tight')
+            #plt.figure(num=1, clear=True)
+            #shap.plots.beeswarm(shap_eachrange_coarse, show=False, max_display=40)
+            #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_perCoarseTimerange.pdf'), dpi=250, bbox_inches='tight')
 
-        #plt.figure(num=1, clear=True)
-        #shap.plots.beeswarm(shap_eachrange, show=False, max_display=40)
-        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_perTimerange.pdf'), dpi=250, bbox_inches='tight')
-
-        print('shap figure 2')
-        plt.figure(num=1, clear=True)
-        shap.plots.bar(shap_eachrange, show=False, max_display=40)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_perTimerange.pdf'), dpi=250, bbox_inches='tight')
-
-        #plt.figure(num=1, clear=True)
-        #shap.plots.beeswarm(shap_eachrange_coarse, show=False, max_display=40)
-        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_perCoarseTimerange.pdf'), dpi=250, bbox_inches='tight')
-
-        print('shap figure 3')
-        plt.figure(num=1, clear=True)
-        shap.plots.bar(shap_eachrange_coarse, show=False, max_display=40)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_perCoarseTimerange.pdf'), dpi=250, bbox_inches='tight')
-        
+            print('shap figure 3')
+            plt.figure(num=1, clear=True)
+            shap.plots.bar(shap_eachrange_coarse, show=False, max_display=40)
+            plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_perCoarseTimerange.pdf'), dpi=250, bbox_inches='tight')
+            
         print('shap figure 4')
         plt.figure(num=1, clear=True)
         shap.plots.bar(shap_values, show=False, max_display=40) 
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar.pdf'), dpi=250, bbox_inches='tight')
+        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar'+('_excludeworstSHAP' if exclude_timefeats else '')+'.pdf'), dpi=250, bbox_inches='tight')
 
         print('shap figure 5')
         plt.figure(num=1, clear=True)
         shap.plots.bar(shap_values, show=False, max_display=228)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_allvars.pdf'), dpi=250, bbox_inches='tight')
+        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_allvars'+('_excludeworstSHAP' if exclude_timefeats else '')+'.pdf'), dpi=250, bbox_inches='tight')
 
-        print('shap figure 6')
-        plt.figure(num=1, clear=True)
-        shap.plots.beeswarm(shap_values, show=False, max_display=40)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm.pdf'), dpi=250, bbox_inches='tight')
+        #print('shap figure 6')
+        #plt.figure(num=1, clear=True)
+        #shap.plots.beeswarm(shap_values, show=False, max_display=40)
+        #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm'+('_excludeworstSHAP' if exclude_timefeats else '')+'.pdf'), dpi=250, bbox_inches='tight')
 
-        print('shap figure 7')
-        plt.figure(num=1, clear=True)
-        shap.plots.beeswarm(shap_eachvar, show=False, max_display=40)
-        plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_timeIntegrated.pdf'), dpi=250, bbox_inches='tight')
+        #if not exclude_timefeats:
+        #    print('shap figure 7')
+        #    plt.figure(num=1, clear=True)
+        #    shap.plots.beeswarm(shap_eachvar, show=False, max_display=40)
+        #    plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_timeIntegrated.pdf'), dpi=250, bbox_inches='tight')
 
         #plt.figure(num=1, clear=True)
         #shap.plots.beeswarm(shap_values, show=False, max_display=228)
         #plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_beeswarm_allvars.pdf'), dpi=250, bbox_inches='tight')
         #plt.figure(num=1, clear=True)
 
+        plot_SHAP_eachfeature = False
+        if plot_SHAP_eachfeature:
+            print('Scatter plot of all instances for each feature')
+            for v in range(shap_values.shape[1]):
+                print(v, varnames[v])
+                #SHAP_featureDependence(y_test, shap_values, targetsort, varnames[v], v, ml_param, 3600, onlyStableTimes=False)
+                SHAP_featureDependence(y_test[inds_onlyStableTimes], shap_values[inds_onlyStableTimes], targetsort_onlyStableTimes, varnames[v], v, ml_param, 3600, onlyStableTimes=True)
+            print('shap_eachvar')
+            for v in range(shap_eachvar.shape[1]):
+                print(v, shap_eachvar.feature_names[v])
+                #SHAP_featureDependence(y_test, shap_eachvar, targetsort, varnames_eachvar[v], v, ml_param, 3600, onlyStableTimes=False)
+                SHAP_featureDependence(y_test[inds_onlyStableTimes], shap_eachvar[inds_onlyStableTimes], targetsort_onlyStableTimes, shap_eachvar.feature_names[v], v, ml_param, 3600, onlyStableTimes=True)
 
 
         #shap.plots.bar(shap_values[y_test[passClassif_test] < ml_param.transform_target(6*3600)], show=False, max_display=142)

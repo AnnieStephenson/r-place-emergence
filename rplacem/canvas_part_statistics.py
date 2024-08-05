@@ -25,6 +25,8 @@ class CanvasPartStatistics(object):
             Set in __init__()
     info : AtlasInfo
         Direct AtlasInfo object from the CanvasPart
+    quadrant : int
+        the index of the earliest canvas quadrant that the composition was on (from 0 to 2 for 2022, from 0 to 6 for 2023)
     compute_vars: dictionary (string to int)
         says what level of information to compute and store for each variable.
         The keys for the computed variables are:
@@ -372,6 +374,7 @@ class CanvasPartStatistics(object):
         self.area = cpart.num_pix()
         self.area_rectangle = cpart.width(0) * cpart.width(1)
         self.tmin, self.tmax = cpart.min_max_time(tmax_global=tmax)
+        self.quadrant = cpart.tmin_quadrant()[1]
         if self.tmin > 1e-4:
             start_pixels = cpart.start_pixels()
         else:
@@ -863,8 +866,8 @@ class CanvasPartStatistics(object):
 
         self.variance_from_frac_pixdiff_inst.desc_long = 'Variance based on squares of frac_pixdiff_inst_vs_inst'
         self.variance_from_frac_pixdiff_inst.desc_short = 'Variance (frac_pixdiff_inst)'
-        self.variance_from_frac_pixdiff_inst.savename = filepath('variance_from_frac_pixdiff_inst')
-        self.variance_from_frac_pixdiff_inst.label = 'variance_from_frac_pixdiff_inst'
+        self.variance_from_frac_pixdiff_inst.savename = filepath('variance_frac_pixdiff_inst')
+        self.variance_from_frac_pixdiff_inst.label = 'variance_frac_pixdiff_inst'
         
         self.autocorr_bycase.desc_long = 'Autocorrelation by case'
         self.autocorr_bycase.desc_short = 'Autocorrelation by case'
