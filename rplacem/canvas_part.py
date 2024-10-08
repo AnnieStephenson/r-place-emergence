@@ -358,8 +358,10 @@ class CanvasPart(object):
         # determine if the pixel change is in the 'active' timerange for the composition
         if verbose:
             print('    determine if the pixel change is in the active timerange')
-        is_in_comp = np.full(len(pixel_changes_lim), True if self.is_rectangle else False, dtype=np.bool_)
-        if not self.is_rectangle:
+        if self.is_rectangle:
+            is_in_comp = (pixel_changes_lim['seconds'] > self.coords_timerange[0][0][0]) & (pixel_changes_lim['seconds'] < self.coords_timerange[0][0][1])
+        else:
+            is_in_comp = np.full(len(pixel_changes_lim), False, dtype=np.bool_)
             s = pixel_changes_lim['seconds']
             timeranges = self.coords_timerange
 

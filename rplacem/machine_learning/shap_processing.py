@@ -6,6 +6,7 @@ import scipy
 import EvalML as eval
 import pickle
 import pandas as pd
+from matplotlib import colors
 
 def calc_results_per_comp(compoID_idx, true_times, time, predicted_times, id_dict,
                       shap_eachvar,
@@ -45,6 +46,7 @@ def calc_results_per_comp(compoID_idx, true_times, time, predicted_times, id_dic
     meanvari_pervar_percomp = np.zeros((t_inst_lim, len(shap_varnames)))
     shap_varrank_percomp_unfilt_sig = np.zeros((t_inst_lim, len(shap_varnames)))
     shap_varrank_percomp_unfilt = np.zeros((t_inst_lim, len(shap_varnames)))
+    pred_comp_no_trans = []
 
     n_sections = np.zeros(len(thresholds)) # number of sequences of length true_threshold in all compositions
     n_trans = 0
@@ -62,9 +64,13 @@ def calc_results_per_comp(compoID_idx, true_times, time, predicted_times, id_dic
 
         # separate indices for a composition that has multiple transitions
         true_comp = true_times[inds]
+        #print('true_comp: ', true_comp)
         separate = np.where(np.diff(true_comp) > 0.1)[0] + 1
         separate = [0]+list(separate)+[len(inds)]
         #print('separate = ',separate)
+        if np.all(true_comp == 43200.008):
+            pred_comp_no_trans.append(predicted_times[inds])
+            print('no transition in this composition')
 
         # loop over transitions
         for s in range(1, len(separate)):
@@ -209,7 +215,7 @@ def calc_results_per_comp(compoID_idx, true_times, time, predicted_times, id_dic
             shap_varrank_percomp_unfilt,
             shap_varrank_percomp_unfilt_sig,
             ROCAUC_percomp, PRAUC_percomp,
-            signalfrac_percomp, comp_ids]
+            signalfrac_percomp, comp_ids, pred_comp_no_trans]
 
 
 def calc_frac_var_rankings(trans_filter_ROC, shap_varrank_percomp, plot=False):
@@ -273,14 +279,16 @@ def calc_frac_var_rankings(trans_filter_ROC, shap_varrank_percomp, plot=False):
     return frac_rankedn
 
 
-def plot_shap_vs_var(true_times, 
-                     shap_values, 
+def plot_shap_vs_var(shap_values, 
                      var_values,
+                     true_times,
                      sig_max=3600,
                      sig_min=0,
-                     inds_only_stable_times=None,
+                     inds_times=None,
                      stat_avg='mean',
+                     var_percentile=True,
                      xlogbins=False,
+                     bin_axis='y',
                      bkg_color=np.array([0.4, 0.6, 0.7]),
                      sig_color=np.array([0.54, 0.05, 0.13]),
                      line_color=np.array([0.54, 0.05, 0.13]),
@@ -291,10 +299,11 @@ def plot_shap_vs_var(true_times,
                      data_point_alpha_sig=0.,
                      nbins=100):
     
-    if inds_only_stable_times is not None:
-        true_times = true_times[inds_only_stable_times]
-        shap_values = shap_values[inds_only_stable_times] 
-        var_values = var_values[inds_only_stable_times]    
+    if inds_times is not None:
+        shap_values = shap_values[inds_times] 
+        var_values = var_values[inds_times] 
+        if true_times is not None:
+            true_times = true_times[inds_times]
         
     # get the indices for sorted the true time ascending values
     true_time_sorted_inds = np.argsort(true_times)[::-1]
@@ -307,12 +316,14 @@ def plot_shap_vs_var(true_times,
     sig_bool = (c <= sig_max) & (c>=sig_min)
     is_sig = np.where(sig_bool)[0]
     is_bkg = np.where(~sig_bool)[0]
-
+    #norm = colors.Normalize(vmin=min(c[is_sig]), vmax=max(c[is_sig]))
     
     plt.scatter(x[is_bkg], y[is_bkg], color = bkg_color, s=2, alpha=data_point_alpha_bkg, edgecolors=None)
+    #plt.scatter(x[is_sig], y[is_sig], c = norm(c[is_sig]), cmap='viridis', s=2, alpha=data_point_alpha_sig, edgecolors=None)
     plt.scatter(x[is_sig], y[is_sig], color = sig_color, s=2, alpha=data_point_alpha_sig, edgecolors=None)
     
     xmin, xmax = np.min(x), np.max(x)
+    ymin, ymax = np.min(y), np.max(y)
     
     #plt.figure()
     #sns.histplot(y[is_bkg], color = line_color_bkg, alpha = 0.5, edgecolor=None, label='bkg')
@@ -324,61 +335,90 @@ def plot_shap_vs_var(true_times,
     ###################################################################################
     #### calculate and plot the mean of the "background", or far-from-transition points
     ###################################################################################
-    meanbkg = scipy.stats.binned_statistic(x[is_bkg], 
-                                           y[is_bkg], 
-                                           bins=(np.logspace(np.log10(xmin), 
-                                                             np.log10(xmax), 
-                                                             nbins) if xlogbins else np.linspace(xmin, xmax, nbins)), 
-                                           statistic=stat_avg)
+    #meanbkg = scipy.stats.binned_statistic(x[is_bkg], 
+    #                                       y[is_bkg], 
+    #                                       bins=(np.logspace(np.log10(xmin), 
+    #                                                         np.log10(xmax), 
+    #                                                         nbins) if xlogbins else np.linspace(xmin, xmax, nbins)), 
+    #                                       statistic=stat_avg)
 
-    stdbkg = scipy.stats.binned_statistic(x[is_bkg], 
-                                          y[is_bkg], 
-                                          bins=(np.logspace(np.log10(xmin),
-                                                            np.log10(xmax), 
-                                                            nbins) if xlogbins else np.linspace(xmin, xmax, nbins)), 
-                                          statistic='std')
-    mean_valbkg = meanbkg.statistic
-    mean_binc_bkg = meanbkg.bin_edges
-    mean_binc_bkg = (mean_binc_bkg[:-1] + mean_binc_bkg[1:])/2.
+    #stdbkg = scipy.stats.binned_statistic(x[is_bkg], 
+    #                                      y[is_bkg], 
+    #                                      bins=(np.logspace(np.log10(xmin),
+    #                                                        np.log10(xmax), 
+    #                                                        nbins) if xlogbins else np.linspace(xmin, xmax, nbins)), 
+    #                                      statistic='std')
+    #mean_valbkg = meanbkg.statistic
+    #mean_binc_bkg = meanbkg.bin_edges
+    #mean_binc_bkg = (mean_binc_bkg[:-1] + mean_binc_bkg[1:])/2.
 
-    plt.plot(mean_binc_bkg, mean_valbkg, color= line_color_bkg, linewidth=line_width_bkg)
-    if line_width_bkg > 0:
-        plt.fill_between(mean_binc_bkg, 
-                        mean_valbkg - stdbkg.statistic, 
-                        mean_valbkg + stdbkg.statistic, 
-                        edgecolor=None,
-                        linewidth=0,
-                        color=line_color_bkg, alpha= err_fill_alpha)
+    #plt.plot(mean_binc_bkg, mean_valbkg, color= line_color_bkg, linewidth=line_width_bkg)
+    #if line_width_bkg > 0:
+    #    plt.fill_between(mean_binc_bkg, 
+    #                    mean_valbkg - stdbkg.statistic, 
+    #                    mean_valbkg + stdbkg.statistic, 
+    #                    edgecolor=None,
+    #                    linewidth=0,
+    #                    color=line_color_bkg, alpha= err_fill_alpha)
 
     ###############################################################################
     #### calculate and plot the mean of the "signal", or close-to-transition points
     ###############################################################################
-    
-    mean = scipy.stats.binned_statistic(x[is_sig], y[is_sig], bins=(np.logspace(np.log10(xmin), 
-                                                                np.log10(xmax), 
-                                                                nbins) if xlogbins else np.linspace(xmin, xmax, nbins)), 
-                                        statistic=stat_avg)
-    std = scipy.stats.binned_statistic(x[is_sig], y[is_sig], bins=(np.logspace(np.log10(xmin), 
-                                                               np.log10(xmax), 
-                                                               nbins) if xlogbins else np.linspace(xmin, xmax, nbins)), 
-                                        statistic='std')
-    mean_val = mean.statistic
-    mean_binc = mean.bin_edges
-    mean_binc = (mean_binc[:-1] + mean_binc[1:])/2.
-    plt.plot(mean_binc, mean_val, color=line_color)
-    plt.fill_between(mean_binc, 
-                     mean_val - std.statistic, 
-                     mean_val + std.statistic, 
-                     edgecolor=None,
-                     linewidth=0,
-                     color=line_color, alpha=err_fill_alpha)
-    
+    if var_percentile:
+        bins = np.linspace(0, 100, 101)/100.
+    else:
+        bins = (np.logspace(np.log10(xmin), np.log10(xmax), nbins) if xlogbins else np.linspace(xmin, xmax, nbins))
+    if bin_axis=='x':
+        bins= (np.logspace(np.log10(xmin), np.log10(xmax), nbins) if xlogbins else np.linspace(xmin, xmax, nbins))
+        
+        mean = scipy.stats.binned_statistic(x[is_sig], y[is_sig], bins=bins, 
+                                            statistic=stat_avg)
+        std = scipy.stats.binned_statistic( x[is_sig], y[is_sig], bins=bins, 
+                                            statistic='std')
+        mean_val = mean.statistic
+        mean_binc = mean.bin_edges
+        mean_binc = (mean_binc[:-1] + mean_binc[1:])/2.
+        plt.plot(mean_binc, mean_val, color=line_color)
+        plt.fill_between(mean_binc, 
+                        mean_val - std.statistic, 
+                        mean_val + std.statistic, 
+                        edgecolor=None,
+                        linewidth=0,
+                        color=line_color, alpha=err_fill_alpha)
+        plt.xlim(1.0*np.nanmax(mean_val), 1.0*np.nanmin(mean_val))
+    if bin_axis=='y':
+        if var_percentile:
+            bins = np.linspace(0, 100, 101)/100.
+        else:
+            bins= (np.logspace(np.log10(ymin), np.log10(ymax), nbins) if xlogbins else np.linspace(ymin, ymax, nbins))
+
+        # first argument is the values from which bin edges are defined
+        # second argumend it the values on which the statistic is calculated. 
+        # Here, within the y-axis bin, we find the mean in the x-axis. 
+        mean = scipy.stats.binned_statistic(y[is_sig], x[is_sig], bins=bins, 
+                                            statistic=stat_avg)
+        std = scipy.stats.binned_statistic( y[is_sig], x[is_sig], bins=bins, 
+                                            statistic='std')
+        mean_val = mean.statistic
+        mean_binc = mean.bin_edges
+        mean_binc = (mean_binc[:-1] + mean_binc[1:])/2.
+
+        plt.plot(mean_val, mean_binc, color=line_color)
+        plt.fill_betweenx(mean_binc, 
+                        mean_val - std.statistic, 
+                        mean_val + std.statistic, 
+                        edgecolor=None,
+                        linewidth=0,
+                        color=line_color, alpha=err_fill_alpha)
+        #plt.xlim(1.0*np.nanmax(mean_val), 1.0*np.nanmin(mean_val))
     ####################
     #### Aesthetics ####
     ####################
     
     # add a horizontal line at 0 for reference
-    plt.hlines(0, xmin, xmax, linestyle='-', alpha=0.1, color=[0., 0. , 0.], linewidth=1.5)
+    #print(np.nanmax(mean_val))
+    
+    #plt.hlines(0, xmin, xmax, linestyle='-', alpha=0.1, color=[0., 0. , 0.], linewidth=1.5)
     sns.despine()
 
 def calc_sankey(shap_varnames, shap_varrank_percomp, 
@@ -531,7 +571,7 @@ def plot_slope_corr(shap_varnames, slopes):
     sns.heatmap(df.corr(), annot=True, cmap='RdBu', fmt=".2f", linewidths=.5, vmin=-1, vmax=1)
 
 def var_to_percentile(var_per_comp):
-    percentiles = np.arange(0,100,1)
+    percentiles = np.arange(0,101,1)
     percentile_bins = np.nanpercentile(var_per_comp, percentiles)
     bin_indices = np.digitize(var_per_comp, percentile_bins)
     x_all_comps = percentiles[bin_indices-1]/100
