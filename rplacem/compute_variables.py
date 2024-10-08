@@ -764,7 +764,8 @@ def main_variables(cpart,
             cpst.n_bothinout_users_lifetime = len(np.unique(bothinout_users)) + n_intersect_in_out
 
     # These calculations can be done on the final arrays
-    cpst.n_users_total = len(np.unique(cpart.user()))
+    inds_active_all = inds_active_all = np.where((cpart.pixel_changes['active']==True) & (cpart.pixel_changes['seconds'] < cpst.tmax))[0]
+    cpst.n_users_total = len(np.unique(cpart.pixel_changes['user'][inds_active_all]))
 
     if print_progress:
         print('                              ', end='\r')
