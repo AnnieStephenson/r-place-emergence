@@ -341,10 +341,11 @@ def cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(5,10), fontsize=5, save=Tr
                      #[cpstat.frac_bothattdef_users, 0, None],
                      [cpstat.returntime[3], 0, None],
                      [cpstat.returntime[0], 0, None],
-                     [cpstat.cumul_attack_timefrac, 0, None],
+                     #[cpstat.cumul_attack_timefrac, 0, None],
                      [cpstat.variance_multinom, 0, None],
-                     [cpstat.variance_from_frac_pixdiff_inst, 0, 0.001],
+                     [cpstat.variance_from_frac_pixdiff_inst, 0, 0.1],
                      [cpstat.variance2, 1, None],
+                     [cpstat.autocorr_bycase, None, None],
                      [cpstat.autocorr_subdom, 0, None],
                      [cpstat.autocorr_multinom, 0, None],
                      [cpstat.returnrate, 0, 1],
@@ -359,7 +360,7 @@ def cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(5,10), fontsize=5, save=Tr
         ax.plot(cpstat.t_lims[itmin:], t_series_vars[i][0].val[itmin:])
         ax.patch.set_alpha(0)
 
-        ax.set_xlim([cpstat.t_lims[itmin], cpstat.t_lims[-1]])
+        ax.set_xlim([153000 - 300*44, 161000])#[cpstat.t_lims[itmin], cpstat.t_lims[-1]])
         ax.tick_params(axis='x', direction='in')
 
         reject_end = int(t_series_vars[0][0].n_pts * 6./300.) # reject ending white period, and the very beginning

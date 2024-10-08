@@ -97,6 +97,8 @@ ENV/
 figs/
 data/2022/*.pickle
 data/2023/*.pickle
+data/2022/*.pkl
+data/2023/*.pkl
 test/*.pickle
 *.root
 *.npz

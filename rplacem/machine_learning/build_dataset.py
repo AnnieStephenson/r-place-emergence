@@ -9,7 +9,15 @@ import gc
 import matplotlib.pyplot as plt
 from rplacem.canvas_part import compare_border_paths, AtlasInfo, avoid_location_jump
 
+param_num = 0 # 0 is nominal result, 1 to 6 are sensitivity analysis
+param_str = var.param_str_fun(param_num)
+file_path = os.path.join(var.DATA_PATH, 'cpart_stats_'+param_str+'_'+str(var.year)+'.pkl') 
+
 def border_corner_center(xmin,xmax,ymin,ymax):
+    # determines if the composition with the input x,y limits 
+    # (note that they are the limits of the smallest rectangle containing all border paths of the composition)
+    # is in the border, corner, or center of the available canvas space. 
+
     cond_border = np.zeros((var.N_ENLARGE))
     cond_corner = np.zeros((var.N_ENLARGE))
     cond_center = np.zeros((var.N_ENLARGE))
@@ -75,11 +83,12 @@ def variables_from_cpstat(cps):
                  (cps.frac_redundant_color_changes,     0, 0, 0),#26
                  (cps.entropy,                          1, 0, 0),#27
                  (cps.fractal_dim_weighted,             1, 0, 0),#28
-                 (cps.variance2,                        0, 0, 1),#
+                 (cps.variance_multinom,                0, 0, 1),#
                  (cps.returntime[0],                    0, 0, 1),#
                  (cps.instability_norm[0],              0, 0, 1),#
                  (cps.autocorr_bycase,                  0, 0, 1),#
                  (cps.autocorr_bycase_norm,             0, 0, 1),#
+                 (cps.variance_from_frac_pixdiff_inst,  0, 0, 1),#
                 ]
     
     vars = np.array([v[0] for v in vars_full])
@@ -89,12 +98,12 @@ def variables_from_cpstat(cps):
 
     return(vars, take_ratio_to_average, coarse_timeranges, take_kendall)
 
-def additional_vars_from_cpstat(cps, t, it, timerange, quart, special_pos): # TODO change to cps.quart after re-running cpart stats
+def additional_vars_from_cpstat(cps, t, it, timerange, special_pos):
     entropy_sw = entropy.normalize_entropy(cps.entropy.val[it] / cps.entropy.ratio_to_sw_mean[it], 
                                       cps.area, t, minmax_entropy=minmax_entropy)
     quadrant_time = np.searchsorted(var.TIME_ENLARGE, t) - 1
     pos_importance = special_pos[0][quadrant_time] + special_pos[1][quadrant_time] + special_pos[2][quadrant_time]
-    return [np.log10(cps.area), t - timerange[0], quart, entropy_sw, pos_importance ]
+    return [np.log10(cps.area), t - timerange[0], cps.quadrant, entropy_sw, pos_importance ]
 
 def additional_vars_names():
     return ['log(area)', 'age', 'canvas_quadrant', 'entropy_sw', 'border_corner_center']
@@ -116,7 +125,6 @@ def get_vals_from_var(v, tidx, coarse=False):
     '''
     n_times = n_traintimes_coarse if coarse else n_traintimes
     vals = np.empty(n_times, dtype=np.float64)
-    #v = np.nan_to_num(v) ####### TODO To be removed when using updated cpart stats
 
     for i in range(0, n_times):
         inds = tidx + (watch_timeindrange_coarse if coarse else watch_timeindrange)[i]
@@ -180,12 +188,9 @@ def keep_in_sample(cpstat, it, t, trans_starttimes, reject_times, atlas_timerang
              np.all(np.logical_or(t < trans_starttimes, t >= trans_starttimes + watchrange + cpstat.sw_width_sec)))
             )
 
-file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all_3h-SW.pickle') 
-
 def get_all_AtlasInfo():
-    path = os.path.join(var.DATA_PATH, 'canvas_compositions_statistics_all_3h-SW.pickle') 
     infos = []
-    with open(path, 'rb') as f:
+    with open(file_path, 'rb') as f:
         canvas_parts = pickle.load(f)
         for cp in canvas_parts:
             infos.append(cp.info)
@@ -202,21 +207,23 @@ def duplicate_place_and_time():
             infos_list.append(cps.info)
         
         rejected_times_border_overlaps = np.zeros(len(cpstats), dtype=object)
+        ids = np.zeros(len(cpstats), dtype=object)
         # first loop on each border_path of each cpstats 
         for icps in range(len(cpstats)):
             #print(icps)
             borders = infos_list[icps]
+            ids[icps] = borders.id
             for bpath, btimes in zip(borders.border_path, borders.border_path_times):
-                if bpath.size == 0: # not needed when we will run with the new cpstats
-                    continue
+                #if bpath.size == 0: # not needed when we will run with the new cpstats
+                #    continue
                 # second loop on each border_path of each cpstats 
                 for icps2 in range(len(cpstats)):
                     if icps2 <= icps: # only triangular 2D test
                         continue
                     borders2 = infos_list[icps2]
                     for bpath2, btimes2 in zip(borders2.border_path, borders2.border_path_times):
-                        if bpath2.size == 0: # not needed when we will run with the new cpstats
-                            continue
+                        #if bpath2.size == 0: # not needed when we will run with the new cpstats
+                        #    continue
 
                         # now we have a specific border_path for both cpstats, let's compare them, first their time overlap
                         times_overlap = [max(btimes[0], btimes2[0]), min(btimes[1], btimes2[1])]
@@ -235,20 +242,40 @@ def duplicate_place_and_time():
                                 print('        ',btimes,btimes2)
                                 print(borders.id, borders2.id)
 
-        return rejected_times_border_overlaps    
+        return rejected_times_border_overlaps, ids   
 
-# rejected times due to overlapping compositions
+# rejected times due to overlapping compositions in the initial atlas (different entries with almost (>90%) the same border_path)
 run_rejecttimes = False
-file_path_rejecttimes = os.path.join(var.DATA_PATH, 'reject_times_from_overlap.pickle')
+file_path_rejecttimes = os.path.join(var.DATA_PATH, 'reject_times_from_overlapping_comps_'+param_str+'.pickle')
 if run_rejecttimes:
-    reject_times_all = duplicate_place_and_time()
+    if param_num==0:
+        reject_times_all, compo_ids = duplicate_place_and_time()
+    
+    else:
+        file_path_rejecttimes_nom = os.path.join(var.DATA_PATH, 'reject_times_from_overlapping_comps_'+var.param_str_fun(0)+'.pickle')
+        with open(file_path_rejecttimes_nom, 'rb') as f:
+            reject_times_all_nom, compo_ids = pickle.load(f)
+
+        # this is to recover the order of the compositions from the param_num==0 nominal run
+        with open(file_path, 'rb') as f:
+            cpstats = pickle.load(f)
+        reject_times_all = np.copy(reject_times_all_nom)
+        id_list = []
+
+        for icps, cps in enumerate(cpstats):
+            id = cps.info.id
+            id_list.append(id)
+            compnum_nom = np.argmax(compo_ids == id) # index of that composition id in the nominal stored result
+            reject_times_all[icps] = reject_times_all_nom[compnum_nom]
+
     with open(file_path_rejecttimes, 'wb') as f:
-        pickle.dump(reject_times_all, f, protocol=pickle.HIGHEST_PROTOCOL)
-    print('# of overlaps =', np.count_nonzero(reject_times_all))
+        pickle.dump([reject_times_all, None if param_num>0 else compo_ids], f, protocol=pickle.HIGHEST_PROTOCOL)
+    print('# of overlaps =', np.count_nonzero(reject_times_all))    
     sys.exit()
+
 else:
     with open(file_path_rejecttimes, 'rb') as f:
-        reject_times_all = pickle.load(f)
+        reject_times_all, _ = pickle.load(f)
 
 # grab canvas_part_statistics object
 with open(file_path, 'rb') as f:
@@ -367,28 +394,12 @@ for p in range(istart, math.ceil(ncompmax/period)):
                                     ((str(timeidx[i]) + str(timeidx[i+1]-1)) if (i < n_times-1) else '-0-0'))
             varnames.extend(additional_vars_names())
 
-        # TODO to be removed when re-running canvas parts, replace by atlas_starttime = [cps.info.border_path_times_orig_disjoint[0][0], ...[-1][1] ]
-        atlas_timerange = [ cps.info.border_path_times_orig[0][0], cps.info.border_path_times_orig[-1][1] ]
-        if 'part' in cps.info.id:
-            (paths, paths_time) = avoid_location_jump(border_path=cps.info.border_path_orig, border_path_times=cps.info.border_path_times_orig)
-            if len(paths_time) > 1:
-                partnum = cps.info.id.split('part')[1].split('_')[0]
-                try:
-                    ipath = int(partnum) - 1 if int(partnum) < 100 else 0
-                except:
-                    ipath = 0
-                atlas_timerange = [ paths_time[ipath][0][0], paths_time[ipath][-1][1] ]
+        # time range from the original borderpath of the atlas (though separated when disjoint in space or time)
+        atlas_timerange = [ cps.info.border_path_times_orig_disjoint[0][0], 
+                            cps.info.border_path_times_orig_disjoint[-1][1] ]
 
-        # TODO remove this after rerunning cpart stats. Replace with cps.quadrant
         xmin, xmax = np.min(cps.info.border_path[:,:, 0]), np.max(cps.info.border_path[:,:, 0])
-        ymin, ymax = np.min(cps.info.border_path[:,:, 1]), np.max(cps.info.border_path[:,:, 1])
-        for e in range(var.N_ENLARGE):
-            cond = ((xmin >= var.CANVAS_MINMAX[e, 0, 0]) & (xmax <= var.CANVAS_MINMAX[e, 0, 1]) &
-                    (ymin >= var.CANVAS_MINMAX[e, 1, 0]) & (ymax <= var.CANVAS_MINMAX[e, 1, 1]))
-            if cond:
-                quart = e
-                break
-        
+        ymin, ymax = np.min(cps.info.border_path[:,:, 1]), np.max(cps.info.border_path[:,:, 1])        
         special_pos = border_corner_center(xmin,xmax,ymin,ymax)
 
         i_event_thiscomp = 0
@@ -405,8 +416,7 @@ for p in range(istart, math.ceil(ncompmax/period)):
                 for kendall, coarse, ratio_to_av, v in zip(allvars[3], allvars[2], allvars[1], allvars[0]):
                     vals = get_vals_from_var(v.kendall_tau if kendall else v.ratio_to_sw_mean if ratio_to_av else v.val, it, coarse)
                     vars_thistime.extend(vals)
-                vars_thistime.extend(additional_vars_from_cpstat(cps, t, it, atlas_timerange, quart, special_pos))
-                varsadd = additional_vars_from_cpstat(cps, t, it, atlas_timerange, quart, special_pos)
+                vars_thistime.extend(additional_vars_from_cpstat(cps, t, it, atlas_timerange, special_pos))
 
                 # input variables
                 inputvals[i_event] = vars_thistime
@@ -434,17 +444,11 @@ eventtime = eventtime[0:i_event+1]
 safetimemargin = safetimemargin[0:i_event+1]
 id_idx = id_idx[0:i_event+1]
 
-#for i in range(0, len(inputvals)):
-#    print(varnames)
-#    print(i, eventtime[i], inputvals[i], outputval[i])
-
 print(inputvals.shape)
-#print(inputvals)
 print(outputval.shape)
-#print(outputval)
 
-file_path = os.path.join(var.DATA_PATH, 'training_data_'+str(n_trainingvars)+'variables_3h-SW_widertimefromstart.pickle')
-with open(file_path, 'wb') as handle:
+file_path_out = os.path.join(var.DATA_PATH, 'training_data_'+str(n_trainingvars)+'variables_'+param_str+'.pickle')
+with open(file_path_out, 'wb') as handle:
     pickle.dump([inputvals, outputval, varnames, eventtime, id_idx, id_dict, coarse_timerange, kendall_tau, n_traintimes, n_traintimes_coarse, safetimemargin],
                 handle,
                 protocol=pickle.HIGHEST_PROTOCOL)
