@@ -811,7 +811,7 @@ def get_atlas_border(id_index=-1, id='', atlas=None, addtime_before=0, addtime_a
             raise ValueError('ERROR: id_index or id should be given as argument!')
         else:
             for i in range(len(atlas)):
-                if atlas[i]['id'] == id:
+                if str(atlas[i]['id']) == id:
                     id_index = i
                     break
             if id_index == -1:

@@ -17,13 +17,13 @@ import seaborn as sns
 fromatlas = True
 cp_fromfile = True
 cp_fromatlasfile = True
-cps_fromfile =True
+cps_fromfile = True
 
 if not cp_fromfile:
     pixel_changes_all = util.get_all_pixel_changes()
     atlas, num = util.load_atlas()
 
-id = '6' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
+id = 'txibq9'#'txkd33'#'u38eza' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
 
 x1 = var.CANVAS_MINMAX[-1, 0, 0]
 x2 = var.CANVAS_MINMAX[-1, 0, 1]
@@ -70,7 +70,7 @@ if not cps_fromfile:
 
 # Get CanvasPartStatistics
 if cps_fromfile:
-    file_path = os.path.join(var.DATA_PATH, 'canvas_composition_statistics_all_3h-SW.pickle') 
+    file_path = os.path.join(var.DATA_PATH, 'cpart_stats_sw3_ta0.35_tr6_2022.pkl') 
     with open(file_path, 'rb') as f:
         cpstats = pickle.load(f)
     
@@ -87,7 +87,6 @@ else:
                                                       'ews' : 1, 'inout':0, 'lifetime_vars':0, 'void_attack':0},
                                         sliding_window=int(3*3600), 
                                         verbose=True, dont_keep_dir=False, compression='DEFLATE_BMP_PNG', flattening='ravel')
-    
 
 savecpstat = False
 if savecpstat:
