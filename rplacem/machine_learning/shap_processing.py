@@ -400,10 +400,10 @@ def plot_shap_vs_var(shap_values,
         std = scipy.stats.binned_statistic( y[is_sig], x[is_sig], bins=bins, 
                                             statistic='std')
         mean_val = mean.statistic
+        mask = ~np.isnan(mean_val)
         mean_binc = mean.bin_edges
         mean_binc = (mean_binc[:-1] + mean_binc[1:])/2.
-
-        plt.plot(mean_val, mean_binc, color=line_color)
+        plt.plot(mean_val[mask], mean_binc[mask], color=line_color)
         plt.fill_betweenx(mean_binc, 
                         mean_val - std.statistic, 
                         mean_val + std.statistic, 
