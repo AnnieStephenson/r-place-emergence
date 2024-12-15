@@ -1,15 +1,13 @@
 import os
-import rplacem
+from rplacem import var as var
 import rplacem.canvas_part as cpart
 
-
 def clean_comps(year):
-    directory_path = os.getcwd() #os.path.join(os.getcwd(), '..', '..','Data')
     cpart_filename = 'canvas_comps_' + str(year) + '.pkl'
     cpart_filename_clean = 'canvas_comps_' + str(year) + '_clean.pkl'
-    cpart_file_path = os.path.join(directory_path, cpart_filename)
-    files = sorted(os.listdir(directory_path))
-    cpart_file_path_clean = os.path.join(directory_path, 'canvas_comps_' + str(year) + '_clean.pkl')
+    cpart_file_path = os.path.join(var.DATA_PATH, cpart_filename)
+    files = sorted(os.listdir(var.DATA_PATH))
+    cpart_file_path_clean = os.path.join(var.DATA_PATH, 'canvas_comps_' + str(year) + '_clean.pkl')
 
     if cpart_filename_clean not in files:
         if cpart_filename in files:

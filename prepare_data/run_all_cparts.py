@@ -1,7 +1,5 @@
-import numpy as np
-import rplacem
-year = 2022
-rplacem.set_year(year)
+#year = 2022
+#rplacem.set_year(year)
 from rplacem import var as var
 import rplacem.canvas_part as cp
 import rplacem.utilities as util
@@ -9,9 +7,10 @@ import pickle
 import os
 
 atlas, atlas_size = util.load_atlas()
+print(atlas_size)
 pixel_changes_all = util.get_all_pixel_changes()
 canvas_comps = []
-print(year, flush=True)
+print(var.year, flush=True)
 for i in range(0, atlas_size):
     print(i, flush=True)
     atlas_info  = cp.get_atlas_border(id=atlas[i]['id'], 
@@ -24,6 +23,6 @@ for i in range(0, atlas_size):
                                     pixel_changes_all=pixel_changes_all)
         canvas_comps.append(canvas_comp)
     
-with open('canvas_comps_'+ str(year) + '.pkl', 'wb') as file:
+with open(os.path.join(var.DATA_PATH, 'canvas_comps_'+ str(var.year) + '.pkl'), 'wb') as file:
     pickle.dump(canvas_comps, file)
 

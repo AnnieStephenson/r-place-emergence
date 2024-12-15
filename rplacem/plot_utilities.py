@@ -360,7 +360,7 @@ def cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(5,10), fontsize=5, save=Tr
         ax.plot(cpstat.t_lims[itmin:], t_series_vars[i][0].val[itmin:])
         ax.patch.set_alpha(0)
 
-        ax.set_xlim([153000 - 300*44, 161000])#[cpstat.t_lims[itmin], cpstat.t_lims[-1]])
+        ax.set_xlim([200000, 240000])#[cpstat.t_lims[itmin], cpstat.t_lims[-1]])
         ax.tick_params(axis='x', direction='in')
 
         reject_end = int(t_series_vars[0][0].n_pts * 6./300.) # reject ending white period, and the very beginning

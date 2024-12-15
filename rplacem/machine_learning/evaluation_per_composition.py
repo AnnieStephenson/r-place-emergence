@@ -10,20 +10,22 @@ ml_param = eval.AlgoParam(type='regression', # or 'classification
                           test2023=False,
                           n_features=None,
                           num_rounds=None, 
-                          learning_rate=0.05, 
+                          learning_rate=0.035, 
                           max_depth=8, 
                           min_child_weight=None, 
                           subsample=0.8, 
                           colsample=0.75, 
                           log_subtract_transform=1.5, 
-                          weight_highEarliness=0.2,
+                          weight_highEarliness=0.4,
                           calibrate_pred=True)
-ml_param.num_rounds = 80 if ml_param.test2023 else 140 # Max number of boosting rounds (iterations)
-ml_param.min_child_weight = 3.1 if ml_param.type == 'regression' else 4
+ml_param.num_rounds = 90 if ml_param.test2023 else 160 # Max number of boosting rounds (iterations)
+ml_param.min_child_weight = 8 if ml_param.type == 'regression' else 4
+stable_times_only = True
+param_str = var.param_str_fun(0)
 
 # Load the npz file
 with np.load(os.path.join(var.DATA_PATH, 
-                          'earliness_true_vs_predicted_'+ ('regression' if ml_param.type == 'regression' else 'classification')+('_test2023' if ml_param.test2023 else '')+'.npz'),
+                          'earliness_true_vs_predicted_'+ ('regression' if ml_param.type == 'regression' else 'classification')+('_test2023' if ml_param.test2023 else '')+'_'+param_str+('_stabletimes' if stable_times_only else '')+'.npz'),
                           allow_pickle=True) as data:
     true = data['true']
     predicted = data['predicted']
@@ -31,7 +33,7 @@ with np.load(os.path.join(var.DATA_PATH,
     time = data['time']
     id_dict = data['id_dict']
 
-with open(os.path.join(var.DATA_PATH, 'SHAP_values.pickle'), 'rb') as f:
+with open(os.path.join(var.DATA_PATH, 'SHAP_values_excludeworstSHAP_'+param_str+('_stabletimes' if stable_times_only else '')+'.pickle'), 'rb') as f:
     shap_res = pickle.load(f)
 #shap_res = [shap_values, shap_eachvar, shap_eachrange, shap_eachrange_coarse, inds_onlyStableTimes]
 shap_eachvar = shap_res[1]
@@ -54,8 +56,11 @@ FPR_allcomp = np.zeros((len(thresholds), 3000, len(pred_thresholds)+2))
 first_truewarn = np.zeros((1000, len(pred_thresholds)+2))
 n_truewarn = np.zeros((len(thresholds), len(pred_thresholds)+2))
 n_falsewarn = np.zeros((len(thresholds), len(pred_thresholds)+2))
+frac_truewarn = np.zeros((len(thresholds), len(pred_thresholds)))
 frac_falsewarn = np.zeros((len(thresholds), len(pred_thresholds)))
 n_falsesequences = np.zeros(len(thresholds))
+n_truesequences = np.zeros(len(thresholds))
+n_falsesequences_float = np.zeros(len(thresholds))
 meanshap_pervar_percomp = np.zeros((1000, len(shap_varnames)))
 shap_varrank_percomp = np.zeros((1000, len(shap_varnames)))
 
@@ -73,8 +78,8 @@ for i_id in range(0, np.max(compoID_idx)):
     #print('compo id=', id_dict[i_id])
     
     # separate indices for a composition that has multiple transitions
-    true_comp = true[inds]
-    separate = np.where(np.diff(true_comp) > 0.1)[0] + 1
+    # time-to-transition + time = time of transition, that shouldn't change for a single transition
+    separate = np.where(np.diff(true[inds]+time[inds]) > 0.1)[0] + 1 
     separate = [0]+list(separate)+[len(inds)]
     #print('separate = ',separate)
 
@@ -115,11 +120,20 @@ for i_id in range(0, np.max(compoID_idx)):
                         print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Problem in separating sequences')
                     # count max number of possible false warnings
                     n_interval = int((thres+0.1) / 300) # number of time intervals within the warning cooldown
-                    n_falsesequences[i] += len(pred_seq) / n_interval
+                    #n_falsesequences[i] += int(len(pred_seq) / n_interval)
+                    #n_falsesequences_float[i] += len(pred_seq) / float(n_interval)
+
+                    # number of possible false warnings. Cannot just count them in a simple way because of overlaps of sequences
+                    last_warn = - n_interval
+                    for ind in np.arange(len(pred_seq)): 
+                        if ind >= last_warn + n_interval:
+                            n_falsesequences[i] += 1
+                            last_warn = ind
+
                     # count actual number of false warnings
                     for j,predthr in enumerate(pred_thresholds):
-                        warn_inds = np.where(pred_seq < predthr)[0]
                         # count warnings using the cooldown
+                        warn_inds = np.where(pred_seq < predthr)[0]
                         last_warn = - n_interval
                         for ind in warn_inds:
                             if ind >= last_warn + n_interval:
@@ -148,12 +162,18 @@ for i_id in range(0, np.max(compoID_idx)):
                 signalfrac_percomp[i].append( ev.signal_fraction )
                 #print('nsig, nbkg = ', np.count_nonzero(true_comp < thres), np.count_nonzero(true_comp > thres))
 
+                # count possible true warnings
+                inds_true = np.where(true_comp <= thres)[0]
+                if len(inds_true) > 0:
+                    n_truesequences[i] += true_comp[inds_true[0]] / thres
+
                 # count compositions that issue a true warning
                 for j,predthr in enumerate(pred_thresholds):
                     inds_warn = np.where((true_comp <= thres) & (pred_comp < predthr))[0]
                     # use the fact that transitions were selected to reach the transition time
                     if len(inds_warn) > 0:
                         n_truewarn[i, j] += true_comp[inds_warn[0]] / thres
+
                         if true_comp[inds_warn[0]] / thres > 1:
                             print('problem with fractional true warning count !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
                 '''
@@ -185,9 +205,12 @@ for i_id in range(0, np.max(compoID_idx)):
 TPR_alltrans = TPR_alltrans[:, 0:n_trans, :]
 FPR_allcomp = FPR_allcomp[:, 0:n_comp, :]
 first_truewarn = first_truewarn[0:n_trans, :]
-frac_truewarn = n_truewarn[:, :-2] / n_trans # fraction of transitions that got a true warning
 for i in range(len(thresholds)):
-    frac_falsewarn[i] = n_falsewarn[i][:-2] / n_falsesequences[i]
+    frac_truewarn[i] = n_truewarn[i, :-2] / n_truesequences[i] #n_trans # fraction of transitions that got a true warning
+    print(n_falsesequences[i])
+    frac_falsewarn[i] = n_falsewarn[i, :-2] / n_falsesequences[i]
+    print(thresholds[i],frac_truewarn[i],frac_falsewarn[i])
+np.savez(os.path.join(var.DATA_PATH, 'warning_with_cooldown.npz'), frac_falsewarning=frac_falsewarn, frac_truewarning=frac_truewarn)
 meanshap_pervar_percomp = meanshap_pervar_percomp[0:n_trans]
 shap_varrank_percomp = shap_varrank_percomp[0:n_trans]
 print('# of pre-transition periods, and sum with # no-transition compositions', n_trans, n_comp)
@@ -352,19 +375,24 @@ varnames = ['fraction of differing pixels (vs reference)',
             '# of changes',
             'instability',
             'variance',
-            'time in runner-up color',
             '# of used colors (mean)',
             '# of used colors (mean top decile)',
-            'auto-correlation',
-            'time in attack colors',
+            'auto-correlation (by case)',
+            'auto-correlation (subdominant product)',
             'return time (mean)',
             'return time (mean top decile)',
+            'return rate',
             '# of users (in window)',
             '# of changes / user (in window)',
             'fraction of new users (vs window)',
             'fraction of redundant changes',
-            'entropy',
+            'entropy vs time',
             'fractal dimension',
+            'area',
+            'age',
+            'canvas quadrant',
+            'entropy (total)',
+            'border corner center',
             ]
 # keep only transitions with ROC>0.85 for time-to-trans<20min
 trans_highROC = np.where(ROCAUC_percomp[0] > 0.85)[0]
@@ -374,6 +402,7 @@ shap_varrank_percomp = shap_varrank_percomp[trans_highROC]
 nvar = len(shap_varnames)
 ntran = len(trans_highROC)
 frac_rankedn = np.zeros((nvar, nvar))
+print('shap_varrank_percomp',shap_varrank_percomp)
 for vtest in range(nvar):
     frac_rankedn[vtest] = np.count_nonzero(shap_varrank_percomp == vtest, axis=0) 
     print(shap_varnames[vtest], frac_rankedn[vtest])
@@ -384,6 +413,7 @@ sortvars = np.lexsort((frac_rankedn[:, 14], frac_rankedn[:, 13], frac_rankedn[:,
                        frac_rankedn[:, 6], frac_rankedn[:, 5], frac_rankedn[:, 4], frac_rankedn[:, 3], 
                        frac_rankedn[:, 2], frac_rankedn[:, 1], frac_rankedn[:, 0]))[::-1]
 frac_rankedn = frac_rankedn[sortvars, :]
+print(sortvars)
 varnames = np.array(varnames)[sortvars]
 
 # plot rankings for each variable
