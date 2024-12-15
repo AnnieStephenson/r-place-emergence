@@ -21,6 +21,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-p", "--param_num", default=0) # 0 is nominal result, 1 to 6 are sensitivity analysis
 parser.add_argument("-t", "--test2023", default=False)
 parser.add_argument("-s", "--shapplots", default=False)
+parser.add_argument("-w", "--store_worstSHAP", default=False)
 arg = parser.parse_args()
 
 # GLOBAL AND XGBOOST PARAMETERS
@@ -48,7 +49,7 @@ emax_test_hist2d = 1.3e3
 
 file_excludedvars = os.path.join(var.DATA_PATH, 'excluded_variables_fromSHAP.txt')
 exclude_timefeats = os.path.exists(file_excludedvars) if not corrplots else False
-store_worstSHAP = False
+arg.store_worstSHAP = False
 only_safetimemargin = False
 
 param_str = var.param_str_fun(arg.param_num)
@@ -563,7 +564,6 @@ if exclude_timefeats:
         print('removing these features: ', features_toremove)
 else:
     features_toremove = []
-varnames[varnames=='variance_from_frac_pixdiff_inst'] = 'variance_frac_pixdiff_inst' # TODO remove after rerunning cpart stats
 
 # build the list of kept variables
 vars_touse = []
@@ -1073,7 +1073,7 @@ if makeplots or arg.shapplots:
         sys.exit()
 
         # get the 10 least performing (and not too correlated) features
-        if store_worstSHAP:
+        if arg.store_worstSHAP:
             shap_meanabs_perfeature = np.mean(np.abs(shap_values.values), axis=0)
             feature_idx_sortedshap = np.argsort(shap_meanabs_perfeature)
             feat_idx_mayexclude = feature_idx_sortedshap[0:20]
