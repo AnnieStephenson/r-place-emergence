@@ -135,7 +135,14 @@ def plot_loglog_fit(x_data_unfilt,
     
     if plot_bin_data:
         plt.plot(10**log_x_data, 10**log_y_data, '.', color=line_color, markersize = markersize_bin)
-        plt.errorbar(10**log_x_data, 10**log_y_data, yerr=10**(2*log_y_sem), #xerr=10**log_x_sem,
+        if bin_axis=='y':
+            xerr=10**(2*log_x_sem)
+            yerr=None
+        if bin_axis=='x':
+            yerr=10**(2*log_y_sem)
+            xerr=None
+        
+        plt.errorbar(10**log_x_data, 10**log_y_data, yerr=yerr, xerr=xerr,
                      ecolor=line_color, elinewidth=elinewidth, 
                      capsize=0, linewidth=0)
 

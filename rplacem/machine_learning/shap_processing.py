@@ -292,12 +292,17 @@ def plot_shap_vs_var(shap_values,
                      bkg_color=np.array([0.4, 0.6, 0.7]),
                      sig_color=np.array([0.54, 0.05, 0.13]),
                      line_color=np.array([0.54, 0.05, 0.13]),
+                     line_alpha = 1,
                      line_color_bkg=np.array([0.3, 0.5, 0.6]),
-                     line_width_bkg = 0., 
+                     line_width_bkg = 0.,
+                     line_width = 1,  
                      err_fill_alpha=0.,
                      data_point_alpha_bkg=0.,
                      data_point_alpha_sig=0.,
-                     nbins=100):
+                     nbins=100,
+                     thin_range=None,
+                     line_width_thin=0.5,
+                     fold=False):
     
     if inds_times is not None:
         shap_values = shap_values[inds_times] 
@@ -378,7 +383,7 @@ def plot_shap_vs_var(shap_values,
         mean_val = mean.statistic
         mean_binc = mean.bin_edges
         mean_binc = (mean_binc[:-1] + mean_binc[1:])/2.
-        plt.plot(mean_binc, mean_val, color=line_color)
+        plt.plot(mean_binc, mean_val, alpha=line_alpha, linewidth=line_width, color=line_color)
         plt.fill_between(mean_binc, 
                         mean_val - std.statistic, 
                         mean_val + std.statistic, 
@@ -400,16 +405,36 @@ def plot_shap_vs_var(shap_values,
         std = scipy.stats.binned_statistic( y[is_sig], x[is_sig], bins=bins, 
                                             statistic='std')
         mean_val = mean.statistic
-        mask = ~np.isnan(mean_val)
         mean_binc = mean.bin_edges
         mean_binc = (mean_binc[:-1] + mean_binc[1:])/2.
-        plt.plot(mean_val[mask], mean_binc[mask], color=line_color)
-        plt.fill_betweenx(mean_binc, 
-                        mean_val - std.statistic, 
-                        mean_val + std.statistic, 
-                        edgecolor=None,
-                        linewidth=0,
-                        color=line_color, alpha=err_fill_alpha)
+
+        if np.min(mean_binc[~np.isnan(mean_val)]) > 0:
+                print('here')
+                mean_binc = np.insert(mean_binc, 0, 0)
+                print(mean_val[0])
+                mean_val = np.insert(mean_val, 0, mean_val[~np.isnan(mean_val)][0])
+                print(np.nanmin(mean_val))
+       
+        if thin_range is not None:
+            thin_min = thin_range[0]
+            thin_max = thin_range[1]
+            thin_mask = (mean_binc >= thin_min) & (mean_binc <= thin_max+0.01) & ~np.isnan(mean_val)
+            thick_mask = ((mean_binc < thin_min) | (mean_binc >= thin_max)) & ~np.isnan(mean_val)
+            plt.plot(mean_val[thin_mask], mean_binc[thin_mask], alpha=line_alpha, linewidth=line_width_thin, color=line_color)
+            plt.plot(mean_val[thick_mask], mean_binc[thick_mask], alpha=line_alpha, linewidth=line_width, color=line_color)
+        else:
+            mask = ~np.isnan(mean_val)
+            print(np.min(mean_binc[mask]))
+            if fold:
+                plt.plot(mean_val[mask], np.abs(mean_binc[mask]-.5)+.5, alpha=line_alpha, linewidth=line_width, color=line_color)
+            else:
+                plt.plot(mean_val[mask], mean_binc[mask], alpha=line_alpha, linewidth=line_width, color=line_color)
+            #plt.fill_betweenx(mean_binc, 
+            #                mean_val - std.statistic, 
+            #                mean_val + std.statistic, 
+            #                edgecolor=None,
+            #                linewidth=0,
+            #                color=line_color, alpha=err_fill_alpha)
         #plt.xlim(1.0*np.nanmax(mean_val), 1.0*np.nanmin(mean_val))
     ####################
     #### Aesthetics ####
