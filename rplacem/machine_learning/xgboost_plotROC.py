@@ -77,11 +77,12 @@ for i in range(0, len(thres)):
 # ROC CURVES FOR KENDALL TAU
 
 # extract data from file
-file_path = os.path.join(var.DATA_PATH, 'training_data_330variables.pickle')
+param_str = var.param_str_fun(0)
+file_path = os.path.join(var.DATA_PATH, 'training_data_401variables_'+param_str+'.pickle')
 with open(file_path, 'rb') as f:
     [inputvals, outputval, varnames, eventtime, id_idx, id_dict,
      coarse_timerange, kendall_tau,
-     n_traintimes, n_traintimes_coarse
+     n_traintimes, n_traintimes_coarse, safetimemargin
      ] = pickle.load(f) 
     
 i_variable = []
@@ -91,19 +92,22 @@ for ivar, coarse in enumerate(coarse_timerange):
 
 wanted_vars = [('returntime_mean_t-0-0', 0),
                ('returntime_mean_t-0-0', 1),
-               ('variance_t-0-0', 0),
-               ('variance_t-0-0', 1),
-               ('variance2_t-0-0', 1),
-               ('autocorr_t-0-0', 0),
-               ('autocorr_t-0-0', 1),
-               ('autocorr2_t-0-0', 1),
+               ('variance_frac_pixdiff_inst_t-0-0', 0),
+               ('variance_frac_pixdiff_inst_t-0-0', 1),
+               ('variance_multinom_t-0-0', 0),
+               ('variance_multinom_t-0-0', 1),
+               ('autocorr_bycase_t-0-0', 0),
+               ('autocorr_bycase_t-0-0', 1),
+               ('autocorr_bycase_norm_t-0-0', 0),
+               ('autocorr_bycase_norm_t-0-0', 1),
                ('instability_mean_t-0-0', 0),
                ('instability_mean_t-0-0', 1),
                ('frac_pixdiff_inst_vs_swref_t-0-0', 0),
+               ('frac_pixdiff_inst_vs_stable_t-0-0', 0),
                ]
 vars_kendall = []
 print(wanted_vars)
-for i, vn in enumerate(varnames):
+for i, vn in enumerate(varnames[:-5]):
     iskendall = kendall_tau[i_variable[i]]
     if (vn, iskendall) in wanted_vars:
         vars_kendall.append(i)
@@ -119,7 +123,7 @@ for vidx in range(inputvals.shape[1]):
     # loop over earliness thresholds to test
     for i, th in enumerate([1200, 3600, 3*3600, 6*3600]):
         print(vidx, varnames[vidx], th, 'kendall', kendall_tau[vidx])
-        evalROC = eval.EvalML(true=outputval[keepinds], predicted=ktau[keepinds], true_threshold=th, n_pred_cuts=200,
+        evalROC = eval.EvalML(true=-outputval[keepinds], predicted=ktau[keepinds], true_threshold=th, n_pred_cuts=200,
                               variableName=varnames[vidx][:-6]+('_kendallTau' if kendall_tau[vidx] else ''),
                               algo_param=eval.AlgoParam(type='continuous'))
         evalROC.compute_all()

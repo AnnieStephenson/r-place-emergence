@@ -15,10 +15,17 @@ from scipy.interpolate import UnivariateSpline
 import shap
 import copy
 import EvalML as eval
-                
+
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("-p", "--param_num", default=0) # 0 is nominal result, 1 to 6 are sensitivity analysis
+parser.add_argument("-t", "--test2023", default=False)
+parser.add_argument("-s", "--shapplots", default=False)
+arg = parser.parse_args()
+
 # GLOBAL AND XGBOOST PARAMETERS
 ml_param = eval.AlgoParam(type='regression', # or 'classification
-                          test2023=False,
+                          test2023=arg.test2023,
                           n_features=None,
                           num_rounds=None, 
                           learning_rate=0.035, 
@@ -29,13 +36,12 @@ ml_param = eval.AlgoParam(type='regression', # or 'classification
                           log_subtract_transform=1.5, 
                           weight_highEarliness=0.4,
                           calibrate_pred=True)
-ml_param.num_rounds = 90 if ml_param.test2023 else 160 # Max number of boosting rounds (iterations)
+ml_param.num_rounds = 100 if ml_param.test2023 else 160 # Max number of boosting rounds (iterations)
 ml_param.min_child_weight = 8 if ml_param.type == 'regression' else 4
 
 warning_threshold_sec = 3600
 warning_threshold = ml_param.transform_target(warning_threshold_sec)
 makeplots = False if (ml_param.type != 'regression') else True
-make_shap_plots = True
 savefiles = True
 corrplots = False
 emax_test_hist2d = 1.3e3
@@ -45,8 +51,7 @@ exclude_timefeats = os.path.exists(file_excludedvars) if not corrplots else Fals
 store_worstSHAP = False
 only_safetimemargin = False
 
-param_num = 0 # 0 is nominal result, 1 to 6 are sensitivity analysis #0,1,2,6
-param_str = var.param_str_fun(param_num)
+param_str = var.param_str_fun(arg.param_num)
 print(param_str)
 
 
@@ -280,7 +285,7 @@ def SHAP_reject_messy_times(shapvals):
     
     return inds
 
-def reject_messy_times(inputvals, varnames, ididx, iddict, times):
+def reject_messy_times(inputvals, varnames):
     vars_tocut = ['frac_pixdiff_inst_vs_swref_t-0-0',
                   'frac_pixdiff_inst_vs_swref_t-1-1',
                   'frac_pixdiff_inst_vs_swref_t-3-2',
@@ -304,10 +309,6 @@ def reject_messy_times(inputvals, varnames, ididx, iddict, times):
     # for each instance, multiply weights and values of features element by element, then sum over features
     frac_pixdiff_sw = np.sum(np.multiply(weights, vals_stabvars), axis=1) / np.sum(weights)
     inds = np.where(frac_pixdiff_sw < threshold)[0]
-    vals = vals_stabvars[iddict[ididx] == 'u38eza']
-    time = times[iddict[ididx] == 'u38eza']
-    for t,v in zip(time,vals):
-        print(t,v)
     print(len(inds), 'instances exiting reject_messy_times')
     
     return inds
@@ -510,7 +511,7 @@ def ROCAUC_1and3h_maxFPR0p2and1(pred, dtrain):
 
 # extract data from file
 print('get input data')
-file_path = os.path.join(var.DATA_PATH, 'training_data_389variables_'+param_str+'.pickle') #3h-SW_widertimefromstart.pickle
+file_path = os.path.join(var.DATA_PATH, 'training_data_401variables_'+param_str+'.pickle') #3h-SW_widertimefromstart.pickle
 with open(file_path, 'rb') as f:
     [inputvals, outputval, varnames, eventtime, id_idx, id_dict,
      coarse_timerange, 
@@ -518,6 +519,7 @@ with open(file_path, 'rb') as f:
      n_traintimes, n_traintimes_coarse,
      safetimemargin
      ] = pickle.load(f) 
+print(len(np.unique(id_idx)), 'unique compositions')
 outputval = -outputval
 inputvals[:, varnames=='area'] = np.log10(inputvals[:, varnames=='area']) #TODO remove when rerunning build_dataset.py
 varnames[varnames=='area'] = 'log(area)' #TODO remove when rerunning build_dataset.py
@@ -539,6 +541,7 @@ if ml_param.test2023:
         safetimemargin
         ] = pickle.load(f) 
     outputval_2023 = -outputval_2023
+    print(len(np.unique(id_idx_2023)), 'unique compositions 2023')
 
 # correct a bug
 for iv in range(len(varnames)):
@@ -552,7 +555,7 @@ nmaxcomp = 1e5
 
 # keep only certain variables
 # old variable selection [5,7,8,9,10,15,16,17,18,22,29,30,31,32,33]# old selection with old dataset [5,6,8,13,23,24,25,26,27,28]# best var selection [4,5,6,7,10,11,15,16,18,19,29,30,31,32,33]#[5,10,14,15,19,29,30,31,32,33]#[4,5,6,8,10,14,15,18,19,29,30,31,32,33]# 19 cumul, 4 instead of 5
-vars_toremove = [4,6,7,8,10,11,15,16,18,19,29,30,31,32,33] #unsure: 7,15,17
+vars_toremove = [4,6,7,8,10,11,15,16,18,19,29,30,31,32,33,34] #unsure: 7,15,17
 # exclude features with low SHAP values, from previous runs
 if exclude_timefeats:
     with open(file_excludedvars, 'r') as f:
@@ -581,14 +584,13 @@ keptvars += range(len(varnames)-5, len(varnames))
 
 keptvars = np.array(keptvars)
 ml_param.n_features = len(keptvars)
-#print(varnames[keptvars])
 
 # SELECT KEPT VARIABLES
 print('select kept variables')
 stable_times_only = True
 if stable_times_only:
     # only time instances with stable past sliding window
-    stable_instances = reject_messy_times(inputvals, varnames, id_idx, id_dict, eventtime)
+    stable_instances = reject_messy_times(inputvals, varnames)
     select = np.intersect1d(np.where(np.array(id_idx) < nmaxcomp)[0], stable_instances)
 else:
     select = np.where(np.array(id_idx) < nmaxcomp)[0]
@@ -639,7 +641,7 @@ weights[outputval_orig < 3600] *= 1.
 
 # SPLIT THE DATA into training and testing sets
 test_size = 0 if ml_param.test2023 else 0.2 # 20% of data for testing
-if param_num == 0:
+if arg.param_num == 0:
     valid_size = 0.1 if ml_param.test2023 else 0.2
     # need to split in terms of compositions and not events, so that there are no train-test correlations (ie events from the same compo both in train and test sample)
     seed=1
@@ -657,7 +659,7 @@ if param_num == 0:
     np.savez(os.path.join(var.DATA_PATH, 'test_compositions_IDs.npz'), compid_intest = compid_intest, allow_pickle=True)
     del shufidx_intest, compidx_intest, compid_intest
 else:
-    # grab with id_dict the compositions of the test sample determined with param_num==0
+    # grab with id_dict the compositions of the test sample determined with arg.param_num==0
     with np.load(os.path.join(var.DATA_PATH, 'test_compositions_IDs.npz'), allow_pickle=True) as f:
         compid_intest = f['compid_intest']
     intest = np.isin(id_dict[id_idx], compid_intest)
@@ -973,7 +975,7 @@ if savefiles:
                         true = true_test, predicted = pred_test, compoID_idx = id_idx[test_inds], time = eventtime[test_inds], id_dict = id_dict )
 
 # PLOTS
-if makeplots or make_shap_plots:
+if makeplots or arg.shapplots:
     print('first 2D histogram')
     # 2D true vs predicted histograms
     #scatter_true_vs_pred(true_test, pred_test, id_idx, test_inds, loge=True)
@@ -986,7 +988,7 @@ if makeplots or make_shap_plots:
     hist_true_vs_pred(true_train, pred_train, zmax=emax_test_hist2d*(3 if ml_param.test2023 else (1-test_size)/test_size), 
                     loge=True, trainsamples=True, normalize_cols=True, addsavename='_highEweight'+str(ml_param.weight_highEarliness)+('_test2023' if ml_param.test2023 else '')+('_excludeworstSHAP' if exclude_timefeats else ''))
 
-    if make_shap_plots:
+    if arg.shapplots:
         del y_train, true_test, true_train, pred_test, pred_train, id_idx, eventtime
         if ml_param.test2023:
             del id_idx_2023, eventtime_2023
@@ -1068,6 +1070,8 @@ if makeplots or make_shap_plots:
                 pickle.dump([shap_values, shap_eachvar, shap_eachrange, shap_eachrange_coarse, inds_onlyStableTimes, ml_param],
                             f, protocol=pickle.HIGHEST_PROTOCOL)
         
+        sys.exit()
+
         # get the 10 least performing (and not too correlated) features
         if store_worstSHAP:
             shap_meanabs_perfeature = np.mean(np.abs(shap_values.values), axis=0)

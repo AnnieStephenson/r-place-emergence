@@ -6,11 +6,15 @@ import rplacem.transitions as tran
 import rplacem.entropy as entropy
 import math
 import gc
-import matplotlib.pyplot as plt
 from rplacem.canvas_part import compare_border_paths, AtlasInfo, avoid_location_jump
 
-param_num = 0 # 0 is nominal result, 1 to 6 are sensitivity analysis
-param_str = var.param_str_fun(param_num)
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("-p", "--param_num", default=0) # 0 is nominal result, 1 to 6 are sensitivity analysis
+parser.add_argument("-r", "--run_rejecttimes", default=False)
+arg = parser.parse_args()
+
+param_str = var.param_str_fun(arg.param_num)
 file_path = os.path.join(var.DATA_PATH, 'cpart_stats_'+param_str+'_'+str(var.year)+'.pkl') 
 
 def border_corner_center(xmin,xmax,ymin,ymax):
@@ -69,7 +73,7 @@ def variables_from_cpstat(cps):
                  (cps.n_used_colors[0],                 0, 0, 0),#12
                  (cps.n_used_colors[3],                 0, 1, 0),#13
                  (cps.autocorr_bycase,                  1, 0, 0),#14# the difference is taken instead of the ratio for autocorrelation
-                 (cps.autocorr_bycase_norm,             1, 0, 0),#15#   # the difference is taken instead of the ratio for autocorrelation
+                 (cps.autocorr_bycase_norm,             1, 0, 0),#15# the difference is taken instead of the ratio for autocorrelation
                  (cps.autocorr_multinom,                0, 0, 0),#16
                  (cps.autocorr_subdom,                  0, 0, 0),#17
                  (cps.autocorr_dissimil,                0, 0, 0),#18
@@ -245,10 +249,9 @@ def duplicate_place_and_time():
         return rejected_times_border_overlaps, ids   
 
 # rejected times due to overlapping compositions in the initial atlas (different entries with almost (>90%) the same border_path)
-run_rejecttimes = False
 file_path_rejecttimes = os.path.join(var.DATA_PATH, 'reject_times_from_overlapping_comps_'+param_str+'.pickle')
-if run_rejecttimes:
-    if param_num==0:
+if arg.run_rejecttimes:
+    if arg.param_num==0:
         reject_times_all, compo_ids = duplicate_place_and_time()
     
     else:
@@ -256,7 +259,7 @@ if run_rejecttimes:
         with open(file_path_rejecttimes_nom, 'rb') as f:
             reject_times_all_nom, compo_ids = pickle.load(f)
 
-        # this is to recover the order of the compositions from the param_num==0 nominal run
+        # this is to recover the order of the compositions from the arg.param_num==0 nominal run
         with open(file_path, 'rb') as f:
             cpstats = pickle.load(f)
         reject_times_all = np.copy(reject_times_all_nom)
@@ -269,7 +272,7 @@ if run_rejecttimes:
             reject_times_all[icps] = reject_times_all_nom[compnum_nom]
 
     with open(file_path_rejecttimes, 'wb') as f:
-        pickle.dump([reject_times_all, None if param_num>0 else compo_ids], f, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump([reject_times_all, None if arg.param_num>0 else compo_ids], f, protocol=pickle.HIGHEST_PROTOCOL)
     print('# of overlaps =', np.count_nonzero(reject_times_all))    
     sys.exit()
 
@@ -283,23 +286,6 @@ with open(file_path, 'rb') as f:
     f.close()
     del f
 gc.collect()
-
-'''
-areas = []
-with open(file_path, 'rb') as f:
-    cpstats = pickle.load(f)
-    areas = [cps.area for cps in cpstats]
-    f.close()
-plt.figure()
-plt.hist(areas, bins=np.logspace(np.log10(1),np.log10(1e5), 100), range=(1,1e5))
-plt.xlabel('composition size in pixels')
-plt.ylabel('counts')
-plt.xscale('log')   
-plt.xlim([1,1e5])
-plt.savefig(os.path.join(var.FIGS_PATH, 'size_of_all_compositions.png'))
-print(np.count_nonzero(np.array(areas) >= 50))
-print(np.count_nonzero(np.array(areas) >= 0))
-'''
 
 # Define times that are kept before each event used in 
 tstep = cpstat0.t_interval
@@ -330,7 +316,6 @@ for i in range(0, n_traintimes_coarse):
     watch_timeindrange_coarse[i] = np.arange(watch_timeidx_coarse[i], ( 1 if (i == n_traintimes_coarse-1) else watch_timeidx_coarse[i+1] ))
 if (- watch_timeidx_coarse[0]) != len_watchrange:
     ValueError('watchrange length is different for coarse and non-coarse!')
-
 
 cpstatvars = variables_from_cpstat(cpstat0)
 coarse_timerange = cpstatvars[2]

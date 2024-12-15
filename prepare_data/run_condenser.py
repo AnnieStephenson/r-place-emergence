@@ -1,10 +1,10 @@
 import ray
 import CondenseData as cond
+from rplacem import var as var
 
-year=2023
-maxfilenum = 52 if (year == 2023) else 78
+maxfilenum = 52 if (var.year == 2023) else 78
 
-condenser = cond.DataCondenser(year) #.remote(year)
+condenser = cond.DataCondenser(var.year) #.remote(year)
 
 '''
 ray.init(ignore_reinit_error=True)
@@ -22,15 +22,18 @@ if maxfilenum > 72:
     ray.get([condenser.condense_part.remote(72 + i*4, 72 + (i+1)*4) for i in range(0,2)])
 '''
 
-#print('merging')
-#condenser.Merging()
+print('condensing')
+condenser.condense_part(0, maxfilenum)
 
-#print('sorting')
-#condenser.Sorting()
+print('merging')
+condenser.Merging()
 
-#print('remove duplicates')
-#condenser.remove_duplicates()
-#condenser.tag_hidden_mod_changes()
+print('sorting')
+condenser.Sorting()
 
-#condenser.misc_checks()
-#condenser.clean_data_dir()
+print('remove duplicates')
+condenser.remove_duplicates()
+condenser.tag_hidden_mod_changes()
+
+condenser.misc_checks()
+condenser.clean_data_dir()
