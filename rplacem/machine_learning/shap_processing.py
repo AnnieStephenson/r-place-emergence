@@ -391,6 +391,8 @@ def plot_shap_vs_var(shap_values,
                         linewidth=0,
                         color=line_color, alpha=err_fill_alpha)
         plt.xlim(1.0*np.nanmax(mean_val), 1.0*np.nanmin(mean_val))
+        x_data = mean_binc
+        y_data = mean_val
     if bin_axis=='y':
         if var_percentile:
             bins = np.linspace(0, 100, 101)/100.
@@ -422,13 +424,20 @@ def plot_shap_vs_var(shap_values,
             thick_mask = ((mean_binc < thin_min) | (mean_binc >= thin_max)) & ~np.isnan(mean_val)
             plt.plot(mean_val[thin_mask], mean_binc[thin_mask], alpha=line_alpha, linewidth=line_width_thin, color=line_color)
             plt.plot(mean_val[thick_mask], mean_binc[thick_mask], alpha=line_alpha, linewidth=line_width, color=line_color)
+            y_data = mean_binc
+            x_data = mean_val
         else:
             mask = ~np.isnan(mean_val)
             print(np.min(mean_binc[mask]))
             if fold:
                 plt.plot(mean_val[mask], np.abs(mean_binc[mask]-.5)+.5, alpha=line_alpha, linewidth=line_width, color=line_color)
+                y_data = np.abs(mean_binc[mask]-.5)+.5
+                x_data = mean_val[mask]
             else:
                 plt.plot(mean_val[mask], mean_binc[mask], alpha=line_alpha, linewidth=line_width, color=line_color)
+                y_data = mean_binc[mask]
+                x_data = mean_val[mask]
+            
             #plt.fill_betweenx(mean_binc, 
             #                mean_val - std.statistic, 
             #                mean_val + std.statistic, 
@@ -445,6 +454,7 @@ def plot_shap_vs_var(shap_values,
     
     #plt.hlines(0, xmin, xmax, linestyle='-', alpha=0.1, color=[0., 0. , 0.], linewidth=1.5)
     sns.despine()
+    return x_data, y_data
 
 def calc_sankey(shap_varnames, shap_varrank_percomp, 
                 sources_sankey = np.array([]),
