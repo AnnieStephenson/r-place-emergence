@@ -137,7 +137,7 @@ def calc_min_max_entropy(compression="LZ77",
 
             for j in range(num_iter):
                 # entropy 8
-                rand_flat_8 = np.random.choice(16, size=sq_len)
+                rand_flat_8 = np.random.choice(8, size=sq_len)
                 rand_flat_8= rand_flat_8.reshape(int(np.sqrt(sq_len)),
                                                     int(np.sqrt(sq_len)))
                 len_comp = calc_compressed_size(rand_flat_8,
