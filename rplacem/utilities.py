@@ -9,7 +9,9 @@ import shutil
 from PIL import Image
 import pickle
 
-def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
+
+def get_all_pixel_changes(data_file=var.FULL_DATA_FILE,
+                          times_before_whiteout=True):
     '''
     load all the pixel change data and put it in a numpy array for easy access
 
@@ -31,15 +33,17 @@ def get_all_pixel_changes(data_file=var.FULL_DATA_FILE):
                                                  ('ycoor', np.int16),
                                                  ('user', np.uint32),
                                                  ('color', np.uint8),
-                                                 ('moderator', np.bool_)])
-                                 )
+                                                 ('moderator', np.bool_)]))
     pixel_changes_all['seconds'] = np.array(pixel_changes_all_npz['seconds'])
     pixel_changes_all['xcoor'] = np.array(pixel_changes_all_npz['pixelXpos'])
     pixel_changes_all['ycoor'] = np.array(pixel_changes_all_npz['pixelYpos'])
     pixel_changes_all['user'] = np.array(pixel_changes_all_npz['userIndex'])
     pixel_changes_all['color'] = np.array(pixel_changes_all_npz['colorIndex'])
-    pixel_changes_all['moderator'] = np.array(pixel_changes_all_npz['moderatorEvent'])
+    pixel_changes_all['moderator'] = np.array(
+        pixel_changes_all_npz['moderatorEvent'])
 
+    if times_before_whiteout:
+        pixel_changes_all = pixel_changes_all[pixel_changes_all['seconds'] < var.TIME_WHITEOUT]
     return pixel_changes_all
 
 

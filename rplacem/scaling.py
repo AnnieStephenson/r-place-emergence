@@ -454,10 +454,9 @@ def calc_recovery_time(cpart_stat, frac, ref_frac):
 
 
 def get_comp_scaling_data(
-    canvas_parts_file="canvas_parts.pkl",
     canvas_parts_stats_file="canvas_part_stats_sw.pkl",
     filename="reddit_place_composition_list_extended_sw.csv",
-    start_t_ind=12,
+    start_t_ind=12, # 12 five-min increments = 1 hour
 ):
     """
     Calculate and save the scaling data as a .csv file
@@ -478,13 +477,12 @@ def get_comp_scaling_data(
       This motivates saving the entire array for the timestep, which also suggests that we may want to replace some of the summed values with the entire array instead.
     """
 
-    with open(canvas_parts_file, "rb") as file:
-        canvas_comp_list = pickle.load(file)
+    #with open(canvas_parts_file, "rb") as file:
+    #   canvas_comp_list = pickle.load(file)
 
     with open(canvas_parts_stats_file, "rb") as file:
         canvas_part_stats_list = pickle.load(file)
 
-    print(len(canvas_comp_list))
     print(len(canvas_part_stats_list))
     atlas, atlas_size = util.load_atlas()
 
@@ -571,7 +569,7 @@ def get_comp_scaling_data(
             subreddit.append("NA")
 
         flag_flag = 0
-        if ("flat" in cpart_stat.info.description):
+        if ("flag" in cpart_stat.info.description):
             flag_flag = 1
 
         streamer_flag = 0
@@ -660,11 +658,17 @@ def get_comp_scaling_data(
         # delta_ts.append(delta_t)
         # speed_aves.append(speed_ave)
 
+    # a few more vars
+    lifetimes = np.array(tmax) - np.array(tmin)
+    lifetimes_percent = lifetimes / (var.TIME_WHITEOUT - np.array(tmin))
+    num_changes_tot = np.array(n_defense_changes) + np.array(n_attack_changes)
+    num_users_tot = np.array(n_defenseonly_users) + np.array(n_attackonly_users) + np.array(n_bothattdef_users)
+    user_density = num_users_tot / np.array(size_pixels) / lifetimes
+
     data = {
         "Name": names,
         "Subreddit": subreddit,
         "Size (pixels)": size_pixels,
-        "Num users total": n_users_total,
         "Num defense-only users": n_defenseonly_users,
         "Num attack-only users": n_attackonly_users,
         "Num attack-defense users": n_bothattdef_users,
@@ -675,7 +679,6 @@ def get_comp_scaling_data(
         "Num attack changes": n_attack_changes,
         "Num defense changes start": n_defense_changes_start,
         "Num attack changes start": n_attack_changes_start,
-        
         "Num ingroup changes": n_ingroup_changes,
         "Num outgroup changes": n_outgroup_changes,
         "Num ingroup changes start": n_ingroup_changes_start,
@@ -686,7 +689,11 @@ def get_comp_scaling_data(
         "Num ingroup-only users start": n_ingrouponly_users_start,
         "Num outgroup-only users start": n_outgrouponly_users_start,
         "Num bothinout users start": n_bothinout_users_start,
-
+        'Lifetimes': lifetimes,
+        'Lifetimes percent': lifetimes_percent,
+        'Num changes tot': num_changes_tot,
+        'Num users tot': num_users_tot,
+        'User density': user_density,
         "Instability": instab,
         "Streamer": streamer,
         "Flag": flag,
