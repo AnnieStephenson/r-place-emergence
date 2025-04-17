@@ -117,15 +117,21 @@ def save_movie(image_path,
         specific python package.
     '''
     image_files = list(np.sort(glob.glob(os.path.join(image_path, '*.png'))))
+    print(image_files[:3])
+    print(f"# of image files: {len(image_files)}")
     png_name0 = os.path.basename(image_files[0][0:15])
     movie_name = png_name0 + '_fps' + str(fps)
     movie_file = os.path.join(image_path, movie_name) + '.' + video_type
 
     if movie_tool == 'moviepy':
-        if 'imsc' not in sys.modules:
-            import moviepy.video.io.ImageSequenceClip as imsc
-        clip = imsc.ImageSequenceClip(image_files, fps=fps)
-        clip.write_videofile(movie_file, codec=codec, logger=logger)
+        #if 'imsc' not in sys.modules:
+        #    import moviepy.video.io.ImageSequenceClip as imsc
+        from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
+        clip = ImageSequenceClip(image_files, fps=fps)
+        #clip = imsc.ImageSequenceClip(image_files, fps=fps)
+        clip.duration = len(image_files) / float(fps) 
+        print("clip.fps =", clip.fps)
+        clip.write_videofile(movie_file, codec=codec, logger=logger, fps=float(fps))
 
     if movie_tool == 'ffmpeg-python':
         # frames may not be in order

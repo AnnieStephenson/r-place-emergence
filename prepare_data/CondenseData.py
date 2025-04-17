@@ -2,6 +2,7 @@
 import json
 import sys
 import ray
+import pandas as pd
 import shutil
 import numpy as np
 import glob,os
@@ -32,8 +33,8 @@ class DataCondenser(object):
         self.year = year
         self.datapath = os.path.join(os.getcwd(), 'data', str(year))
         self.fname_base = str(year) + '_place_canvas_history-0000000000'
-        self.minimal_second = 46826 if (year==2023) else 45850 #number of seconds before start in the first day
-        self.start_day = 20 if (year==2023) else 1 # starting day of the month for the experiment
+        self.minimal_second = {2023: 46826, 2022: 45850, 2017: 64535.548}[year] #number of seconds before start in the first day
+        self.start_day = {2023: 20, 2022: 1, 2017: 21}[year] # starting day of the month for the experiment
 
     def fullfname(self, namebase):
         return os.path.join(self.datapath, namebase)
@@ -118,7 +119,7 @@ class DataCondenser(object):
         
         returns
         -------
-        None, juste saves the final data file
+        None, just saves the final data file
         '''
         is2023 = (self.year == 2023)
 
@@ -530,3 +531,116 @@ class DataCondenser(object):
             os.remove(f)
         for f in glob.glob(self.fullfname('ColorDict_files*.json')):
             os.remove(f)
+
+def condense_pixel_changes_2017(data_dir):
+    """
+    Loads and processes pixel placement data from the 2017 r/place experiment.
+
+    This function:
+    - Loads the raw placement data from a CSV file
+    - Sorts entries chronologically
+    - Drops rows with missing or duplicate data
+    - Converts timestamps to seconds since the start of the dataset
+    - Maps each unique user hash to a unique integer ID
+    - Stores the cleaned data in a structured NumPy array
+    - Saves the result as a compressed `.npz` file
+
+    Parameters
+    ----------
+    data_dir : str, optional
+        Directory containing the `place_tiles.csv` file. Defaults to:
+        `../../r-place-emergence/data/2017` relative to the current working directory.
+
+    Returns
+    -------
+    pixel_changes_2017 : np.ndarray
+        Structured array with cleaned pixel change records, with fields:
+        - seconds : float64 — time in seconds since the start
+        - xcoor   : int16   — x coordinate
+        - ycoor   : int16   — y coordinate
+        - user    : uint32  — integer-mapped user ID
+        - color   : uint8   — color ID
+        - moderator : bool  — always False (2017 data has no mod actions)
+
+    Notes:
+    - A few thousand pixels (>3k) have an x or y coordinate of 1000, though the border should end at 999. It is unclear how this would
+    have happened in the Reddit dataset. Since it's a small number of changes, instead of correcting the 1000 to 999,
+    I'm currently just keeping them as is, but will normally exclude them when using CANVAS_MIN_MAX to filter. 
+
+    - The dataset is filtered to only include changes between 2017-03-31 16:59:00 and 2017-04-03 16:59:00, as stated in the official Reddit post. There
+    are actually >10k changes that take places days before and after these times, but they are not mentioned by Reddit, and the Atlas seems to not include them
+    in their interactive timelapse of the compositions.  
+
+    - In this dataset, the moderator changes do not appear to have a different format from other changes, as they do in 2022 and 2023. There are cheated pixel changes, so these may
+    be moderator changes, but we cannot know for sure. The moderator flag is therefore set to False for all entries. 
+
+    - The color mapping comes from an official Reddit post, as the colors were already saved as integers in this dataset.  
+    """
+   
+    # Load the 2017 data
+    datafile_2017 = os.path.join(data_dir, 'place_tiles.csv')
+    df = pd.read_csv(datafile_2017)
+
+    # Clean and preprocess
+    df = df.sort_values(by='ts', ascending=True)
+    df = df.dropna()
+    df = df.drop_duplicates()
+
+    # Convert timestamp strings to datetime objects
+    df['ts'] = pd.to_datetime(df['ts'], utc=True, errors='coerce')
+
+    # ADD code here
+    # cut off any pixel changes that occurred before 2017-3-31 16:59:00
+    # and any pixel changes after 2017-4-03 16:59:00
+    start_time = pd.to_datetime('2017-03-31 16:59:00', utc=True) # stated in official reddit post 
+    end_time = pd.to_datetime('2017-04-03 16:59:00', utc=True) # stated in official reddit post 
+    df = df[(df['ts'] >= start_time) & (df['ts'] <= end_time)]
+
+    # Compute seconds since first timestamp
+    t0 = df['ts'].min()
+    seconds_since_start = (df['ts'] - t0).dt.total_seconds()
+
+    # Map user hashes to integer IDs
+    unique_ids, user_id_ints = np.unique(df['user_hash'], return_inverse=True)
+
+    # Initialize structured array
+    pixel_changes_2017 = np.zeros(len(df), dtype=np.dtype([
+        ('seconds', np.float64),
+        ('xcoor', np.int16),
+        ('ycoor', np.int16),
+        ('user', np.uint32),
+        ('color', np.uint8),
+        ('moderator', np.bool_)]))
+
+    # Fill structured array
+    pixel_changes_2017['seconds'] = seconds_since_start
+    pixel_changes_2017['xcoor'] = df['x_coordinate'].values
+    pixel_changes_2017['ycoor'] = df['y_coordinate'].values
+    pixel_changes_2017['color'] = df['color'].values
+    pixel_changes_2017['user'] = user_id_ints
+    pixel_changes_2017['moderator'] = False  # 2017 dataset has no moderator flag
+
+    # Save to file
+    output_path = os.path.join(data_dir, 'PixelChangesCondensedData_sorted.npz')
+    np.savez(output_path,
+                 seconds = pixel_changes_2017['seconds'], 
+                 userIndex = pixel_changes_2017['user'], 
+                 colorIndex = pixel_changes_2017['color'], 
+                 pixelXpos = pixel_changes_2017['xcoor'], 
+                 pixelYpos = pixel_changes_2017['ycoor'], 
+                 moderatorEvent = pixel_changes_2017['moderator'])
+
+    return pixel_changes_2017
+
+def save_color_info_2017(data_dir):
+    color_dict = {"#FFFFFF": 0, "#E4E4E4": 1, "#888888": 2, "#222222":3, "#FFA7D1":4, "#E50000":5, "#E59500":6, 
+                   "#A06A42":7, "#E5D900":8, "#94E044":9, "#02BE01":10, "#00E5F0":11, "#0083C7":12, "#0000EA":13, "#E04AFF":14, "#820080":15}
+    colors_from_index = {v: k for k, v in color_dict.items()}
+
+    output_path = os.path.join(data_dir, 'ColorDict.json')
+    with open(output_path, 'w') as f:
+        json.dump(color_dict, f)
+
+    output_path = os.path.join(data_dir, 'ColorsFromIdx.json')
+    with open(output_path, 'w') as f:
+        json.dump(colors_from_index, f)

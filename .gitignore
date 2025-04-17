@@ -95,6 +95,8 @@ ENV/
 *.bmp
 
 figs/
+data/*.pkl
+data/*.pickle
 data/2022/*.pickle
 data/2023/*.pickle
 data/2022/*.pkl
