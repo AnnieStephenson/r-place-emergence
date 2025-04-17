@@ -106,7 +106,8 @@ def get_all_pixel_changes_mc(data_file=var.FULL_DATA_FILE,
 
 
 def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl',
-                            times_before_whiteout=True):
+                            times_before_whiteout=True,
+                            num_layers=2):
     '''
     Defines a simplified map of the canvas through time, where each pixel assigned an integer
     based on the composition to which it belongs. In this simplified map, there are overlaps
@@ -114,7 +115,7 @@ def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl',
     the unique times mentioned in the atlas for when borders change, and ends up being roughly every half hour
     '''
     # first check if the map is saved in the data folder
-    map_name = 'canvas_time_map.pkl'
+    map_name = 'canvas_time_map_' + str(num_layers) + '_layers.pkl'
     data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
                              'data')
     data_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -136,6 +137,9 @@ def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl',
             canvas_comp_list = pickle.load(file)
 
         times_uniq = np.array([])
+        canvas_comp_list.sort(
+            key=lambda x: x.num_pix(),
+            reverse=True)  # sort by size of canvas part, largest first
         n_comps = len(canvas_comp_list)
         for i in range(n_comps):
             comp_coords_times = canvas_comp_list[i].coords_timerange
@@ -143,10 +147,13 @@ def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl',
             times_uniq = np.concatenate(
                 (times_uniq, np.unique(comp_coords_times)))
         times_uniq = np.unique(times_uniq)
+        if times_before_whiteout:
+            times_uniq = np.concatenate(
+                (times_uniq[times_uniq < var.TIME_WHITEOUT],
+                 [var.TIME_WHITEOUT]))
 
-        num_overlaps = 2
         comp_pix_tm_map = -1 * np.ones(
-            (2000, 2000, len(times_uniq), num_overlaps), dtype=np.int16)
+            (2000, 2000, len(times_uniq), num_layers), dtype=np.int16)
         veclen = np.vectorize(len)
         large_neg_num = -1000000
         n_comps = len(canvas_comp_list)
@@ -216,26 +223,37 @@ def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl',
                 # if any values indexed using the line below are not -1, then there is an overlap (use np.isin?)
                 # so fill the second dimension of the map with the second composition number.
                 # if there is a third overlap, then the second dimension will be overwritten.
-                if np.all(comp_pix_tm_map[coords_to_set_to_i[0, :],
-                                          coords_to_set_to_i[1, :], j,
-                                          0] == -1):
+
+                # If all the coords for a composition are -1, no comp has been assigned to this layer.
+                if num_layers == 2:
+                    if np.all(comp_pix_tm_map[coords_to_set_to_i[0, :],
+                                              coords_to_set_to_i[1, :], j,
+                                              0] == -1):
+                        comp_pix_tm_map[coords_to_set_to_i[0, :],
+                                        coords_to_set_to_i[1, :], j, 0] = i
+                    # If there is a composition already assigned in the first layer, set the second layer to the current composition
+                    else:
+                        comp_pix_tm_map[coords_to_set_to_i[0, :],
+                                        coords_to_set_to_i[1, :], j, 1] = i
+
+                elif num_layers == 1:
+                    # You'll always just overwrite the first layer in this case
                     comp_pix_tm_map[coords_to_set_to_i[0, :],
                                     coords_to_set_to_i[1, :], j, 0] = i
-                else:
-                    comp_pix_tm_map[coords_to_set_to_i[0, :],
-                                    coords_to_set_to_i[1, :], j, 1] = i
+
             # find where the map is still -1
             coords_no_comp_x, coords_no_comp_y = np.where(
                 comp_pix_tm_map[:, :, j, 0] == -1)
             coords_comp_time_dict[(-1, j)] = np.vstack(
                 (coords_no_comp_x, coords_no_comp_y))
 
-            coords_no_comp_x, coords_no_comp_y = np.where(
-                comp_pix_tm_map[:, :, j, 1] == -1)
-            # note that we use -2 to designate where there is a minus one on the map in the overlap dimension
-            # not the most elegant solution, but it works for now
-            coords_comp_time_dict[(-2, j)] = np.vstack(
-                (coords_no_comp_x, coords_no_comp_y))
+            if num_layers == 2:
+                coords_no_comp_x, coords_no_comp_y = np.where(
+                    comp_pix_tm_map[:, :, j, 1] == -1)
+                # note that we use -2 to designate where there is a minus one on the map in the overlap dimension
+                # not the most elegant solution, but it works for now
+                coords_comp_time_dict[(-2, j)] = np.vstack(
+                    (coords_no_comp_x, coords_no_comp_y))
 
     to_save = {
         'comp_pix_tm_map': comp_pix_tm_map,
@@ -244,9 +262,6 @@ def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl',
     }
     with open(data_file_path, 'wb') as f:
         pickle.dump(to_save, f)
-
-    if times_before_whiteout:
-        times_uniq = np.concatenate((times_uniq[times_uniq<var.TIME_WHITEOUT], [var.TIME_WHITEOUT]))
 
     return comp_pix_tm_map, times_uniq, coords_comp_time_dict
 
@@ -395,6 +410,110 @@ def calc_coords_popularity(pixel_changes_all, times_uniq, seed_real_changes=Fals
 
     return pixel_changes_popularity
 
+def calc_coords_loyalty_comp(pixel_changes_all,
+                        comp_pix_tm_map,
+                        times_uniq,
+                        coords_comp_time_dict,
+                        seed_real_changes=False):
+    """
+    Reassigns pixel coordinates to simulate user loyalty behavior:
+    
+    - The first change of each user is either kept or randomly sampled (depending on `seed_real_changes`).
+    - All subsequent changes by a user are relocated to random pixels within the same composition
+      that they initially contributed to.
+
+    Parameters:
+        pixel_changes_all (structured np.ndarray): Array of all pixel changes, with fields 
+            including 'user', 'seconds', 'xcoor', and 'ycoor'.
+        comp_pix_tm_map (ndarray): 4D array mapping (x, y, time, layer) to composition IDs.
+        times_uniq (ndarray): 1D array of unique time boundaries (in seconds).
+        coords_comp_time_dict (dict): Maps (composition_id, time_index) to a tuple of (x_coords, y_coords).
+        seed_real_changes (bool): If True, preserve the user's actual first change.
+                                   If False, sample a new first change randomly.
+
+    Returns:
+        pixel_changes_loyalty (structured np.ndarray): Modified array of pixel changes with updated coordinates.
+    """
+    num_layers = comp_pix_tm_map.shape[-1]
+
+    # Sort changes by user to easily find first change per user
+    pix_changes_user_sorted = np.sort(pixel_changes_all, order='user')
+
+    # Get indices where a new user starts
+    inds_new_user = np.where(
+        np.diff(pix_changes_user_sorted['user']) > 0)[0] + 1
+    inds_new_user = np.concatenate(([0], inds_new_user))
+
+    # Optionally replace users' first change with a random one
+    if not seed_real_changes:
+        pix_changes_user_sorted = sample_pixch_quarters(
+            pix_changes_user_sorted, inds_to_sample=inds_new_user)
+
+    # Get time bin index for each user's first change
+    first_change_seconds = pix_changes_user_sorted['seconds'][inds_new_user]
+    t_ind = np.searchsorted(times_uniq, first_change_seconds, side='right') - 1
+
+    # Get composition index for each user's first change
+    comp_user = comp_pix_tm_map[
+        pix_changes_user_sorted['xcoor'][inds_new_user],
+        pix_changes_user_sorted['ycoor'][inds_new_user], t_ind, 0]
+
+    if num_layers > 1:
+        missing_comps = (comp_user == -1)
+        if np.any(missing_comps):
+            # Try to search for comp in bottom layer
+            bottom_layer_comps = comp_pix_tm_map[pix_changes_user_sorted['xcoor'][inds_new_user][missing_comps],
+                                                pix_changes_user_sorted['ycoor'][inds_new_user][missing_comps],
+                                                t_ind[missing_comps], 1]
+
+            # Replace comp_user values where comp_user == -1
+            comp_user[missing_comps] = bottom_layer_comps
+
+            # Set any -2s back to -1
+            comp_user[comp_user == -2] = -1
+
+    # Reassign coordinates for all of each user's changes to random pixels within the same composition
+    for i, start_change_ind in enumerate(inds_new_user):
+        if i % 10000 == 0:
+            print('User Number: ' + str(i) + ' out of ' + str(len(inds_new_user)))
+
+        end_change_ind = inds_new_user[i + 1] if i < (len(inds_new_user) - 1) else len(pix_changes_user_sorted)
+        user_change_inds = np.arange(start_change_ind, end_change_ind)
+
+        loyalty_comp = None
+        loyalty_time = None
+
+        for j in range(user_change_inds.shape[0]):
+            idx = user_change_inds[j]
+            xj = pix_changes_user_sorted['xcoor'][idx]
+            yj = pix_changes_user_sorted['ycoor'][idx]
+            tj = np.searchsorted(times_uniq, [pix_changes_user_sorted['seconds'][idx]], side='right')[0] - 1
+
+            compj = comp_pix_tm_map[xj, yj, tj, 0]
+            if compj == -1 and num_layers > 1:
+                compj = comp_pix_tm_map[xj, yj, tj, 1]
+
+            if compj != -1:
+                # Set loyalty comp and sample for all remaining changes
+                loyalty_comp = compj
+                loyalty_time = tj
+
+                coords_comp_t = coords_comp_time_dict[(loyalty_comp, loyalty_time)]
+                len_coords = coords_comp_t.shape[1]
+
+                # Sample for remaining changes including this one
+                num_remaining_changes = end_change_ind - idx
+                coords_inds_sampled = np.random.choice(len_coords, size=num_remaining_changes)
+
+                pix_changes_user_sorted['xcoor'][idx:end_change_ind] = coords_comp_t[0, coords_inds_sampled]
+                pix_changes_user_sorted['ycoor'][idx:end_change_ind] = coords_comp_t[1, coords_inds_sampled]
+                break  # Done with this user
+
+    # re-sort according to time
+    pixel_changes_loyalty = np.sort(pix_changes_user_sorted, order='seconds')
+
+    return pixel_changes_loyalty
+
 
 def calc_coords_loyalty(pixel_changes_all,
                         comp_pix_tm_map,
@@ -420,6 +539,8 @@ def calc_coords_loyalty(pixel_changes_all,
     Returns:
         pixel_changes_loyalty (structured np.ndarray): Modified array of pixel changes with updated coordinates.
     """
+    num_layers = comp_pix_tm_map.shape[-1]
+
     # Sort changes by user to easily find first change per user
     pix_changes_user_sorted = np.sort(pixel_changes_all, order='user')
 
@@ -442,18 +563,19 @@ def calc_coords_loyalty(pixel_changes_all,
         pix_changes_user_sorted['xcoor'][inds_new_user],
         pix_changes_user_sorted['ycoor'][inds_new_user], t_ind, 0]
 
-    missing_comps = (comp_user == -1)
-    if np.any(missing_comps):
-        # Try to fix missing comps using layer 1
-        bottom_layer_comps = comp_pix_tm_map[pix_changes_user_sorted['xcoor'][inds_new_user][missing_comps],
-                                             pix_changes_user_sorted['ycoor'][inds_new_user][missing_comps],
-                                             t_ind[missing_comps], 1]
+    if num_layers > 1:
+        missing_comps = (comp_user == -1)
+        if np.any(missing_comps):
+            # Try to search for comp in bottom layer
+            bottom_layer_comps = comp_pix_tm_map[pix_changes_user_sorted['xcoor'][inds_new_user][missing_comps],
+                                                pix_changes_user_sorted['ycoor'][inds_new_user][missing_comps],
+                                                t_ind[missing_comps], 1]
 
-        # Replace comp_user values where comp_user == -1
-        comp_user[missing_comps] = bottom_layer_comps
+            # Replace comp_user values where comp_user == -1
+            comp_user[missing_comps] = bottom_layer_comps
 
-        # Set any -2s back to -1
-        comp_user[comp_user == -2] = -1
+            # Set any -2s back to -1
+            comp_user[comp_user == -2] = -1
 
     # Reassign coordinates for all of each user's changes to random pixels within the same composition
     for i, start_change_ind in enumerate(inds_new_user):
@@ -467,7 +589,7 @@ def calc_coords_loyalty(pixel_changes_all,
         end_change_ind = inds_new_user[i + 1] if i < (len(inds_new_user) - 1) else len(pix_changes_user_sorted)
         num_changes = end_change_ind - start_change_ind
 
-        coords_inds_sampled = np.random.choice(len_coords, size=num_changes)
+        coords_inds_sampled = np.random.choice(len_coords, size=num_changes) # randomly sample within the composition
         pix_changes_user_sorted['xcoor'][start_change_ind:end_change_ind] = coords_comp_t[0, coords_inds_sampled]
         pix_changes_user_sorted['ycoor'][start_change_ind:end_change_ind] = coords_comp_t[1, coords_inds_sampled]
 
@@ -476,12 +598,55 @@ def calc_coords_loyalty(pixel_changes_all,
 
     return pixel_changes_loyalty
 
+def calc_coords_loyalty_old(pixel_changes_all, comp_pix_tm_map, times_uniq, coords_comp_time_dict, seed_real_changes=False):
+    '''
+    Finds the first pixel change of each user, and replaces it with a random pixel change
+    replace all the other pixel changes with random pixel changes within the same composition of their first choice. 
+    '''
+
+    pix_changes_user_sorted = np.sort(pixel_changes_all, order='user')
+    inds_new_user = np.where(np.diff(pix_changes_user_sorted['user']) > 0)[0] + 1
+    inds_new_user = np.concatenate(([0], inds_new_user))
+
+    # sample the first pixel change of each user randomly
+    if not seed_real_changes:
+        pix_changes_user_sorted = sample_pixch_quarters(pix_changes_user_sorted, inds_to_sample=inds_new_user)
+
+    # get the time indices of the first change of each user
+    sorted_tm_indices = np.arange(0,len(times_uniq))
+    first_change_time_int = (pix_changes_user_sorted['seconds'][inds_new_user] // 1800) * 1800
+    indices_in_tm = np.searchsorted(times_uniq, first_change_time_int)
+    t_ind = sorted_tm_indices[indices_in_tm]
+
+    # get the composition number where each user made their first change
+    comp_user = comp_pix_tm_map[pix_changes_user_sorted['xcoor'][inds_new_user], pix_changes_user_sorted['ycoor'][inds_new_user], t_ind, 0]
+
+    for i in range(0,len(inds_new_user)):
+        if i % 10000 ==0:
+            print('user number: ' + str(i))
+        coords_comp_t = coords_comp_time_dict[(comp_user[i], t_ind[i])]
+        len_coords = coords_comp_t.shape[1]
+        if i < len(inds_new_user)-1:
+            end_change_ind = inds_new_user[i+1]
+        else:
+            end_change_ind = len(pixel_changes_all)
+        num_changes = end_change_ind - inds_new_user[i]
+        coords_inds_sampled = np.random.choice(np.arange(0,len_coords), size = num_changes)
+        pix_changes_user_sorted['xcoor'][inds_new_user[i]: end_change_ind] = coords_comp_t[0, coords_inds_sampled]
+        pix_changes_user_sorted['ycoor'][inds_new_user[i]: end_change_ind] = coords_comp_t[1, coords_inds_sampled]
+
+    # re-sort according to time
+    pixel_changes_loyalty = np.sort(pix_changes_user_sorted, order='seconds')
+
+    return pixel_changes_loyalty
+
+
 
 def calc_coords_area(pixel_changes_all,
                      comp_pix_tm_map,
                      coords_comp_time_dict,
                      times_uniq,
-                     exp=1):
+                     exp=1, const=1):
     """
     Reassigns pixel coordinates in `pixel_changes_all` based on a probability 
     distribution weighted by the area (to a power) of compositions containing each pixel.
@@ -501,14 +666,14 @@ def calc_coords_area(pixel_changes_all,
         pixel_changes_area (structured np.array): Modified copy of `pixel_changes_all`
             with updated x and y coordinates.
     """
-    num_overlaps = comp_pix_tm_map.shape[-1]
+    num_layers = comp_pix_tm_map.shape[-1]
     coords_flat = np.arange(tot_pix)
     pixel_changes_area = pixel_changes_all.copy()
-    prob = np.zeros((tot_pix, num_overlaps))
+    prob = np.zeros((tot_pix, num_layers))
 
     for i in range(len(times_uniq) - 1):
         print(f"Processing time interval {i + 1}/{len(times_uniq) - 1}")
-        for k in range(num_overlaps):
+        for k in range(num_layers):
             map_t_ov = comp_pix_tm_map[:, :, i, k]
             flat_ids = map_t_ov.ravel()
 
@@ -519,8 +684,7 @@ def calc_coords_area(pixel_changes_all,
             coords_comb_nocomp = coords_y.astype(
                 'int') + coords_x.astype('int') * (x_max_q1234 + 1)
             prob[coords_comb_nocomp, k] = 0
-            if exp != 1:
-                prob[:, k] = prob[:, k]**exp
+            prob[:, k] = prob[:, k]**exp + const # add the + const so that the no comps have some probability
 
         # Select the pixel changes in the time range
         tstart = times_uniq[i]
@@ -545,7 +709,7 @@ def calc_coords_area(pixel_changes_all,
 
 
 def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
-                          coords_comp_time_dict):
+                          coords_comp_time_dict, const=1):
     """
     Reassigns pixel coordinates in `pixel_changes_all` by sampling from the perimeter 
     of compositions over time.
@@ -567,15 +731,15 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
         pixel_changes_perim (structured np.ndarray): Updated copy of `pixel_changes_all` 
             with resampled x and y coordinates.
     """
-    num_overlaps = 2
-    prob = np.zeros((tot_pix, num_overlaps))
+    num_layers = comp_pix_tm_map.shape[-1]
+    prob = np.zeros((tot_pix, num_layers))
     coords_flat = np.arange(0, tot_pix)
     pixel_changes_perim = pixel_changes_all.copy()
 
     for t in range(len(times_uniq) - 1):
         print(f"Processing time index {t}/{len(times_uniq) - 2}")
         i = 0
-        for k in range(num_overlaps):  # overlap dimension
+        for k in range(num_layers):  # overlap dimension
             if t > 0:
                 diff = comp_pix_tm_map[:, :, t - 1, k] - comp_pix_tm_map[:, :, t, k]
                 indsx, indsy = np.where(diff != 0)
@@ -584,10 +748,10 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
                 c_ints = np.unique(comp_pix_tm_map[:, :, t, k])
             for c in c_ints:
                 if c == -1:
-                    coords_x, coords_y = coords_comp_time_dict[(c - k, t)]
+                    coords_x, coords_y = coords_comp_time_dict[(c - k, t)] # c-k means we index -1 in 1st layer and -2 when in 2nd layer
                     coords_comb = coords_y.astype(
                         'int64') + coords_x.astype('int64') * (x_max_q1234 + 1)
-                    prob[coords_comb, k] = 0
+                    prob[coords_comb, k] = const
                 else:
                     coords_x, coords_y = coords_comp_time_dict[(c, t)]
                     coords_comb = coords_y.astype('int64') + coords_x.astype('int64') * (x_max_q1234 + 1)
@@ -595,7 +759,7 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
                     eroded_mask = scipy.ndimage.binary_erosion(mask)
                     perimeter_mask = mask & ~eroded_mask
                     perimeter_count = np.sum(perimeter_mask)
-                    prob[coords_comb, k] = perimeter_count
+                    prob[coords_comb, k] = perimeter_count + const
 
                 i += 1
 
