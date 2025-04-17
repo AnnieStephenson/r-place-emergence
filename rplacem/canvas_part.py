@@ -835,7 +835,10 @@ def get_atlas_border(id_index=-1, id='', atlas=None, addtime_before=0, addtime_a
             t0t1 = t0t1.split('-')
             t0 = t0t1[0]
             t1 = t0t1[1] if len(t0t1) > 1 else t0
-            times.append([1800*(int(t0)-1), 1800*int(t1)])
+            if var.year==2017:
+                times.append([0, 1800*int(t0)])
+            else:
+                times.append([1800*(int(t0)-1), 1800*int(t1)])
             vals.append(v)
     # textual info from atlas
     description = atlas[id_index]['description']
