@@ -10,13 +10,9 @@ import matplotlib.pyplot as plt
 
 
 # GLOBAL
-x_max_q1 = var.CANVAS_MINMAX[0][0][1]
-x_max_q12 = var.CANVAS_MINMAX[1][0][1]
-x_max_q1234 = var.CANVAS_MINMAX[2][0][1]
-y_max_q1 = var.CANVAS_MINMAX[0][1][1]
-y_max_q12 = var.CANVAS_MINMAX[1][1][1]
-y_max_q1234 = var.CANVAS_MINMAX[2][1][1]
-tot_pix = (x_max_q1234 + 1) * (y_max_q1234 + 1)
+x_max_tot = var.CANVAS_MINMAX[-1][0][1]
+y_max_tot = var.CANVAS_MINMAX[-1][1][1]
+tot_pix = (x_max_tot + 1) * (y_max_tot + 1)
 
 def get_all_pixel_changes_mc(data_file=var.FULL_DATA_FILE,
                              random_pos=True,
@@ -55,30 +51,23 @@ def get_all_pixel_changes_mc(data_file=var.FULL_DATA_FILE,
     if random_pos:
         x_min = np.min(pixel_changes_all['xcoor'])
         y_min = np.min(pixel_changes_all['ycoor'])
-        x_max_q1 = var.CANVAS_MINMAX[0][0][1]
-        x_max_q12 = var.CANVAS_MINMAX[1][0][1]
-        x_max_q1234 = var.CANVAS_MINMAX[2][0][1]
-        y_max_q1 = var.CANVAS_MINMAX[0][1][1]
-        y_max_q12 = var.CANVAS_MINMAX[1][1][1]
-        y_max_q1234 = var.CANVAS_MINMAX[2][1][1]
 
-        # randomize in first quarter
-        bool_inds_q1 = pixel_changes_all['seconds'] < var.TIME_ENLARGE[1]
-        num_inds_q1 = np.sum(bool_inds_q1)
-        pixel_changes_all['xcoor'][bool_inds_q1]= np.random.choice(np.arange(x_min, x_max_q1 + 1), size=num_inds_q1)
-        pixel_changes_all['ycoor'][bool_inds_q1]= np.random.choice(np.arange(y_min, y_max_q1 + 1), size=num_inds_q1)
+        # Handle arbitrary length of CANVAS_MINMAX
+        for i, canvas_minmax in enumerate(var.CANVAS_MINMAX):
+            time_start = var.TIME_ENLARGE[i]
+            if i + 1 < len(var.TIME_ENLARGE):
+                time_end = var.TIME_ENLARGE[i + 1]
+                bool_inds = (pixel_changes_all['seconds'] >= time_start) & (pixel_changes_all['seconds'] < time_end)
+            else:
+                bool_inds = pixel_changes_all['seconds'] >= time_start
 
-        # randomize in first and second quarter
-        bool_inds_q12 = (pixel_changes_all['seconds'] >= var.TIME_ENLARGE[1]) & (pixel_changes_all['seconds'] < var.TIME_ENLARGE[2])
-        num_inds_q12 = np.sum(bool_inds_q12)
-        pixel_changes_all['xcoor'][bool_inds_q12] = np.random.choice(np.arange(x_min, x_max_q12 + 1), size = num_inds_q12)
-        pixel_changes_all['ycoor'][bool_inds_q12] = np.random.choice(np.arange(y_min, y_max_q12 + 1), size = num_inds_q12)
+            num_inds = np.sum(bool_inds)
+            x_max = canvas_minmax[0][1]
+            y_max = canvas_minmax[1][1]
 
-        # randomize on entire canvas
-        bool_inds_q1234 = pixel_changes_all['seconds'] >= var.TIME_ENLARGE[2]
-        num_inds_q1234 = np.sum(bool_inds_q1234)
-        pixel_changes_all['xcoor'][bool_inds_q1234] = np.random.choice(np.arange(x_min, x_max_q1234 + 1), size=num_inds_q1234)
-        pixel_changes_all['ycoor'][bool_inds_q1234] = np.random.choice(np.arange(y_min, y_max_q1234 + 1), size=num_inds_q1234)
+            pixel_changes_all['xcoor'][bool_inds] = np.random.choice(np.arange(x_min, x_max + 1), size=num_inds)
+            pixel_changes_all['ycoor'][bool_inds] = np.random.choice(np.arange(y_min, y_max + 1), size=num_inds)
+
 
     if random_col:
         # get the indices for each color choice range
@@ -307,46 +296,46 @@ def calc_coords_model(model_type = 'random', filepath_comps='canvas_comps_feb27_
 
 def sample_pixch_quarters(pixel_changes, inds_to_sample=None, prob=None, coords_sample_from=None):
     '''
-    Takes the pixel_changes_all array and returns boolean indices for each quarter of time
+    Takes the pixel_changes_all array and returns boolean indices for each quarter of time.
+    Generalized to work with arbitrary lengths of var.CANVAS_MINMAX.
     '''
-
 
     if inds_to_sample is not None:
         pixel_changes_indexed = pixel_changes[inds_to_sample]
     else:
         pixel_changes_indexed = pixel_changes
 
+    # Determine coordinate ranges for each canvas state
+    x_coords_list = []
+    y_coords_list = []
+
     if coords_sample_from is None:
-        x_coords_q1 = np.arange(0, x_max_q1 + 1)
-        y_coords_q1 = np.arange(0, y_max_q1 + 1)
-        x_coords_q12 = np.arange(0, x_max_q12 + 1)
-        y_coords_q12 = np.arange(0, y_max_q12 + 1)
-        x_coords_q1234 = np.arange(0, x_max_q1234 + 1)
-        y_coords_q1234 = np.arange(0, y_max_q1234 + 1)
+        for canvas in var.CANVAS_MINMAX:
+            x_coords_list.append(np.arange(0, canvas[0][1] + 1))
+            y_coords_list.append(np.arange(0, canvas[1][1] + 1))
     else:
-        x_coords_q1 = coords_sample_from[0]
-        y_coords_q1 = coords_sample_from[1]
-        x_coords_q12 = coords_sample_from[2]
-        y_coords_q12 = coords_sample_from[3]
-        x_coords_q1234 = coords_sample_from[4]
-        y_coords_q1234 = coords_sample_from[5]
+        x_coords_list = coords_sample_from[::2]
+        y_coords_list = coords_sample_from[1::2]
 
-    bool_inds_q1 = pixel_changes_indexed['seconds'] < var.TIME_ENLARGE[1]
-    bool_inds_q12 = (pixel_changes_indexed['seconds'] >= var.TIME_ENLARGE[1]) & (pixel_changes_indexed['seconds'] < var.TIME_ENLARGE[2])
-    bool_inds_q1234 = pixel_changes_indexed['seconds'] >= var.TIME_ENLARGE[2]
+    # Determine time enlarges and corresponding indices
+    time_enlarges = var.TIME_ENLARGE
+    for i in range(len(time_enlarges)):
+        if i + 1 < len(time_enlarges):
+            bool_inds = (pixel_changes_indexed['seconds'] >= time_enlarges[i]) & (pixel_changes_indexed['seconds'] < time_enlarges[i + 1])
+        else:
+            bool_inds = pixel_changes_indexed['seconds'] >= time_enlarges[i]
 
+        num_inds = np.sum(bool_inds)
+        pixel_changes_indexed['xcoor'][bool_inds] = np.random.choice(x_coords_list[i], size=num_inds, p=prob)
+        pixel_changes_indexed['ycoor'][bool_inds] = np.random.choice(y_coords_list[i], size=num_inds, p=prob)
 
-    pixel_changes_indexed['xcoor'][bool_inds_q1] = np.random.choice(x_coords_q1, size=np.sum(bool_inds_q1), p=prob)
-    pixel_changes_indexed['ycoor'][bool_inds_q1] = np.random.choice(y_coords_q1, size=np.sum(bool_inds_q1), p=prob)
+    if inds_to_sample is not None:
+        pixel_changes[inds_to_sample] = pixel_changes_indexed
+    else:
+        pixel_changes = pixel_changes_indexed
 
-    pixel_changes_indexed['xcoor'][bool_inds_q12] = np.random.choice(x_coords_q12, size=np.sum(bool_inds_q12), p=prob)
-    pixel_changes_indexed['ycoor'][bool_inds_q12] = np.random.choice(y_coords_q12, size=np.sum(bool_inds_q12), p=prob)
-
-    pixel_changes_indexed['xcoor'][bool_inds_q1234] = np.random.choice(x_coords_q1234, size=np.sum(bool_inds_q1234), p=prob)
-    pixel_changes_indexed['ycoor'][bool_inds_q1234] = np.random.choice(y_coords_q1234, size=np.sum(bool_inds_q1234), p=prob)
-
-    pixel_changes[inds_to_sample] = pixel_changes_indexed
     return pixel_changes
+
 
 def calc_coords_popularity(pixel_changes_all, times_uniq, seed_real_changes=False):
     '''
@@ -369,13 +358,6 @@ def calc_coords_popularity(pixel_changes_all, times_uniq, seed_real_changes=Fals
             if not seed_real_changes:
                 pixel_changes_popularity = sample_pixch_quarters(pixel_changes_popularity,
                                                                 inds_to_sample=t_inds)
-                #coords_sample_from=[np.arange(0, x_max_q1 + 1),
-                #                    np.arange(0, y_max_q1 + 1),
-                #                    np.arange(x_max_q1, x_max_q12 + 1),
-                #                    np.arange(0, y_max_q12 + 1),
-                #                    np.arange(0, x_max_q1234 + 1),
-                #                    np.arange(y_max_q12, y_max_q1234 + 1)])
-
 
         else:
             # probability is proportional to the number of changes in the previous 30 min
@@ -390,7 +372,7 @@ def calc_coords_popularity(pixel_changes_all, times_uniq, seed_real_changes=Fals
             # but it should still be zero if that part of canvas is not yet open.
             # TODO: at the first 30 min of canvas section opening, the probability should be uniform across that new area of canvas
             #       but should be popularity driven accross the rest of the canvas? Not sure
-            prob_sq = np.zeros((x_max_q1234 + 1, y_max_q1234 + 1))
+            prob_sq = np.zeros((x_max_tot + 1, y_max_tot + 1))
             prob_sq[uni_x.astype(int), uni_y.astype(int)] = coord_counts
             prob[:,i] = prob_sq.flatten()
             prob[:,i] = prob[:,i]/np.sum(prob[:,i])
@@ -399,8 +381,8 @@ def calc_coords_popularity(pixel_changes_all, times_uniq, seed_real_changes=Fals
             samp_coord_inds = np.random.choice(coords_flat, size=len(t_inds), p=prob[:,i])
 
             # translate the coords back to x and y
-            samp_coords_x = samp_coord_inds // (x_max_q1234 + 1)
-            samp_coords_y = samp_coord_inds % (y_max_q1234 + 1)
+            samp_coords_x = samp_coord_inds // (x_max_tot + 1)
+            samp_coords_y = samp_coord_inds % (y_max_tot + 1)
 
             # set the new sampled x and y coords
             pixel_changes_popularity['xcoor'][t_inds] = samp_coords_x
@@ -682,7 +664,7 @@ def calc_coords_area(pixel_changes_all,
             prob[:, k] = counts[flat_ids + 1]
             coords_x, coords_y = coords_comp_time_dict[(-1 - k, i)]
             coords_comb_nocomp = coords_y.astype(
-                'int') + coords_x.astype('int') * (x_max_q1234 + 1)
+                'int') + coords_x.astype('int') * (x_max_tot + 1)
             prob[coords_comb_nocomp, k] = 0
             prob[:, k] = prob[:, k]**exp + const # add the + const so that the no comps have some probability
 
@@ -699,8 +681,8 @@ def calc_coords_area(pixel_changes_all,
                                            p=prob_sum_ov / prob_sum_ov.sum())
 
         # translate the coords back to x and y
-        samp_coords_x = samp_coord_inds // (x_max_q1234 + 1)
-        samp_coords_y = samp_coord_inds % (y_max_q1234 + 1)
+        samp_coords_x = samp_coord_inds // (x_max_tot + 1)
+        samp_coords_y = samp_coord_inds % (y_max_tot + 1)
 
         # set the new sampled x and y coords
         pixel_changes_area['xcoor'][t_inds] = samp_coords_x
@@ -750,11 +732,11 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
                 if c == -1:
                     coords_x, coords_y = coords_comp_time_dict[(c - k, t)] # c-k means we index -1 in 1st layer and -2 when in 2nd layer
                     coords_comb = coords_y.astype(
-                        'int64') + coords_x.astype('int64') * (x_max_q1234 + 1)
+                        'int64') + coords_x.astype('int64') * (x_max_tot + 1)
                     prob[coords_comb, k] = const
                 else:
                     coords_x, coords_y = coords_comp_time_dict[(c, t)]
-                    coords_comb = coords_y.astype('int64') + coords_x.astype('int64') * (x_max_q1234 + 1)
+                    coords_comb = coords_y.astype('int64') + coords_x.astype('int64') * (x_max_tot + 1)
                     mask = (comp_pix_tm_map[:, :, t, k] == c)
                     eroded_mask = scipy.ndimage.binary_erosion(mask)
                     perimeter_mask = mask & ~eroded_mask
@@ -773,8 +755,8 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
                                            p=prob_sum_ov / np.sum(prob_sum_ov))
 
         # translate the coords back to x and y
-        samp_coords_x = samp_coord_inds // (x_max_q1234 + 1)
-        samp_coords_y = samp_coord_inds % (y_max_q1234 + 1)
+        samp_coords_x = samp_coord_inds // (x_max_tot + 1)
+        samp_coords_y = samp_coord_inds % (y_max_tot + 1)
 
         # set the new sampled x and y coords
         pixel_changes_perim['xcoor'][t_inds] = samp_coords_x
