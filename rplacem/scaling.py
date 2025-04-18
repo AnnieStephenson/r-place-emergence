@@ -618,6 +618,13 @@ def get_comp_scaling_data(
         n_defenseonly_users.append(cpart_stat.n_defenseonly_users_lifetime)
         n_attackonly_users.append(cpart_stat.n_attackonly_users_lifetime)
         n_bothattdef_users.append(cpart_stat.n_bothattdef_users_lifetime)
+        if n_defenseonly_users[i] is None:
+            n_defenseonly_users[i] = 0
+        if n_attackonly_users[i] is None:
+            n_attackonly_users[i] = 0
+        if n_bothattdef_users[i] is None:
+            n_bothattdef_users[i] = 0
+
         if cpart_stat.n_defenseonly_users.val is None:
             n_defenseonly_users_start.append(0)
             n_attackonly_users_start.append(0)
