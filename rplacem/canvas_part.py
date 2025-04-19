@@ -675,9 +675,10 @@ class CanvasPart(object):
         '''
         Returns first and last time that the composition is on
         '''
-
         if self.is_from_atlas():
             tmin = max(np.min(self.info.border_path_times[:, 0]), self.tmin_quadrant()[0])
+            if tmin > tmax_global: # in case composition starts after whiteout
+                tmin = tmax_global
             tmax = min(np.max(self.info.border_path_times[:, 1]), tmax_global)
         else:
             tmin = self.tmin_quadrant()[0]
