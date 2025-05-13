@@ -38,6 +38,7 @@ def plot_loglog_fit(x_data_unfilt,
                     bin_type='average', # 'average'
                     bin_axis='y', # 'x'
                     fit_type='TLS', # 'OLS'
+                    TLS_weights=False,
                     max_bin_size=10,
                     n_subsample_iter=100,
                     plot_sliding_window_ave=True,
@@ -134,17 +135,31 @@ def plot_loglog_fit(x_data_unfilt,
     log_x_data, log_y_data, log_x_sem, log_y_sem = handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=max_bin_size)
     
     if plot_bin_data:
-        plt.plot(10**log_x_data, 10**log_y_data, '.', color=line_color, markersize = markersize_bin)
-        if bin_axis=='y':
-            xerr=10**(2*log_x_sem)
-            yerr=None
-        if bin_axis=='x':
-            yerr=10**(2*log_y_sem)
-            xerr=None
-        
-        plt.errorbar(10**log_x_data, 10**log_y_data, yerr=yerr, xerr=xerr,
-                     ecolor=line_color, elinewidth=elinewidth, 
-                     capsize=0, linewidth=0)
+        # Transform log-space means to linear
+        x_mean = 10**log_x_data
+        y_mean = 10**log_y_data
+
+        # Compute asymmetric error bars
+        if bin_axis == 'y':
+            x_upper = 10**(log_x_data + log_x_sem)
+            x_lower = 10**(log_x_data - log_x_sem)
+            xerr = np.vstack([x_mean - x_lower, x_upper - x_mean])
+            yerr = None
+        elif bin_axis == 'x':
+            y_upper = 10**(log_y_data + log_y_sem)
+            y_lower = 10**(log_y_data - log_y_sem)
+            yerr = np.vstack([y_mean - y_lower, y_upper - y_mean])
+            xerr = None
+
+        # Plot mean points
+        plt.plot(x_mean, y_mean, '.', color=line_color, markersize=markersize_bin)
+
+        # Plot error bars with asymmetric intervals
+        plt.errorbar(
+            x_mean, y_mean,
+            xerr=xerr, yerr=yerr,
+            ecolor=line_color, elinewidth=elinewidth,
+            capsize=0, linewidth=0)
 
     if fit_type=='bilinear':
         pw_fit = piecewise_regression.Fit(log_x_data, log_y_data, n_breakpoints=1)
@@ -184,7 +199,10 @@ def plot_loglog_fit(x_data_unfilt,
         slope_conf = None
         intercept_conf = None
     if fit_type=='TLS':
-        data = scipy.odr.RealData(log_x_data, log_y_data)#, sx=log_x_sem, sy=log_y_sem)
+        if TLS_weights:
+            data = scipy.odr.RealData(log_x_data, log_y_data, sx=log_x_sem, sy=log_y_sem)
+        else:
+            data = scipy.odr.RealData(log_x_data, log_y_data)
         model = scipy.odr.Model(linear_model)
         odr = scipy.odr.ODR(data, model, beta0=[1.0, 0.0])  # Initial guess for parameters
         result = odr.run()
@@ -306,7 +324,172 @@ def plot_loglog_fit(x_data_unfilt,
         data = x_data, y_data
     return data
 
-def handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10):
+def handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10, bandwidth=0.4, grid_size=80):
+    """
+    Binning or smoothing of log-log data based on bin_type.
+    
+    Parameters
+    ----------
+    x_data : array
+        Raw x data.
+    y_data : array
+        Raw y data.
+    nbins : int
+        Number of bins (ignored if bin_type='kernel_average').
+    bin_type : str
+        'median', 'average', 'subsample', or 'kernel_average'.
+    bin_axis : str
+        'x' or 'y', depending which variable you want to bin along.
+    max_bin_size : int
+        Maximum subsample size (for 'subsample' mode).
+    bandwidth : float
+        Kernel bandwidth (only used if bin_type='kernel_average').
+    grid_size : int
+        Number of points in the kernel smoothed curve (only for 'kernel_average').
+        
+    Returns
+    -------
+    result : list of arrays
+        [x_values, y_values, x_sem, y_sem] after binning or smoothing.
+    """
+    if bin_axis == 'y':
+        log_x = np.log10(x_data)
+        log_y = np.log10(y_data)
+    elif bin_axis == 'x':
+        log_x = np.log10(y_data)
+        log_y = np.log10(x_data)
+    else:
+        raise ValueError("bin_axis must be 'x' or 'y'")
+
+    if bin_type == 'kernel_average':
+        # Smooth log-log data using the kernel_smooth_xy()
+        x_grid, x_smooth, y_smooth, x_sem, y_sem = kernel_smooth_xy(log_y, log_x, bandwidth=bandwidth, grid_size=grid_size)
+        
+        # x_smooth and y_smooth already correspond to smoothed x and y, with SEMs
+        y_vals = x_smooth
+        x_vals = y_smooth
+        y_sem_vals = x_sem
+        x_sem_vals = y_sem
+
+    else:
+        # Regular binning (median, average, or subsample)
+        hist_values, bin_edges = np.histogram(log_y, bins=nbins)
+
+        x_vals = np.array([])
+        y_vals = np.array([])
+        x_sem_vals = np.array([])
+        y_sem_vals = np.array([])
+
+        for i in range(len(bin_edges) - 1):
+            indices = np.where((log_y >= bin_edges[i])
+                               & (log_y < bin_edges[i + 1])
+                               & (~np.isnan(log_x)))[0]
+            if len(indices) < 2:
+                continue  # Skip empty or single-point bins
+
+            if bin_type == 'median':
+                x_bin = np.array([np.median(log_x[indices])])
+                y_bin = np.array([np.median(log_y[indices])])
+                x_sem = np.array([scipy.stats.sem(log_x[indices], ddof=1)])
+                y_sem = np.array([scipy.stats.sem(log_y[indices], ddof=1)])
+            elif bin_type == 'average':
+                x_bin = np.array([np.mean(log_x[indices])])
+                y_bin = np.array([np.mean(log_y[indices])])
+                x_sem = np.array([scipy.stats.sem(log_x[indices], ddof=1)])
+                y_sem = np.array([scipy.stats.sem(log_y[indices], ddof=1)])
+            elif bin_type == 'subsample':
+                max_samp = min(len(indices), max_bin_size)
+                sampled_inds = np.random.choice(indices, size=max_samp, replace=False)
+                x_bin = log_x[sampled_inds]
+                y_bin = log_y[sampled_inds]
+                x_sem = np.zeros_like(x_bin)
+                y_sem = np.zeros_like(y_bin)
+            else:
+                raise ValueError(f"Unknown bin_type: {bin_type}")
+
+            x_vals = np.concatenate((x_vals, x_bin))
+            y_vals = np.concatenate((y_vals, y_bin))
+            x_sem_vals = np.concatenate((x_sem_vals, x_sem))
+            y_sem_vals = np.concatenate((y_sem_vals, y_sem))
+
+    # Flip back depending on bin_axis
+    if bin_axis == 'y':
+        result = [x_vals, y_vals, x_sem_vals, y_sem_vals]
+    else:  # bin_axis == 'x'
+        result = [y_vals, x_vals, y_sem_vals, x_sem_vals]
+
+    return result
+
+def kernel_smooth_xy(x, y, bandwidth=0.4, grid_size=100, weight_threshold_factor = 0.0005):
+    """
+    Kernel smoothing for both x and y with SEM estimation.
+    
+    Parameters
+    ----------
+    x : 1D array
+        Input x values (may be noisy).
+    y : 1D array
+        Input y values.
+    bandwidth : float
+        Kernel bandwidth for smoothing.
+    grid_size : int
+        Number of points in the smoothed curve.
+        
+    Returns
+    -------
+    x_grid : 1D array
+        Grid points where smoothing was evaluated (requested).
+    x_smooth : 1D array
+        Weighted average x values (smoothed x).
+    y_smooth : 1D array
+        Weighted average y values (smoothed y).
+    x_sem : 1D array
+        Standard error of x at each grid point.
+    y_sem : 1D array
+        Standard error of y at each grid point.
+    """
+    
+    weight_threshold = weight_threshold_factor * len(x)
+
+    x = np.asarray(x)
+    y = np.asarray(y)
+    
+    x_grid = np.linspace(np.min(x), np.max(x), grid_size)
+    
+    distances = (x[:, None] - x_grid[None, :]) / bandwidth
+    weights = scipy.stats.norm.pdf(distances)
+    
+    sum_weights = np.sum(weights, axis=0)
+    
+    # Weighted means
+    weighted_x_mean = np.sum(weights * x[:, None], axis=0) / sum_weights
+    weighted_y_mean = np.sum(weights * y[:, None], axis=0) / sum_weights
+
+    # Weighted variances
+    weighted_var_x = np.sum(weights * (x[:, None] - weighted_x_mean[None, :])**2, axis=0) / sum_weights
+    weighted_var_y = np.sum(weights * (y[:, None] - weighted_y_mean[None, :])**2, axis=0) / sum_weights
+    
+    # Effective sample size
+    eff_n = (sum_weights**2) / np.sum(weights**2, axis=0)
+    
+    with np.errstate(divide='ignore', invalid='ignore'):
+        sem_x = np.sqrt(weighted_var_x / eff_n)
+        sem_y = np.sqrt(weighted_var_y / eff_n)
+
+    # Mask out low-support points
+    valid = sum_weights > weight_threshold
+    x_grid = x_grid[valid]
+    x_smooth = weighted_x_mean[valid]
+    y_smooth = weighted_y_mean[valid]
+    sem_x = sem_x[valid]
+    sem_y = sem_y[valid]
+    print('sem_y', sem_y)
+
+    return x_grid, x_smooth, y_smooth, sem_x, sem_y
+
+
+
+def handle_data_bins_old(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10):
     if bin_axis=='y':
         log_x_data = np.log10(x_data)
         log_y_data = np.log10(y_data)
@@ -388,7 +571,149 @@ def calc_user_attn(canvas_comp):
 
 
 # define function for user distance
+import numpy as np
+
 def calc_user_distance(canvas_comp):
+    """
+    Compute spatial‑and‑temporal activity statistics for every **active** user
+    in a `CanvasComposition`.
+
+    Parameters
+    ----------
+    canvas_comp : CanvasComposition
+        Object describing a single composition on the r/place canvas.  This
+        function relies on three public attributes:
+
+        pixel_changes : structured ndarray
+            A record array with at least the fields
+
+            * ``"user"``      – integer or hash identifying the author
+            * ``"coord_index"`` – index into ``canvas_comp.coords`` giving the
+              pixel edited
+            * ``"seconds"``   – Unix time (or seconds since epoch  / start)
+            * ``"active"``    – 1 = include in analysis, 0 = ignore
+        pixch_sortuser : ndarray of int
+            Permutation that orders ``pixel_changes`` first by *user* then by
+            time (monotonic within each user).  It allows all edits by a given
+            user to be contiguous in the array, which makes the per‑user
+            slicing below O(1).
+        coords : (2, N) ndarray of float
+            Pixel coordinate look‑up table where column *i* contains the
+            *(x, y)* position of pixel index *i* on the canvas.
+
+    Returns
+    -------
+    dist_total : (U,) ndarray
+        **Total path length** each user’s cursor travelled, computed as the sum
+        of Euclidean distances between *consecutive* pixel edits.
+        ``np.nan`` when the user edited only a single pixel.
+    dist_mean : (U,) ndarray
+        **Average step length** between consecutive edits for each user.
+        ``np.nan`` for single‑edit users.
+    dist_central_mean : (U,) ndarray
+        **Mean distance to centroid** – the average Euclidean distance of every
+        edited pixel from that user’s *own* centre of activity
+        ``(x̄, ȳ)``.  Low values imply a compact working region.
+    delta_t : (U,) ndarray
+        **Session duration** per user in seconds (last edit time minus first
+        edit time).  Zero when the user has exactly one active edit.
+    mean_timediff : (U,) ndarray
+        **Mean inter‑edit time** for each user, i.e. the average of
+        ``np.diff(times)``.  ``np.nan`` for single‑edit users.
+    speed_ave : (U,) ndarray
+        **Effective drawing speed** in pixels ⋅ s⁻¹, defined as
+        ``dist_total / delta_t``.  ``np.nan`` whenever `dist_total` is
+        ``np.nan`` *or* `delta_t` is zero.
+
+    Notes
+    -----
+    * Only edits with ``"active" == 1`` are analysed.
+    * Users with no active edits are automatically excluded, so the length *U*
+      of every returned array equals the number of active users.
+    """
+
+    # Keep only active pixel changes and place them in "all‑edits‑by‑user" order
+    pixch_user_sorted = canvas_comp.pixel_changes[canvas_comp.pixch_sortuser]
+    pixch_user_sorted = pixch_user_sorted[pixch_user_sorted["active"] == 1]
+
+    # `users` gives the unique user IDs in *reverse* order (because of [::-1]),
+    # `user_inds` are the indices of each user's *last* edit in the sorted array
+    users, user_inds = np.unique(pixch_user_sorted["user"][::-1],
+                                 return_index=True)
+    # Convert indices of last edits into lengths of each user slice
+    user_end_inds = len(pixch_user_sorted) - user_inds           # shape (U,)
+
+    # Pre‑allocate result arrays (float64 by default, filled with zeros)
+    U = len(users)
+    dist_total        = np.zeros(U)
+    dist_mean         = np.zeros(U)
+    dist_central_mean = np.zeros(U)
+    delta_t           = np.zeros(U)
+    mean_timediff     = np.zeros(U)
+    speed_ave         = np.zeros(U)
+
+    # -------------------------------------------------------------
+    # Iterate over users.  This loop is fast in practice (< 10⁴ users),
+    # and keeps the code easy to read; full vectorisation would add
+    # complexity for little speed‑up.
+    # -------------------------------------------------------------
+    for j in range(U):
+        # Determine the slice of rows belonging to the *j*‑th user
+        start = 0 if j == 0 else user_end_inds[j - 1]
+        stop  = user_end_inds[j]
+        coord_inds = pixch_user_sorted["coord_index"][start:stop]
+        times      = pixch_user_sorted["seconds"][start:stop]
+
+        # ------------------------------------------------------------------
+        # Temporal statistics
+        # ------------------------------------------------------------------
+        delta_t[j] = times[-1] - times[0]              # session length
+        if len(times) > 1:
+            mean_timediff[j] = np.mean(np.diff(times))
+        else:
+            mean_timediff[j] = np.nan                  # undefined for one edit
+
+        # ------------------------------------------------------------------
+        # Spatial statistics
+        # ------------------------------------------------------------------
+        coords_x, coords_y = canvas_comp.coords[:, coord_inds]
+
+        # 1. Mean distance to user's own centroid
+        x_mean = coords_x.mean()
+        y_mean = coords_y.mean()
+        dist_central_mean[j] = np.mean(
+            np.hypot(coords_x - x_mean, coords_y - y_mean)
+        )
+
+        # 2. Distances between *sequential* edits (cursor path length)
+        if len(coord_inds) > 1:
+            dist_steps = np.hypot(                     # vectorised hypot √(dx²+dy²)
+                np.diff(coords_x),
+                np.diff(coords_y)
+            )
+            dist_total[j] = dist_steps.sum()
+            dist_mean[j]  = dist_steps.mean()
+        else:
+            dist_total[j] = dist_mean[j] = np.nan      # only one edit ⇒ no steps
+
+        # ------------------------------------------------------------------
+        # Average speed (guard against division by zero or nan)
+        # ------------------------------------------------------------------
+        speed_ave[j] = (dist_total[j] / delta_t[j]
+                        if delta_t[j] > 0 and not np.isnan(dist_total[j])
+                        else np.nan)
+
+    return (dist_total,
+            dist_mean,
+            dist_central_mean,
+            delta_t,
+            mean_timediff,
+            speed_ave)
+
+
+
+
+def calc_user_distance_old(canvas_comp):
     pixch_user_sorted = canvas_comp.pixel_changes[canvas_comp.pixch_sortuser]
     pixch_user_sorted = pixch_user_sorted[pixch_user_sorted["active"] == 1]
     users, user_inds = np.unique(pixch_user_sorted["user"][::-1],
@@ -455,6 +780,7 @@ def calc_recovery_time(cpart_stat, frac, ref_frac):
 
 def get_comp_scaling_data(
     canvas_parts_stats_file="canvas_part_stats_sw.pkl",
+    canvas_parts_file=None,
     filename="reddit_place_composition_list_extended_sw.csv",
     start_t_ind=12, # 12 five-min increments = 1 hour
 ):
@@ -476,9 +802,10 @@ def get_comp_scaling_data(
       will mean we have to decide exactly what to plot. Perhaps, in some cases, we'd wish to plot the mean? or the max? or the min? or maybe all of these.
       This motivates saving the entire array for the timestep, which also suggests that we may want to replace some of the summed values with the entire array instead.
     """
-
-    #with open(canvas_parts_file, "rb") as file:
-    #   canvas_comp_list = pickle.load(file)
+    if canvas_parts_file is not None:
+        with open(canvas_parts_file, "rb") as file:
+            canvas_comp_list = pickle.load(file)
+        print(len(canvas_comp_list))
 
     with open(canvas_parts_stats_file, "rb") as file:
         canvas_part_stats_list = pickle.load(file)
@@ -586,8 +913,11 @@ def get_comp_scaling_data(
                                         or ("ally" in cpart_stat.info.links)):
             alliance_flag = 1
 
-        # dist_total, dist_mean, dist_central_mean, delta_t, speed_ave = calc_user_distance(canvas_comp)
-        #mean_attn, med_attn, pix_norm_attn = calc_user_attn(canvas_comp)
+        if canvas_parts_file is not None:
+            print(canvas_comp_list[i].info.atlasname)
+            print(cpart_stat.info.atlasname)
+            dist_total, dist_mean, dist_central_mean, delta_t, mean_timediff, speed_ave = calc_user_distance(canvas_comp_list[i])
+            #mean_attn, med_attn, pix_norm_attn = calc_user_attn(canvas_comp)
 
         recovery_time_black, start_t_black, end_t_black = calc_recovery_time(
             cpart_stat, cpart_stat.frac_black_px.val,
@@ -659,11 +989,12 @@ def get_comp_scaling_data(
         #mean_attns.append(mean_attn)
         #med_attns.append(med_attn)
         #pix_norm_attns.append(pix_norm_attn)
-        # dist_totals.append(dist_total)
-        # dist_means.append(dist_mean)
-        # dist_central_means.append(dist_central_mean)
-        # delta_ts.append(delta_t)
-        # speed_aves.append(speed_ave)
+        dist_totals.append(np.nanmean(dist_total))
+        dist_means.append(np.nanmean(dist_mean))
+        dist_central_means.append(np.nanmean(dist_central_mean))
+        print(dist_central_means[i])
+        delta_ts.append(np.nanmean(delta_t))
+        speed_aves.append(np.nanmean(speed_ave))
 
     # a few more vars
     lifetimes = np.array(tmax) - np.array(tmin)
@@ -718,6 +1049,11 @@ def get_comp_scaling_data(
         "Start time (purple)": start_purple,
         "Recovery time (black)": recovery_black,
         "Recovery time (purple)": recovery_purple,
+        "dist_total": dist_totals,
+        "dist_mean": dist_means,
+        "dist_central_mean": dist_central_means,
+        "delta_t": delta_ts,
+        "speed_ave": speed_aves
         #"Mean Attention": mean_attns,
         #"Median Attention": med_attns,
         #"Pixel Norm Attention": pix_norm_attns,
