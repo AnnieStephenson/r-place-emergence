@@ -8,10 +8,13 @@ from sweetsourcod.lempel_ziv import lempel_ziv_complexity
 from sweetsourcod.hilbert import get_hilbert_mask
 from sweetsourcod.zipper_compress import get_comp_size_bytes
 from sweetsourcod.block_entropy import block_entropy
+from Levenshtein import distance as levenshtein_distance
 import scipy
 from rplacem import var as var
 import os
 import pickle
+import collections
+import skimage
 
 
 def calc_size(pixels):
@@ -272,6 +275,109 @@ def calc_Q_delta_vst(canvas_part_stat, flattening='hilbert_sweetsourcod', compre
             q[j, i] = calc_Q(pixels_vst[j], delta[i], flattening=flattening, compression=compression)
 
     return q, delta
+
+
+def compute_complexity_multiscale(image_vst, scales=None):
+    """
+    Compute normalized Zhang complexity K over time from a 3D stack of 2D images using mode-based
+    coarse-graining with fast bincount mode computation.
+
+    Parameters:
+        image_vst (np.ndarray): 3D array of shape (T, H, W), where each [t] is a 2D image with non-negative integers.
+        scales (list[int] or None): Optional list of block sizes. If None, uses powers of 2 up to min(H, W) // 4.
+
+    Returns:
+        np.ndarray of shape (T,) with normalized complexity values for each time step.
+    """
+    T, H, W = image_vst.shape
+    K_norm_over_time = np.zeros(T)
+
+    # Auto-generate scales if not provided
+    if scales is None:
+        max_scale = max(1, min(H, W) // 4)
+        powers = int(np.log2(max_scale)) + 1
+        scales = [1] + [2 ** i for i in range(1, powers + 1) if 2 ** i <= max_scale]
+
+    num_scales = len(scales)
+
+    for t in range(T):
+        image = image_vst[t]
+        entropies = np.zeros(num_scales)
+        complexity = 0
+
+        for i, r in enumerate(scales):
+            # Crop image to nearest multiple of r
+            h_crop = (image.shape[0] // r) * r
+            w_crop = (image.shape[1] // r) * r
+            cropped = image[:h_crop, :w_crop]
+
+            # Extract non-overlapping blocks
+            blocks = skimage.util.view_as_blocks(cropped, block_shape=(r, r))
+            h, w = blocks.shape[:2]
+            flattened_blocks = blocks.reshape(h, w, -1)
+
+            # mode via bincount
+            def fast_mode(x):
+                return np.argmax(np.bincount(x))
+
+            modes = np.apply_along_axis(fast_mode, -1, flattened_blocks)
+
+            # Compute histogram of mode values
+            counts = collections.Counter(modes.flatten())
+            total = sum(counts.values())
+            probs = np.array([c / total for c in counts.values()])
+
+            # Shannon entropy
+            S_r = -np.sum(probs * np.log(probs))
+            entropies[i] = S_r
+
+            # Complexity K = sum of r^2 * S(r)
+            complexity += (r ** 2) * S_r
+
+        # Normalize by number of pixels
+        N = image.shape[0] * image.shape[1]
+        K_norm_over_time[t] = complexity / N
+
+    return K_norm_over_time
+
+
+def compute_complexity_levenshtein(image_vst):
+    """
+    Computes the Levenshtein-based spatial complexity CL for each time slice of a 3D image.
+
+    Parameters:
+        image_vst (3D numpy array): array of shape (T, R, C) with values 0–31 representing colors.
+
+    Returns:
+        1D numpy array of length T with the CL value at each time step
+    """
+    T, R, C = image_vst.shape
+    CL_t = np.zeros(T, dtype=np.float32)
+
+    for t in range(T):
+        image = image_vst[t]
+        V_r = np.zeros(R - 1, dtype=np.uint8)
+        V_c = np.zeros(C - 1, dtype=np.uint8)
+
+        # Row-wise Levenshtein distances
+        for i in range(R - 1):
+            row1 = ''.join(map(chr, image[i]))
+            row2 = ''.join(map(chr, image[i + 1]))
+            V_r[i] = levenshtein_distance(row1, row2)
+
+        # Column-wise Levenshtein distances
+        for j in range(C - 1):
+            col1 = ''.join(map(chr, image[:, j]))
+            col2 = ''.join(map(chr, image[:, j + 1]))
+            V_c[j] = levenshtein_distance(col1, col2)
+
+        # Outer product and mean for CL
+        A = np.outer(V_r, V_c)
+        CL_t[t] = A.mean()
+
+    return CL_t
+
+
 
 ###############################################################################################
 # The following functions come from:

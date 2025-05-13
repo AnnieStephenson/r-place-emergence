@@ -16,6 +16,7 @@ import warnings
 import sparse as sp
 from memory_profiler import profile
 import gc
+import cv2
 
 def count_image_differences(pixels1, pixels2, npix, coor_idx, indices=None):
     ''' Count the number of pixels (at given *indices* of coordinates of cpart *cpart*) that differ
@@ -122,6 +123,11 @@ def calc_stability(stable_timefrac, inds_active, compute_average):
         n_used_colors = num_used_colors_perpix
 
     return stability, runnerup_timeratio, n_used_colors
+
+def label_edge_map(label_img):
+    dy, dx = np.gradient(label_img.astype(float))
+    edges = (dx != 0) | (dy != 0)
+    return edges.astype(np.uint8)
 
 
 def calc_stable_cols(time_spent_in_col):
@@ -403,6 +409,7 @@ def main_variables(cpart,
     cpst.n_ingrouponly_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.n_outgrouponly_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.n_bothinout_users = cpst.ts_init(np.zeros(n_tlims))
+    cpst.num_edge_pixels = cpst.ts_init(np.zeros(n_tlims))
     cpst.frac_attack_changes_image = np.full((n_tlims, cpart.width(1), cpart.width(0)), 1, dtype=np.float16) if attdef > 1 else None
     cpst.size_uncompressed = cpst.ts_init(np.zeros(n_tlims))
     cpst.size_compressed = cpst.ts_init(np.zeros(n_tlims))
@@ -417,6 +424,8 @@ def main_variables(cpart,
     cpst.n_users_sw = cpst.ts_init( np.zeros(n_tlims) )
     cpst.fractal_dim_weighted = cpst.ts_init( np.full(n_tlims, 2) )
     cpst.fractal_dim_mask_median = cpst.ts_init( np.full(n_tlims, 2) )
+    cpst.complexity_multiscale = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.complexity_levenshtein = cpst.ts_init( np.zeros(n_tlims) )
     cpst.frac_black_px = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.frac_purple_px = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.frac_black_ref = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
@@ -427,6 +436,7 @@ def main_variables(cpart,
     ingroup_users = np.array([])
     outgroup_users = np.array([])
     bothinout_users = np.array([])
+    outgroup_inds = np.array([], dtype=np.int32)
 
     # output paths
     out_path = os.path.join(var.FIGS_PATH, cpart.out_name())
@@ -604,6 +614,7 @@ def main_variables(cpart,
                     ingroup_users = np.concatenate((ingroup_users, np.atleast_1d(n_changes_and_users_result[4])))
                     outgroup_users = np.concatenate((outgroup_users, np.atleast_1d(n_changes_and_users_result[5])))
                     bothinout_users = np.concatenate((bothinout_users, np.atleast_1d(n_changes_and_users_result[6])))
+                    outgroup_inds = np.concatenate((outgroup_inds, np.atleast_1d(n_changes_and_users_result[7])))
 
 
         # INSTANTANEOUS IMAGES: includes entropy and fractal dimension calculations
@@ -693,10 +704,13 @@ def main_variables(cpart,
         del time_spent_in_color
 
     
-    # FRACTAL DIMENSION
+    # FRACTAL DIMENSION AND OTHER COMPLEXITY MEASURES
     if instant > 0:
         [cpst.fractal_dim_mask_median.val,
          cpst.fractal_dim_weighted.val] = fractal_dim.calc_from_image(cpst, shift_avg=True)
+        
+        cpst.complexity_multiscale.val = entropy.compute_complexity_multiscale(cpst.true_image)
+        cpst.complexity_levenshtein.val = entropy.compute_complexity_levenshtein(cpst.true_image)
 
     # Continue the loop over some more time steps to get the forward-looking sliding window reference
     if tran > 0:
@@ -747,6 +761,11 @@ def main_variables(cpart,
                 cpst.n_outgrouponly_users.val[back_index+1] = len(outgroup_users_step) - len(bothinout_users_step)
                 cpst.n_ingrouponly_users.val[back_index+1] = len(ingroup_users_step) - len(bothinout_users_step)
 
+                if inout > 1:
+                    edges = label_edge_map(cpst.refimage_sw[back_index])
+                    cpst.num_edge_pixels.val[back_index] = np.count_nonzero(edges)
+
+
             cpst.diff_pixels_inst_vs_swref_forwardlook.val[back_index+1] = np.count_nonzero(previous_colors[i_replace, inds_coor_active] - ref_color[inds_coor_active])
 
     # LIFETIME VALUES
@@ -762,6 +781,7 @@ def main_variables(cpart,
             cpst.n_outgrouponly_users_lifetime = len(np.unique(outgroup_users)) - n_intersect_in_out
             cpst.n_ingrouponly_users_lifetime = len(np.unique(ingroup_users)) - n_intersect_in_out
             cpst.n_bothinout_users_lifetime = len(np.unique(bothinout_users)) + n_intersect_in_out
+            cpst.outgroup_inds = outgroup_inds
 
     # These calculations can be done on the final arrays
     inds_active_all = inds_active_all = np.where((cpart.pixel_changes['active']==True) & (cpart.pixel_changes['seconds'] < cpst.tmax))[0]
@@ -968,7 +988,6 @@ def num_changes_and_users(cpart, cpst,
         if t_step >= cpst.sw_width:
             # Determine the active indices 'forward' in time, accounting for the sliding window
             t_inds_active_fwd = t_inds_active_vst[t_step - cpst.sw_width]
-
             agreeing_changes_fwd = np.array(ref_image[cpart.coordidx(t_inds_active_fwd)] == cpart.color(t_inds_active_fwd), np.bool_)
             if t_step - cpst.sw_width >= cpst.sw_width_edge:
                 agreeing_changes_bkwd = agreeing_changes_vst[t_step - cpst.sw_width]
@@ -978,6 +997,7 @@ def num_changes_and_users(cpart, cpst,
                 ingroup_changes = agreeing_changes_fwd
 
             outgroup_changes = np.invert(ingroup_changes)
+            outgroup_inds = t_inds_active_fwd[outgroup_changes]
             cpst.n_ingroup_changes.val[t_step + 1 - cpst.sw_width] = np.count_nonzero(ingroup_changes)
             cpst.n_outgroup_changes.val[t_step + 1 - cpst.sw_width] = np.count_nonzero(outgroup_changes)
 
@@ -1025,6 +1045,7 @@ def num_changes_and_users(cpart, cpst,
         result.append(ingroup_users)
         result.append(outgroup_users)
         result.append(inout_users)
+        result.append(outgroup_inds)
 
     return result
 
