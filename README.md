@@ -48,6 +48,7 @@ The output is of the form `data/[year]/canvas_comps_[year]_clean.pkl`
 &rarr; Run `python prepare_data/cpart_stat_param.py`.   
 It is advised to run this in grid jobs, and then to merge output files with `python prepare_data/combine_cpart_stats.py`.   
 The pickle output is of the form `cpart_stats_[param].pkl` where `[param]` is a string listing the global parameters of this specific sensitivity run.  
+Files `rplacem/compute_variables.py`, `rplacem/time_series.py`, and `rplacem/transitions.py` are essential for this step.
 
 8. For each composition and each sensitivity run, build the training dataset for the XGBoost algorithm. A preliminary run  
 `python rplacem/machine_learning/build_dataset.py -r True`  
@@ -57,7 +58,12 @@ The option `-p [num]` (e.g. `-p 0` for the nominal parameters) of this script ca
 
 9. Run the training and evaluation with an XGBoost algorithm, for each sensitivity analysis:  
 &rarr; Run `python rplacem/machine_learning/xgboost_regression.py -p [num]`  
-This should be ran first for the default parameter `--test2023 False` to train and evaluate on the 2022 dataset, then with `--test2023 True` to train on 2022 and evaluate on 2023 data. The option `--shapplots True` can be used to generate multiple SHAPley plots.
+Initially, this should be ran (for 2022 only) multiple times with option `--store_worstSHAP True`. Each such run adds the 10 least performing features to a file `data/2022/excluded_variables_fromSHAP.txt`. Stop running this when the feature pruning seems sufficient. This file is then used to remove features from the training dataset.  
+Then, this should be ran first for the default parameter `--test2023 False` to train and evaluate on the 2022 dataset, then with `--test2023 True` to train on 2022 and evaluate on 2023 data.  
+The option `--shapplots True` can be used to generate multiple SHAPley plots.
+
+10. Bonus step: evaluate the performance of the ML results with a warning cooldown setup:  
+&rarr; Run `python rplacem/machine_learning/evaluation_per_composition.py`  
 
 
 
