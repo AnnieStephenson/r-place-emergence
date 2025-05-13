@@ -435,9 +435,11 @@ class CanvasPartStatistics(object):
         self.n_ingrouponly_users = ts.TimeSeries()
         self.n_outgrouponly_users = ts.TimeSeries()
         self.n_bothinout_users = ts.TimeSeries()
+        self.num_edge_pixels = ts.TimeSeries()
         self.n_bothinout_users_lifetime = None
         self.n_ingrouponly_users_lifetime = None
         self.n_outgrouponly_users_lifetime = None
+        self.outgroup_inds = None
 
         self.returntime = None
         self.returnrate = ts.TimeSeries()
@@ -461,6 +463,8 @@ class CanvasPartStatistics(object):
 
         self.fractal_dim_mask_median = ts.TimeSeries()
         self.fractal_dim_weighted = ts.TimeSeries()
+        self.complexity_multiscale = ts.TimeSeries()
+        self.complexity_levenshtein = ts.TimeSeries()
         self.ssim_stab_ref = ts.TimeSeries()
 
         self.transition_param = trans_param
