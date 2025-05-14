@@ -465,6 +465,8 @@ class CanvasPartStatistics(object):
         self.fractal_dim_weighted = ts.TimeSeries()
         self.complexity_multiscale = ts.TimeSeries()
         self.complexity_levenshtein = ts.TimeSeries()
+        self.wavelet_high_freq = ts.TimeSeries()
+        self.wavelet_low_freq = ts.TimeSeries()
         self.ssim_stab_ref = ts.TimeSeries()
 
         self.transition_param = trans_param

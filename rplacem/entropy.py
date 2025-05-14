@@ -1,6 +1,7 @@
 import numpy as np
 import zlib
 import math
+import pywt
 from hilbertcurve.hilbertcurve import HilbertCurve
 from numba import jit
 import sweetsourcod
@@ -276,21 +277,30 @@ def calc_Q_delta_vst(canvas_part_stat, flattening='hilbert_sweetsourcod', compre
 
     return q, delta
 
+        
+def fast_mode(x):
+    '''
+    Fast mode computation using bincount for 1D array of non-negative integers.
+    Parameters:
+        x (np.ndarray): 1D array of non-negative integers.
+    Returns:
+        int: The mode of the array (most frequent value).
+    '''
+    return np.argmax(np.bincount(x))
 
-def compute_complexity_multiscale(image_vst, scales=None):
+def compute_complexity_multiscale(image, scales=None):
     """
-    Compute normalized Zhang complexity K over time from a 3D stack of 2D images using mode-based
+    Compute normalized Zhang complexity K for a single 2D image using mode-based
     coarse-graining with fast bincount mode computation.
 
     Parameters:
-        image_vst (np.ndarray): 3D array of shape (T, H, W), where each [t] is a 2D image with non-negative integers.
+        image (np.ndarray): 2D array of shape (H, W) with non-negative integers.
         scales (list[int] or None): Optional list of block sizes. If None, uses powers of 2 up to min(H, W) // 4.
 
     Returns:
-        np.ndarray of shape (T,) with normalized complexity values for each time step.
+        float: normalized complexity value for the image.
     """
-    T, H, W = image_vst.shape
-    K_norm_over_time = np.zeros(T)
+    H, W = image.shape
 
     # Auto-generate scales if not provided
     if scales is None:
@@ -298,84 +308,92 @@ def compute_complexity_multiscale(image_vst, scales=None):
         powers = int(np.log2(max_scale)) + 1
         scales = [1] + [2 ** i for i in range(1, powers + 1) if 2 ** i <= max_scale]
 
-    num_scales = len(scales)
+    complexity = 0
 
-    for t in range(T):
-        image = image_vst[t]
-        entropies = np.zeros(num_scales)
-        complexity = 0
+    for r in scales:
+        # Crop image to nearest multiple of r
+        h_crop = (H // r) * r
+        w_crop = (W // r) * r
+        cropped = image[:h_crop, :w_crop]
 
-        for i, r in enumerate(scales):
-            # Crop image to nearest multiple of r
-            h_crop = (image.shape[0] // r) * r
-            w_crop = (image.shape[1] // r) * r
-            cropped = image[:h_crop, :w_crop]
+        # Extract non-overlapping blocks
+        blocks = skimage.util.view_as_blocks(cropped, block_shape=(r, r))
+        h, w = blocks.shape[:2]
+        flattened_blocks = blocks.reshape(h, w, -1)
 
-            # Extract non-overlapping blocks
-            blocks = skimage.util.view_as_blocks(cropped, block_shape=(r, r))
-            h, w = blocks.shape[:2]
-            flattened_blocks = blocks.reshape(h, w, -1)
+        modes = np.apply_along_axis(fast_mode, -1, flattened_blocks)
 
-            # mode via bincount
-            def fast_mode(x):
-                return np.argmax(np.bincount(x))
+        # Compute histogram of mode values
+        counts = collections.Counter(modes.flatten())
+        total = sum(counts.values())
+        probs = np.array([c / total for c in counts.values()])
 
-            modes = np.apply_along_axis(fast_mode, -1, flattened_blocks)
+        # Shannon entropy
+        S_r = -np.sum(probs * np.log(probs))
+        complexity += (r ** 2) * S_r
 
-            # Compute histogram of mode values
-            counts = collections.Counter(modes.flatten())
-            total = sum(counts.values())
-            probs = np.array([c / total for c in counts.values()])
-
-            # Shannon entropy
-            S_r = -np.sum(probs * np.log(probs))
-            entropies[i] = S_r
-
-            # Complexity K = sum of r^2 * S(r)
-            complexity += (r ** 2) * S_r
-
-        # Normalize by number of pixels
-        N = image.shape[0] * image.shape[1]
-        K_norm_over_time[t] = complexity / N
-
-    return K_norm_over_time
+    # Normalize by total number of pixels
+    K_norm = complexity / (H * W)
+    return K_norm
 
 
-def compute_complexity_levenshtein(image_vst):
+def compute_complexity_levenshtein(image):
     """
-    Computes the Levenshtein-based spatial complexity CL for each time slice of a 3D image.
+    Computes the Levenshtein-based spatial complexity CL for a single 2D image.
 
     Parameters:
-        image_vst (3D numpy array): array of shape (T, R, C) with values 0–31 representing colors.
+        image (2D numpy array): array of shape (R, C) with values 0–31 representing colors.
 
     Returns:
-        1D numpy array of length T with the CL value at each time step
+        float: the CL complexity score for the image
     """
-    T, R, C = image_vst.shape
-    CL_t = np.zeros(T, dtype=np.float32)
+    R, C = image.shape
+    V_r = np.zeros(R - 1, dtype=np.uint8)
+    V_c = np.zeros(C - 1, dtype=np.uint8)
 
-    for t in range(T):
-        image = image_vst[t]
-        V_r = np.zeros(R - 1, dtype=np.uint8)
-        V_c = np.zeros(C - 1, dtype=np.uint8)
+    # Row-wise Levenshtein distances
+    for i in range(R - 1):
+        row1 = ''.join(map(chr, image[i]))
+        row2 = ''.join(map(chr, image[i + 1]))
+        V_r[i] = levenshtein_distance(row1, row2)
 
-        # Row-wise Levenshtein distances
-        for i in range(R - 1):
-            row1 = ''.join(map(chr, image[i]))
-            row2 = ''.join(map(chr, image[i + 1]))
-            V_r[i] = levenshtein_distance(row1, row2)
+    # Column-wise Levenshtein distances
+    for j in range(C - 1):
+        col1 = ''.join(map(chr, image[:, j]))
+        col2 = ''.join(map(chr, image[:, j + 1]))
+        V_c[j] = levenshtein_distance(col1, col2)
 
-        # Column-wise Levenshtein distances
-        for j in range(C - 1):
-            col1 = ''.join(map(chr, image[:, j]))
-            col2 = ''.join(map(chr, image[:, j + 1]))
-            V_c[j] = levenshtein_distance(col1, col2)
+    # Outer product and mean for CL
+    A = np.outer(V_r, V_c)
+    CL = A.mean()
 
-        # Outer product and mean for CL
-        A = np.outer(V_r, V_c)
-        CL_t[t] = A.mean()
+    return CL
 
-    return CL_t
+def compute_wavelet_energies(img, wavelet='haar'):
+    """
+    Compute low-frequency and high-frequency wavelet energies
+    for a 2D image with discrete color labels (0–31).
+
+    Parameters:
+        img (2D np.ndarray): Integer-valued image, e.g. pixel color labels in range 0–31.
+        wavelet (str): Wavelet type for decomposition. Default is 'haar'.
+
+    Returns:
+        dict: {
+            'low_freq_energy': float,   # Energy of LL band (coarse structure)
+            'high_freq_energy': float,  # Energy of detail bands (LH, HL, HH)
+            'hf_lf_ratio': float        # Ratio of high to low frequency energy
+        }
+    """
+
+    # Perform 2D discrete wavelet transform
+    LL, (LH, HL, HH) = pywt.dwt2(img, wavelet=wavelet)
+
+    # Compute energies
+    low_freq_energy = np.sum(LL**2)
+    high_freq_energy = np.sum(LH**2 + HL**2 + HH**2)
+
+    return low_freq_energy, high_freq_energy
 
 
 
