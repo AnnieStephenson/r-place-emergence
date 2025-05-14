@@ -426,6 +426,8 @@ def main_variables(cpart,
     cpst.fractal_dim_mask_median = cpst.ts_init( np.full(n_tlims, 2) )
     cpst.complexity_multiscale = cpst.ts_init( np.zeros(n_tlims) )
     cpst.complexity_levenshtein = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.wavelet_high_freq = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.wavelet_low_freq = cpst.ts_init( np.zeros(n_tlims) )
     cpst.frac_black_px = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.frac_purple_px = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.frac_black_ref = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
@@ -627,7 +629,7 @@ def main_variables(cpart,
             cpst.diff_pixels_stable_vs_swref.val[i] = np.count_nonzero(stable_colors[inds_coor_active, 0] - ref_color[inds_coor_active])
             cpst.diff_pixels_inst_vs_stable.val[i] = np.count_nonzero(current_color[inds_coor_active] - previous_stable_color[inds_coor_active])
         if instant > 0 or tran > 1:
-            # ENTROPY
+            # ENTROPY AND OTHER COMPLEXITY METRICS
             cpst.diff_pixels_inst_vs_inst.val[i] = np.count_nonzero(current_color[inds_coor_active] - previous_colors[(i-1) % cpst.sw_width, inds_coor_active])
 
             # Create the png and bmp files from the current image, and store their sizes
@@ -647,6 +649,16 @@ def main_variables(cpart,
                 #cpst.size_compressed_ref.val[i] = entropy.calc_compressed_size(ref_color, flattening=flattening, compression=compression) 
                 cpst.size_compressed.val[i] = entropy.calc_compressed_size(pix_tmp, flattening=flattening, compression=compression)
                 cpst.size_uncompressed.val[i] = entropy.calc_size(pix_tmp)
+            
+            # Wavelet analysis for complexity metric
+            cpst.wavelet_low_freq.val[i], cpst.wavelet_high_freq.val[i] = entropy.compute_wavelet_energies(pix_tmp)
+
+            # Multiscale complexity
+            cpst.complexity_multiscale.val[i] = entropy.compute_complexity_multiscale(pix_tmp)
+
+            # Levenshtein complexity
+            cpst.complexity_levenshtein.val[i] = entropy.compute_complexity_levenshtein(pix_tmp)
+
         if tran > 0 or instant > 0:
             previous_colors[i_replace] = np.copy(current_color)
 
@@ -708,9 +720,6 @@ def main_variables(cpart,
     if instant > 0:
         [cpst.fractal_dim_mask_median.val,
          cpst.fractal_dim_weighted.val] = fractal_dim.calc_from_image(cpst, shift_avg=True)
-        
-        cpst.complexity_multiscale.val = entropy.compute_complexity_multiscale(cpst.true_image)
-        cpst.complexity_levenshtein.val = entropy.compute_complexity_levenshtein(cpst.true_image)
 
     # Continue the loop over some more time steps to get the forward-looking sliding window reference
     if tran > 0:
