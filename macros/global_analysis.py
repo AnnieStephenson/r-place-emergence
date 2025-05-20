@@ -1,7 +1,6 @@
 import numpy as np
 import os, sys
-import rplacem.globalvariables_peryear as vars
-var = vars.var
+from rplacem import var as var
 import numpy as np
 import rplacem.canvas_part as cp
 import matplotlib.pyplot as plt
@@ -25,8 +24,8 @@ def timeslices_ind(pixchanges, tbins):
         res[i] = len(pixchanges) if i == len(tbins)-1 else np.argmax(pixchanges['seconds'][res[i-1]:] > tbins[i]) + res[i-1]
     return res
 
-def plot_heat_map(x, y, clabel='', zmax=None, logz=True, cmap='inferno', cmap_log='cividis', outname=''):
-    heat, _, _ = np.histogram2d(x, (var.CANVAS_MINMAX[-1,1,1]+var.CANVAS_MINMAX[-1,1,0])-y, 
+def plot_heat_map(x, y, clabel='', zmax=None, logz=True, cmap='inferno', cmap_log='cividis', outname='', savename=''):
+    heat, xedge, yedge = np.histogram2d(x, (var.CANVAS_MINMAX[-1,1,1]+var.CANVAS_MINMAX[-1,1,0])-y, 
                                     bins=[range(var.CANVAS_MINMAX[-1,0,0], var.CANVAS_MINMAX[-1,0,1]+2), 
                                           range(var.CANVAS_MINMAX[-1,1,0], var.CANVAS_MINMAX[-1,1,1]+2)])
     heat = heat.T
@@ -36,6 +35,11 @@ def plot_heat_map(x, y, clabel='', zmax=None, logz=True, cmap='inferno', cmap_lo
     plot.draw_2dmap(heat,
                     clabel=clabel, zmax=zmax, logz=logz, cmap=cmap, cmap_log=cmap_log,
                     outfile=outname)
+    
+    if savename != '':
+        # store in npz file
+        np.savez(os.path.join(var.DATA_PATH, savename+'_'+str(var.year)+'.npz'), hist=heat, x_edges=xedge, y_edges=yedge)
+
     return heat
 
 # Grab full dataset
@@ -128,12 +132,12 @@ if run_timedep:
 
        
 run_heatmaps = False
-run_numpixels = False
+run_numpixels = True
 if run_heatmaps or run_numpixels:
     ############ FULL HEAT MAP
     heat = plot_heat_map(pixel_changes_all['xcoor'], pixel_changes_all['ycoor'], 
                         clabel='# of pixel changes', zmax=1500,
-                        outname='HeatMap.png')
+                        outname='HeatMap.pdf', savename='HeatMap')
 
 if run_heatmaps:
     ############ HEAT MAP OF MODERATOR EVENTS
@@ -199,8 +203,49 @@ if run_numpixels:
                     linecolor='blue')
     print('mean and median of #pixel changes of single users = ', np.mean(perusercount), np.median(perusercount))
 
+    ############ ABOVE TWO PLOTS BUT WITH BOTH YEARS
+    saveglobal = False
+    if saveglobal:
+        # save perusercount and numchanges_hist for later use in a pickle file
+        with open(os.path.join(var.DATA_PATH, 'global_hists.pkl'), 'wb') as f:
+            pickle.dump([perusercount, numchanges_hist], f)
+
+    plotbothyears = True
+    if plotbothyears:
+        # gather data from the pickles above for both years
+        file22 = os.path.join(var.FILE_DIR, '..', 'data', '2022')
+        with open(os.path.join(file22, 'global_hists.pkl'), 'rb') as f:
+            perusercount22, numchanges_hist22 = pickle.load(f)
+        file23 = os.path.join(var.FILE_DIR, '..', 'data', '2023')
+        with open(os.path.join(file23, 'global_hists.pkl'), 'rb') as f:
+            perusercount23, numchanges_hist23 = pickle.load(f)
+
+        plot.draw_1dhist(numchanges_hist22, 
+                    bins=bins,
+                    xlog=True,
+                    ylog=True, 
+                    xlab='# changes',
+                    ylab='# pixels / bin width',
+                    x0log=0.5,
+                    alreadyhist=True,
+                    linecolor=[0.2, 0.4, 0.6],
+                    outfile='ChangesPerPixel_bothyears.pdf',
+                    linewidth=2, linewidth2=2,
+                    twohist=True, data2=numchanges_hist23, linecolor2=[0.7, 0.3, 0.3], savename="ChangesPerPixel")
+        plot.draw_1dhist(perusercount22, 
+                    bins=range(1, 1801),
+                    xlog=True,
+                    ylog=True, 
+                    scientific_labels=False,
+                    xlab='# pixel changes / user',
+                    ylab='# users',
+                    outfile='PixelChangesPerUser_noModerator_bothyears.pdf',
+                    linecolor=[0.2, 0.4, 0.6],
+                    linewidth=2, linewidth2=2,
+                    twohist=True, data2=perusercount23, linecolor2=[0.7, 0.3, 0.3], savename="PixelChangesPerUser_noModerator")
+
     ############ NUM PIXEL CHANGES PER COLOR
-    plot.draw_colorhist(pixel_changes_all['color'], outfile='color_distribution_pixelchanges.pdf', ylog=False)
+    plot.draw_colorhist(pixel_changes_all['color'], outfile='color_distribution_pixelchanges.pdf', ylog=False, savename='color_distribution_'+str(var.year))
 
 
 

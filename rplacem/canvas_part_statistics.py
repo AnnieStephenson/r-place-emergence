@@ -297,6 +297,10 @@ class CanvasPartStatistics(object):
     frac_purple_ref: TimeSeries, npts = n_t_bins + 1
         fraction of purple pixels in reference image versus time
 
+    CLUSTERING -- need compute_vars['clustering'] > 0
+    ripley : array of 10 TimeSeries, n_pts = n_t_bins+1
+        Ripley's K function, for 10 different distance bins, recorded in cpst.ripley_distances
+
     methods
     -------
     private:
@@ -321,7 +325,7 @@ class CanvasPartStatistics(object):
                  cpart,
                  t_interval=300,
                  tmax=var.TIME_TOTAL,
-                 compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1, 'ews': 0, 'void_attack': 0, 'inoutgroup': 0, 'lifetime_vars': 0},
+                 compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1, 'ews': 0, 'void_attack': 0, 'inoutgroup': 0, 'lifetime_vars': 0, 'clustering': 1},
                  sliding_window=14400,
                  sliding_window_edge = 3600,
                  trans_param=[0.3, 6],#, 2*3600, 4*3600],
@@ -469,6 +473,13 @@ class CanvasPartStatistics(object):
         self.wavelet_low_freq = ts.TimeSeries()
         self.ssim_stab_ref = ts.TimeSeries()
 
+        self.ripley = None # array of 4 TimeSeries, created in compute_variables
+        self.ripley_distances = np.array([2, 3, 4, 6, 8, 10, 15, 23, 35, 50])
+        self.ripley_norm = None 
+        self.dist_average = ts.TimeSeries()
+        self.dist_average_norm = ts.TimeSeries()
+        self.moran = ts.TimeSeries()
+
         self.transition_param = trans_param
         self.n_transitions = None
 
@@ -478,6 +489,9 @@ class CanvasPartStatistics(object):
             ref_im_const = self.calc_ref_image_tot(cpart)
         else:
             ref_im_const = None
+
+        # find continuous time ranges over which the border_path of the composition does not change significantly
+        self.stable_borders_timeranges = cpart.stable_borderpath_timeranges()
 
         # Magic happens here
         comp.main_variables(cpart, self, print_progress=self.verbose, delete_dir=dont_keep_dir,
@@ -503,9 +517,6 @@ class CanvasPartStatistics(object):
             util.save_movie(os.path.join(dirpath, 'attack_defense_ratio'), fps=15)
             util.save_movie(os.path.join(dirpath, 'attack_defense_Ising'), fps=6)
 
-        # find continuous time ranges over which the border_path of the composition does not change significantly
-        self.stable_borders_timeranges = cpart.stable_borderpath_timeranges()
-
         # find transitions
         if compute_vars['transitions'] > 0:
             self.search_transitions(cpart)
@@ -516,13 +527,11 @@ class CanvasPartStatistics(object):
             self.n_transitions == 0
 
         # calculate variance over ~10 most recent timesteps
-        self.frac_pixdiff_inst_vs_swref.set_variance()
-        self.frac_pixdiff_inst_vs_inst_norm.set_variance()
         def rolling_mean_squares(v, nroll):
             sq = pd.Series(0.5 * (nroll/(nroll-1)) * v**2)
             return np.array(sq.rolling(window=nroll, min_periods=1).mean())
         self.variance_from_frac_pixdiff_inst.val = rolling_mean_squares(self.frac_pixdiff_inst_vs_inst_norm.val, 
-                                                                        self.entropy.sw_width_ews)
+                                                                        self.frac_pixdiff_inst_vs_inst_norm.sw_width_ews)
 
         # calculate kendall tau's
         self.returnrate.set_kendall_tau()
@@ -538,9 +547,7 @@ class CanvasPartStatistics(object):
         self.autocorr_dissimil.set_kendall_tau()
 
         # Memory savings here 
-        # TODO: note from Annie: changed these to my preferences, but we should discuss
         if compute_vars['attackdefense'] < 2:
-            # note from Guillaume : these variables don't seem to be used anywhere, and the info is contained in the frac_X variables
             self.n_defense_changes = ts.TimeSeries()
             self.n_defenseonly_users = ts.TimeSeries()
             self.n_attack_users = ts.TimeSeries()
@@ -800,6 +807,23 @@ class CanvasPartStatistics(object):
             self.n_used_colors[k].desc_short = '# used colors / pixel ['+descshort[k]+']'
             self.n_used_colors[k].label = 'n_colors_'+labs[k]
             self.n_used_colors[k].savename = filepath(labs[k]+'_n_used_colors')
+
+        if self.compute_vars['clustering'] > 0:
+            for k in range(0,10):
+                self.ripley[k].desc_long = 'Ripley\'s K function, at distance ' + str(self.ripley_distances[k])  
+                self.ripley[k].desc_short = 'Ripley\'s K function [' + str(self.ripley_distances[k]) + ']'
+                self.ripley[k].label = 'ripley_d='+str(self.ripley_distances[k])
+                self.ripley[k].savename = filepath('ripley_kfunction_d'+str(self.ripley_distances[k]))
+
+                self.ripley_norm[k].desc_long = 'Ripley\'s K function, at distance ' + str(self.ripley_distances[k]) + 'normalized to randomized pixel changes positions'
+                self.ripley_norm[k].desc_short = 'Ripley\'s K function [' + str(self.ripley_distances[k]) + '] normalized to randomized'
+                self.ripley_norm[k].label = 'ripley_norm_d='+str(self.ripley_distances[k])
+                self.ripley_norm[k].savename = filepath('ripley_k_norm_d'+str(self.ripley_distances[k]))
+
+            self.dist_average.desc_long = 'Average distance between all pairs of pixel changes'
+            self.dist_average.desc_short = 'Average distance between pix changes'
+            self.dist_average.label = 'distance_between_changes'
+            self.dist_average.savename = filepath('distance_between_changes')
 
         self.cumul_attack_timefrac.desc_long = 'Fraction of the time that all pixels spent in an attack color [s]'
         self.cumul_attack_timefrac.desc_short = 'frac of time spent in attack colors [s]'
