@@ -592,6 +592,9 @@ if stable_times_only:
     # only time instances with stable past sliding window
     stable_instances = reject_messy_times(inputvals, varnames)
     select = np.intersect1d(np.where(np.array(id_idx) < nmaxcomp)[0], stable_instances)
+    if ml_param.test2023:
+        stable_instances_2023 = reject_messy_times(inputvals_2023, varnames)
+        select_2023 = np.intersect1d(np.where(np.array(id_idx_2023) < nmaxcomp)[0], stable_instances_2023)
 else:
     select = np.where(np.array(id_idx) < nmaxcomp)[0]
 
@@ -601,9 +604,9 @@ inputvals = inputvals[select][:, keptvars]
 eventtime = eventtime[select]
 inputvals = np.nan_to_num(inputvals)
 if ml_param.test2023:
-    outputval_orig_2023 = np.array(outputval_2023)
+    outputval_orig_2023 = np.array(outputval_2023[select_2023])
     outputval_2023 = ml_param.transform_target(outputval_orig_2023)
-    inputvals_2023 = inputvals_2023[:, keptvars]
+    inputvals_2023 = inputvals_2023[select_2023][:, keptvars]
 varnames = varnames[keptvars]
 coarse_timerange = coarse_timerange[vars_touse]
 
@@ -615,6 +618,7 @@ print('use',n_events,'events from',ncomp,'compositions for training (including 2
 nvar = len(varnames)
 print('use',nvar,'features')
 if ml_param.test2023:
+    id_idx_2023 = np.array(id_idx_2023[select_2023])
     ididx_unique_2023 = np.unique(id_idx_2023)
     ncomp_2023 = len(ididx_unique_2023) 
     n_events_2023 = len(outputval_2023)
