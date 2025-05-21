@@ -471,6 +471,8 @@ class CanvasPartStatistics(object):
         self.complexity_levenshtein = ts.TimeSeries()
         self.wavelet_high_freq = ts.TimeSeries()
         self.wavelet_low_freq = ts.TimeSeries()
+        self.wavelet_low_freq_tm = ts.TimeSeries()
+        self.wavelet_high_freq_tm = ts.TimeSeries()
         self.ssim_stab_ref = ts.TimeSeries()
 
         self.ripley = None # array of 4 TimeSeries, created in compute_variables
