@@ -8,6 +8,7 @@ import json
 import shutil
 from PIL import Image
 import pickle
+import cv2
 
 
 def get_all_pixel_changes(data_file=var.FULL_DATA_FILE,
@@ -94,8 +95,76 @@ def pixels_to_image(pix, dir='', save_name='', save_name2=''):
 
     return im, impath1, impath2
 
-
 def save_movie(image_path,
+               fps=1,
+               movie_tool='opencv',
+               codec='libx264',
+               video_type='mp4',
+               logger=None):
+    '''
+    Save movie of .png images in the path.
+
+    Parameters
+    ----------
+    image_path: str
+        Path where .png images can be found
+    fps: int
+        Frames per second
+    movie_tool: str
+        Movie tool to use: 'moviepy', 'ffmpeg-python', 'ffmpeg', or 'opencv'
+    codec: str
+        Codec for writing video
+    video_type: str
+        Video file extension, e.g. 'mp4', 'avi'
+    logger: moviepy logger (optional)
+    '''
+    image_files = sorted(glob.glob(os.path.join(image_path, '*.png')))
+    if not image_files:
+        raise ValueError("No PNG files found in specified directory.")
+
+    print(image_files[:3])
+    print(f"# of image files: {len(image_files)}")
+
+    png_name0 = os.path.basename(image_files[0])[:15]
+    movie_name = png_name0 + '_fps' + str(fps)
+    movie_file = os.path.join(image_path, movie_name) + '.' + video_type
+
+    if movie_tool == 'moviepy':
+        from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
+        clip = ImageSequenceClip(image_files, fps=fps)
+        clip.duration = len(image_files) / float(fps)
+        print("clip.fps =", clip.fps)
+        clip.write_videofile(movie_file, codec=codec, logger=logger, fps=float(fps))
+
+    elif movie_tool == 'ffmpeg-python':
+        import ffmpeg
+        (ffmpeg.input(image_path + '/*.png', pattern_type='glob', framerate=fps)
+         .output(movie_file, vcodec=codec).overwrite_output().run())
+
+    elif movie_tool == 'ffmpeg':
+        os.system(f'ffmpeg -framerate {fps} -pattern_type glob -i "*.png" -vcodec {codec} -y {movie_file}')
+
+    elif movie_tool == 'opencv':
+        # Read first frame to get shape
+        first_frame = cv2.imread(image_files[0])
+        height, width, layers = first_frame.shape
+        fourcc = cv2.VideoWriter_fourcc(*('mp4v' if codec == 'libx264' else codec))
+        out = cv2.VideoWriter(movie_file, fourcc, fps, (width, height))
+
+        for fname in image_files:
+            frame = cv2.imread(fname)
+            if frame.shape[:2] != (height, width):
+                frame = cv2.resize(frame, (width, height))
+            out.write(frame)
+
+        out.release()
+        print(f"Saved video to: {movie_file}")
+
+    else:
+        raise ValueError(f"Unknown movie_tool: {movie_tool}")
+
+
+def save_movie_old(image_path,
                fps=1,
                movie_tool='moviepy',
                codec='libx264',
