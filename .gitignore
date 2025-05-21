@@ -129,3 +129,5 @@ survey/
 paper/
 
 rplacem/machine_learning/checks_xgboost_regression.py
+
+*.mp4

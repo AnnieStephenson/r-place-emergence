@@ -2,21 +2,13 @@ import os
 import pickle
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
-from PIL import Image
-import shutil
-import math
 from rplacem import var as var
 import rplacem.utilities as util
-import rplacem.plot_utilities as plot
 import rplacem.entropy as entropy
 import rplacem.fractal_dim as fractal_dim
-import scipy
 import warnings
-import sparse as sp
 from memory_profiler import profile
-import gc
-import cv2
+from scipy.spatial.distance import pdist
 
 def count_image_differences(pixels1, pixels2, npix, coor_idx, indices=None):
     ''' Count the number of pixels (at given *indices* of coordinates of cpart *cpart*) that differ
@@ -321,6 +313,7 @@ def main_variables(cpart,
     inout = cpst.compute_vars['inout']
     lifetm = cpst.compute_vars['lifetime_vars']
     void_attack = cpst.compute_vars['void_attack']
+    cluster = cpst.compute_vars['clustering']
     if save_memory is None:
         save_memory = (cpart.num_pix() > 3e5) # do the slower memory-saving method when the canvaspart is larger than 300,000 pixels
 
@@ -331,7 +324,7 @@ def main_variables(cpart,
         warnings.warn('Some images were required to be stored, but with delete_dir=True, the full directory will be removed! ')
 
     # Canvas part data
-    cpart.set_canvassection_coordinds(rerun=True) # TODO: can remove rerun=True after rerunning canvas part
+    cpart.set_canvassection_coordinds() 
     coor_offset = cpart.coords_offset()  # for transformation from 1D to 2D pixels
 
     # Initialize variables for first time iteration
@@ -441,6 +434,17 @@ def main_variables(cpart,
     outgroup_users = np.array([])
     bothinout_users = np.array([])
     outgroup_inds = np.array([], dtype=np.int32)
+    if cluster > 0:
+        cpst.ripley = np.empty(10, dtype=object)
+        cpst.ripley_norm = np.empty(10, dtype=object)
+        for i in range(0, 10):
+            cpst.ripley[i] = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
+            cpst.ripley_norm[i] = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
+        cpst.dist_average = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
+        cpst.dist_average_norm = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
+        cpst.ripley_ref = None
+        cpst.avdist_ref = None
+
 
     # output paths
     out_path = os.path.join(var.FIGS_PATH, cpart.out_name())
@@ -577,7 +581,6 @@ def main_variables(cpart,
                                 previous_colors, current_color )
             stable_colors_prev = np.copy(stable_colors)
             
-
         # ATTACK/DEFENSE VS REFERENCE IMAGE
         if attdef > 0:
             # Calculate the (normalized) cumulative attack time over all pixels in this timestep
@@ -663,6 +666,19 @@ def main_variables(cpart,
 
             # Levenshtein complexity
             cpst.complexity_levenshtein.val[i] = entropy.compute_complexity_levenshtein(pix_tmp)
+
+        if cluster > 0:
+            # Ripley's K function and average distance between pixel changes
+            # When must the reference values (using random locations of pixels) be calculated? At t=0 or when the borders changed
+            # meaning whenever the current time is less than a time step away from the start of a cpst.stable_borders_timeranges
+            change_of_borders = np.any((t_lims[i] < cpst.stable_borders_timeranges[:, 0] + cpst.t_interval) & (t_lims[i] >= cpst.stable_borders_timeranges[:, 0]))
+            if change_of_borders:
+                cpst.ripley_ref = None
+                cpst.avdist_ref = None
+
+            # actual calculation
+            calc_changes_clustering(cpst, i, 
+                                    cpart.pixchanges_coords_offset(t_inds_active), coor_offset[:, inds_coor_active])
 
         if tran > 0 or instant > 0:
             previous_colors[i_replace] = np.copy(current_color)
@@ -1091,6 +1107,63 @@ def returnrate(current_color, prev_color, ref_color, inds_coor_active, last_time
         inds_not_recovered = inds_att_prev[ np.where(current_color[inds_att_prev] != ref_color[inds_att_prev])[0] ]
         inds_recoveredthenlost = np.count_nonzero(last_time_installed_sw[ref_color[inds_not_recovered], inds_not_recovered] > t_lims[tstep-1]) # will also necessarily be < t_lims[tstep]
         return (n_att_prev - len(inds_not_recovered) + inds_recoveredthenlost) / n_att_prev
+
+
+
+def calc_changes_clustering(cpst, i, pixch_coor, pixel_coor, n_maxpix=100, n_MC=100, n_MC_trials=10):
+    """
+    Calculate Ripley's K function and average distance between pixel changes.
+    """
+
+    n_dist = len(cpst.ripley_distances)
+
+    if pixch_coor.shape[1] < 2:
+        for l in range(0, n_dist):
+            cpst.ripley[l].val[i] = -1
+        cpst.dist_average.val[i] = -1
+        return    
+
+    # at time step 0 or when the area changed, add a random set of pixel changes positions and calculate these values (MC). 
+    # Take an average of multiple trials/experiments
+    if (cpst.ripley_ref is None) or (cpst.avdist_ref is None):
+        ripley_ref_alltrials = np.zeros((n_MC_trials, n_dist))
+        avdist_ref_alltrials = np.zeros(n_MC_trials)
+        for t in range(0, n_MC_trials): 
+            mc_pixels = pixel_coor[:, np.random.choice(pixel_coor.shape[1], size=n_MC, replace=True)]
+            distances = pdist(np.transpose(mc_pixels)) # distances between all pixel changes pairs
+
+            for l,d in enumerate(cpst.ripley_distances):
+                count = np.sum(distances <= d)
+                ripley_ref_alltrials[t, l] = count * cpst.area_vst.val[i] / len(distances)
+            avdist_ref_alltrials[t] = np.mean(distances)
+
+        # average over trials
+        cpst.ripley_ref = np.mean(ripley_ref_alltrials, axis=0)
+        cpst.avdist_ref = np.mean(avdist_ref_alltrials)
+
+    # Actual (non reference) calculation starts here
+    # Randomly down sample the coordinates to speed up computation
+    if pixch_coor.shape[1] > n_maxpix:
+        inds_rdm = np.random.choice(np.arange(pixch_coor.shape[1]), size=n_maxpix, replace=False)
+        pixch_coor = pixch_coor[:, inds_rdm]
+
+    # Compute all pairwise distances
+    distances = pdist(np.transpose(pixch_coor))  # returns condensed distance matrix
+
+    # Ripley's K
+    for l,d in enumerate(cpst.ripley_distances):
+        count = np.sum(distances <= d)
+        cpst.ripley[l].val[i] = count * cpst.area_vst.val[i] / len(distances) 
+
+    # average distance between 2 pixel changes
+    cpst.dist_average.val[i] = np.mean(distances)
+
+    # normalized by reference values
+    for l in range(0, n_dist):
+        cpst.ripley_norm[l].val[i] = cpst.ripley[l].val[i] / cpst.ripley_ref[l]
+    cpst.dist_average_norm.val[i] = cpst.dist_average.val[i] / cpst.avdist_ref
+    return
+
 
 def returntime(last_time_installed_sw, last_time_removed_sw,
                current_color, ref_color,

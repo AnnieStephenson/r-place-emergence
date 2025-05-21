@@ -76,6 +76,14 @@ class GlobalVars(object):
             self.COLIDX_TO_HEX[int(k)] = v
             self.COLIDX_TO_RGB[int(k)] = np.asarray(ImageColor.getrgb(v))
 
+        # parameters for sensitivity analysis
+        self.sw_str = ['3', '2', '3', '3', '3', '3', '4', '3', '3', '3', '3', '3']
+        self.ta_str = ['0.35', '0.35', '0.25', '0.25', '0.45', '0.45', '0.35', '0.35', '0.35', '0.35', '0.35', '0.35']
+        self.tr_str = ['6', '6', '4.5', '7.5', '4.5', '7.5', '6', '1.01', '2', '3', '4', '5']
+
+    def param_str_fun(self, param_num):
+        return 'sw'+self.sw_str[param_num]+'_ta'+self.ta_str[param_num]+'_tr'+self.tr_str[param_num]
+
 var = GlobalVars(year=2022)
 
 def set_year(year):

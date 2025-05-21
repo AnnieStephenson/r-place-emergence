@@ -17,13 +17,13 @@ import seaborn as sns
 fromatlas = True
 cp_fromfile = True
 cp_fromatlasfile = True
-cps_fromfile = True
+cps_fromfile = False
 
 if not cp_fromfile:
     pixel_changes_all = util.get_all_pixel_changes()
     atlas, num = util.load_atlas()
 
-id = 'txibq9'#'txkd33'#'u38eza' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
+id = '20'#'tx5hwp_part1'#'tx6v2h'#'txkd33'#'u38eza' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
 
 x1 = var.CANVAS_MINMAX[-1, 0, 0]
 x2 = var.CANVAS_MINMAX[-1, 0, 1]
@@ -35,7 +35,7 @@ y2 = var.CANVAS_MINMAX[-1, 1, 1]
 if not cps_fromfile:
     if cp_fromfile:
         if cp_fromatlasfile:
-            file_path = os.path.join(var.DATA_PATH, 'canvas_compositions_all.pickle') 
+            file_path = os.path.join(var.DATA_PATH, 'canvas_comps_'+str(var.year)+'_clean.pkl') 
             with open(file_path, 'rb') as f:
                 canvas_parts = pickle.load(f)
             
@@ -84,7 +84,7 @@ if cps_fromfile:
 else: 
     cpstat = stat.CanvasPartStatistics(canpart, t_interval=300, #tmax=30000,
                                         compute_vars={'stability': 1, 'entropy' :3, 'transitions' : 1, 'attackdefense' : 1, 'other' : 1, 
-                                                      'ews' : 1, 'inout':0, 'lifetime_vars':0, 'void_attack':0},
+                                                      'ews' : 1, 'inout':0, 'lifetime_vars':0, 'void_attack':0, 'clustering':1},
                                         sliding_window=int(3*3600), 
                                         verbose=True, dont_keep_dir=False, compression='DEFLATE_BMP_PNG', flattening='ravel')
 

@@ -116,7 +116,7 @@ def calc_min_max_entropy(compression="LZ77",
     """
     files = os.listdir(var.DATA_PATH)
     if 'entropy_min_max.pkl' in files:
-        with open(os.path.join(var.DATA_PATH, '..', 'entropy_min_max.pkl'), 'rb') as f:
+        with open(os.path.join(var.DATA_PATH, 'entropy_min_max.pkl'), 'rb') as f:
             f_entropy_min, f_entropy_max_8, f_entropy_max_16, f_entropy_max_24, f_entropy_max_32 = pickle.load(f)
     
     else:

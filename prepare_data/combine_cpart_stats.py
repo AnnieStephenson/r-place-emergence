@@ -1,6 +1,7 @@
 import pickle
 import os
 import fnmatch
+from rplacem import var as var
 
 def combine_comps(year, pattern_var=''):
     directory_path = os.path.join(os.getcwd())
@@ -30,7 +31,7 @@ def combine_comps(year, pattern_var=''):
     else:
         print('Combined file for already exists for: ' + pattern, flush=True)
 
-pattern_vars = ['sw3_ta0.35_tr1.01', 'sw3_ta0.35_tr2', 'sw3_ta0.35_tr3', 'sw3_ta0.35_tr4', 'sw3_ta0.35_tr5', 'sw3_ta0.35_tr6']
+pattern_vars = [var.param_str_fun(i) for i in range(len(var.sw_str))]
 years = [2022, 2023]
 
 for i in range(len(years)):

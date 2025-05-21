@@ -10,6 +10,7 @@ from rplacem import var as var
 import rplacem.utilities as util
 import numpy as np
 import math
+import json 
 
 def show_canvas_part(pixels, ax=None):
     '''
@@ -124,9 +125,10 @@ def compression_vs_pixel_changes(num_pixel_changes,
 def draw_1dhist(data, xrange=[], bins=[100],
                 xlab='', ylab='',
                 xlog=False, ylog=False, x0log=0,
-                outfile='',
+                outfile='', savename='',
                 scientific_labels=True, alreadyhist=False,
-                fontsize=14, fontsize_label=17, linecolor=[0.2, 0.2, 0.2], linewidth=1):
+                fontsize=14, fontsize_label=17, linecolor=[0.2, 0.2, 0.2], linewidth=1,
+                twohist=False, data2=None, linecolor2=[0.8, 0.8, 0.8], linewidth2=1):
     '''
     plot the histogram of the given 1d array and saves it
 
@@ -141,16 +143,22 @@ def draw_1dhist(data, xrange=[], bins=[100],
     fig, ax = plt.subplots()
 
     if alreadyhist:
-        plt.stairs(data, bins, lw=linewidth, facecolor='b', edgecolor=linecolor)
+        plt.stairs(data, bins, lw=linewidth, facecolor='b', edgecolor=linecolor, label=('2023' if twohist else None))
+        if twohist:
+            plt.stairs(data2, bins, lw=linewidth2, facecolor='r', edgecolor=linecolor2, label=('2022' if twohist else None))
     elif len(bins) == 1:
         if xrange==[]:
             res = [np.min(data), np.max(data)]
             spread = res[1] - res[0]
             xrange = [res[0] - spread*2/bins, res[1] + spread*2/bins]
 
-        plt.hist(data, bins=bins[0], range=xrange, lw=linewidth, histtype='step', facecolor='b', edgecolor=linecolor)
+        h1, b1,_ = plt.hist(data, bins=bins[0], range=xrange, lw=linewidth, histtype='step', facecolor='b', edgecolor=linecolor, label=('2023' if twohist else None))
+        if twohist:
+            h2, b2,_ = plt.hist(data2, bins=bins[0], range=xrange, lw=linewidth2, histtype='step', facecolor='r', edgecolor=linecolor2, label=('2022' if twohist else None))
     else:
-        plt.hist(data, bins=bins, lw=linewidth, histtype='step', facecolor='b', edgecolor=linecolor)
+        h1, b1,_ = plt.hist(data, bins=bins, lw=linewidth, histtype='step', facecolor='b', edgecolor=linecolor, label=('2023' if twohist else None))
+        if twohist:
+            h2, b2,_ = plt.hist(data2, bins=bins, lw=linewidth2, histtype='step', facecolor='r', edgecolor=linecolor2, label=('2022' if twohist else None))
 
     sns.despine()
     plt.ticklabel_format(style=('scientific' if scientific_labels else 'plain'),
@@ -171,9 +179,23 @@ def draw_1dhist(data, xrange=[], bins=[100],
     if ylog:
         plt.yscale('log')
 
+    if twohist:
+        plt.legend()
+
     if outfile != '':
         print('save figure in', os.path.join(var.FIGS_PATH, outfile))
         plt.savefig(os.path.join(var.FIGS_PATH, outfile), bbox_inches='tight')
+
+    if savename != '':
+        if alreadyhist:
+            np.savez(os.path.join(var.DATA_PATH, savename+('_2022' if twohist else '')+'.npz'), hist=data, bins=bins)
+            if twohist:
+                np.savez(os.path.join(var.DATA_PATH, savename+'_2023.npz'), hist=data2, bins=bins)
+        else:
+            np.savez(os.path.join(var.DATA_PATH, savename+('_2022'if twohist else '')+'.npz'), hist=h1, bins=b1)
+            if twohist:
+                np.savez(os.path.join(var.DATA_PATH, savename+'_2023.npz'), hist=h2, bins=b2)
+
 
 def draw_2dmap(h2d, 
                logz=True,
@@ -228,7 +250,7 @@ def draw_2dmap(h2d,
 def draw_colorhist(data,
                    ylab='# pixel changes',
                    ylog=False,
-                   outfile=''):
+                   outfile='', savename=''):
     '''
     plots the histogram of colors of pixels or pixel changes, from data of color indices
     '''
@@ -261,6 +283,12 @@ def draw_colorhist(data,
     if outfile != '':
         print('save figure in', os.path.join(var.FIGS_PATH, outfile))
         plt.savefig(os.path.join(var.FIGS_PATH, outfile), bbox_inches='tight')
+
+    if savename != '':
+        hist_dict = {col[i]: h[i] for i in range(len(h))}
+        with open(os.path.join(var.DATA_PATH, savename+'.json'), "w") as f:
+            json.dump(hist_dict, f, indent=4)
+
 
 def draw_1d(xdata,
             ydata,
@@ -343,12 +371,19 @@ def cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(5,10), fontsize=5, save=Tr
                      [cpstat.returntime[0], 0, None],
                      #[cpstat.cumul_attack_timefrac, 0, None],
                      [cpstat.variance_multinom, 0, None],
-                     [cpstat.variance_from_frac_pixdiff_inst, 0, 0.1],
-                     [cpstat.variance2, 1, None],
-                     [cpstat.autocorr_bycase, None, None],
-                     [cpstat.autocorr_subdom, 0, None],
-                     [cpstat.autocorr_multinom, 0, None],
-                     [cpstat.returnrate, 0, 1],
+                      #[cpstat.variance_from_frac_pixdiff_inst, 0, 0.1],
+                      #[cpstat.variance2, 1, None],
+                      #[cpstat.autocorr_bycase, None, None],
+                      #[cpstat.autocorr_subdom, 0, None],
+                     #[cpstat.autocorr_multinom, 0, None],
+                     #[cpstat.returnrate, 0, 1],
+                     [cpstat.ripley_norm[0], 0, None],
+                     [cpstat.ripley_norm[2], 0, None],
+                     [cpstat.ripley_norm[4], 0, None],
+                     [cpstat.ripley_norm[5], 0, None],
+                     [cpstat.ripley_norm[7], 0, None],
+                     [cpstat.ripley_norm[9], 0, None],
+                     #[cpstat.dist_average_norm, 0, None],
                      #[cpstat.n_users_norm, 0, None],
                      #[cpstat.frac_attackonly_users, 0, 1]
                     ]
@@ -360,7 +395,7 @@ def cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(5,10), fontsize=5, save=Tr
         ax.plot(cpstat.t_lims[itmin:], t_series_vars[i][0].val[itmin:])
         ax.patch.set_alpha(0)
 
-        ax.set_xlim([153000 - 300*44, 161000])#[cpstat.t_lims[itmin], cpstat.t_lims[-1]])
+        ax.set_xlim([cpstat.t_lims[itmin], cpstat.t_lims[-1]])
         ax.tick_params(axis='x', direction='in')
 
         reject_end = int(t_series_vars[0][0].n_pts * 6./300.) # reject ending white period, and the very beginning
