@@ -659,7 +659,7 @@ def main_variables(cpart,
             cpst.wavelet_low_freq.val[i], cpst.wavelet_high_freq.val[i] = entropy.compute_wavelet_energies(pix_tmp)
 
             # Wavelet time series
-            cpst.wavelet_low_freq_tm.val[i], cpst.wavelet_high_freq_tm.val[i] = entropy.compute_wavelet_energies_time(cpst.frac_pixdiff_vs_swref.val[max(0, i-cpst.sw_width):i])
+            cpst.wavelet_low_freq_tm.val[i], cpst.wavelet_high_freq_tm.val[i] = entropy.compute_wavelet_energies_time(cpst.diff_pixels_inst_vs_swref.val[max(0, i-cpst.sw_width):i])
 
             # Multiscale complexity
             cpst.complexity_multiscale.val[i] = entropy.compute_complexity_multiscale(pix_tmp)
