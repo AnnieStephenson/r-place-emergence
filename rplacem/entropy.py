@@ -395,7 +395,11 @@ def compute_wavelet_energies(img, wavelet='haar'):
 
     return low_freq_energy, high_freq_energy
 
-
+def compute_wavelet_energies_time(time_series, wavelet='db4'):
+    ca, cd = pywt.dwt(time_series, wavelet=wavelet)
+    low_freq_energy = np.sum(ca**2)
+    high_freq_energy = np.sum(cd**2)
+    return low_freq_energy, high_freq_energy
 
 ###############################################################################################
 # The following functions come from:

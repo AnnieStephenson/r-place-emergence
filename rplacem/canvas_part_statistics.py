@@ -467,6 +467,8 @@ class CanvasPartStatistics(object):
         self.complexity_levenshtein = ts.TimeSeries()
         self.wavelet_high_freq = ts.TimeSeries()
         self.wavelet_low_freq = ts.TimeSeries()
+        self.wavelet_low_freq_tm = ts.TimeSeries()
+        self.wavelet_high_freq_tm = ts.TimeSeries()
         self.ssim_stab_ref = ts.TimeSeries()
 
         self.transition_param = trans_param
