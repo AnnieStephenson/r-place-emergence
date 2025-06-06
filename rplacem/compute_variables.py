@@ -420,6 +420,7 @@ def main_variables(cpart,
     cpst.complexity_multiscale = cpst.ts_init( np.zeros(n_tlims) )
     cpst.complexity_levenshtein = cpst.ts_init( np.zeros(n_tlims) )
     cpst.wavelet_high_freq = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.wavelet_mid_freq = cpst.ts_init( np.zeros(n_tlims) )
     cpst.wavelet_low_freq = cpst.ts_init( np.zeros(n_tlims) )
     cpst.wavelet_low_freq_tm = cpst.ts_init( np.zeros(n_tlims) )
     cpst.wavelet_high_freq_tm = cpst.ts_init( np.zeros(n_tlims) )
@@ -656,7 +657,7 @@ def main_variables(cpart,
                 cpst.size_uncompressed.val[i] = entropy.calc_size(pix_tmp)
             
             # Wavelet analysis for complexity metric
-            cpst.wavelet_low_freq.val[i], cpst.wavelet_high_freq.val[i] = entropy.compute_wavelet_energies(pix_tmp)
+            cpst.wavelet_low_freq.val[i], cpst.wavelet_mid_freq.val[i], cpst.wavelet_high_freq.val[i] = entropy.compute_wavelet_energies(pix_tmp)
 
             # Wavelet time series
             cpst.wavelet_low_freq_tm.val[i], cpst.wavelet_high_freq_tm.val[i] = entropy.compute_wavelet_energies_time(cpst.diff_pixels_inst_vs_swref.val[max(0, i-cpst.sw_width):i])

@@ -369,30 +369,95 @@ def compute_complexity_levenshtein(image):
 
     return CL
 
-def compute_wavelet_energies(img, wavelet='haar'):
+def compute_wavelet_energies(img, wavelet='haar', mid_scale = 0.1, large_scale = 0.4):
     """
-    Compute low-frequency and high-frequency wavelet energies
-    for a 2D image with discrete color labels (0–31).
+    Compute high-, mid-, and low-frequency wavelet energies for a 2D integer-valued image.
+
+    This function performs a multi-level 2D discrete wavelet transform (DWT) on an image of shape (H, W)
+    and extracts three energy measures:
+      1. High-frequency energy   → detail coefficients at level 1 (finest scale)
+      2. Mid-frequency energy    → detail coefficients at the level whose center wavelength is closest
+                                   to 10% of the smaller image dimension
+      3. Low-frequency energy    → detail coefficients at the level whose center wavelength is closest
+                                   to 40% of the smaller image dimension
+
+    Level selection logic:
+      • “level_high_f” is fixed to 1 (detail coefficients of the first DWT).
+      • “level_mid_f” is chosen by finding L in [1..max_level] whose band-center (1.5·2^L) is nearest
+        to 0.10 · min(H, W). If that coincides with level_high_f, it is bumped by +1.
+      • “level_low_f” is chosen by finding L whose band-center is nearest to 0.40 · min(H, W),
+        then adjusted upward if it collides with level_high_f or level_mid_f.
+
+    After selecting levels, the function reconstructs all DWT subbands up through level_low_f and
+    computes:
+      • high_freq_energy = sum of squares of (LH, HL, HH) at level_high_f
+      • mid_freq_energy  = sum of squares of (LH, HL, HH) at level_mid_f
+      • low_freq_energy  = sum of squares of (LH, HL, HH) at level_low_f
 
     Parameters:
-        img (2D np.ndarray): Integer-valued image, e.g. pixel color labels in range 0–31.
-        wavelet (str): Wavelet type for decomposition. Default is 'haar'.
+        img (np.ndarray of shape (H, W)):
+            A 2D array of integer pixel labels (e.g., 0–31). Must be at least large enough to support
+            the chosen wavelet decomposition for the desired levels.
+        wavelet (str):
+            Name of the wavelet to use for DWT (default: 'haar').
 
     Returns:
-        dict: {
-            'low_freq_energy': float,   # Energy of LL band (coarse structure)
-            'high_freq_energy': float,  # Energy of detail bands (LH, HL, HH)
-            'hf_lf_ratio': float        # Ratio of high to low frequency energy
-        }
+        tuple of floats:
+            (low_freq_energy, mid_freq_energy, high_freq_energy)
+            where each value is the sum of squared detail coefficients (LH, HL, HH) at the corresponding level.
+
+    Raises:
+        ValueError:
+            If the image dimensions are too small to perform at least one level of DWT with the specified wavelet.
     """
+    # Compute the maximum valid DWT level for this image + wavelet
+    H, W = img.shape
+    min_dim = min(H, W)
+    max_pywt_level = pywt.dwtn_max_level((H, W), wavelet)
+    if max_pywt_level < 1:
+        raise ValueError(f"Image size {img.shape} is too small for wavelet '{wavelet}' decomposition.")
 
-    # Perform 2D discrete wavelet transform
-    LL, (LH, HL, HH) = pywt.dwt2(img, wavelet=wavelet)
+    target_mid = mid_scale * min_dim
+    target_low = large_scale * min_dim
 
-    # Compute energies
-    low_freq_energy = np.sum(LL**2)
-    high_freq_energy = np.sum(LH**2 + HL**2 + HH**2)
+    levels = np.arange(1, max_pywt_level + 1)
+    scale_centers = 1.5 * (2 ** levels)
 
+    l_ind_mid = np.argmin(np.abs(scale_centers - target_mid))
+    l_ind_low = np.argmin(np.abs(scale_centers - target_low))
+
+    level_high_f = 1
+    level_mid_f = levels[l_ind_mid]
+    level_low_f = levels[l_ind_low]
+
+    # Ensure distinct levels for high, mid, and low
+    if max(levels) > 1:
+        if level_high_f == level_mid_f:
+            level_mid_f = min(level_mid_f + 1, max(levels))
+        if level_low_f == level_high_f or level_low_f == level_mid_f:
+            level_low_f = min(level_low_f + 1, max(levels))
+
+    coeffs = []
+    current = img.copy()
+    for i in range(level_low_f + 1):
+        LL, (LH, HL, HH) = pywt.dwt2(current, wavelet)
+        coeffs.append((LL, LH, HL, HH))
+        current = LL
+
+        if i == level_high_f:
+            high_freq_energy = np.sum(LH**2 + HL**2 + HH**2)
+        if i == level_mid_f:
+            mid_freq_energy = np.sum(LH**2 + HL**2 + HH**2)
+        if i == level_low_f:
+            low_freq_energy = np.sum(LH**2 + HL**2 + HH**2)
+
+    return low_freq_energy, mid_freq_energy, high_freq_energy
+
+
+def compute_wavelet_energies_time(time_series, wavelet='db4'):
+    ca, cd = pywt.dwt(time_series, wavelet=wavelet)
+    low_freq_energy = np.sum(ca**2)
+    high_freq_energy = np.sum(cd**2)
     return low_freq_energy, high_freq_energy
 
 def compute_wavelet_energies_time(time_series, wavelet='db4'):
