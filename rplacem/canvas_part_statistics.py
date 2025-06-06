@@ -470,7 +470,10 @@ class CanvasPartStatistics(object):
         self.complexity_multiscale = ts.TimeSeries()
         self.complexity_levenshtein = ts.TimeSeries()
         self.wavelet_high_freq = ts.TimeSeries()
+        self.wavelet_mid_freq = ts.TimeSeries()
         self.wavelet_low_freq = ts.TimeSeries()
+        self.wavelet_low_freq_tm = ts.TimeSeries()
+        self.wavelet_high_freq_tm = ts.TimeSeries()
         self.ssim_stab_ref = ts.TimeSeries()
 
         self.ripley = None # array of 4 TimeSeries, created in compute_variables
@@ -663,6 +666,9 @@ class CanvasPartStatistics(object):
         self.entropy_bmpnorm.val[0] = 0
         idx_dividebyzero = np.where(self.area_vst.val == 0)
         self.entropy.val[idx_dividebyzero] = self.entropy_bmpnorm.val[idx_dividebyzero] * 3.2  # typical factor hard-coded here
+        # for wavelets
+        self.wavelet_high_to_low = self.ts_init(util.divide_treatzero(self.wavelet_high_freq.val, self.wavelet_low_freq.val)) # sets nan to 1
+        self.wavelet_mid_to_low = self.ts_init(util.divide_treatzero(self.wavelet_mid_freq.val, self.wavelet_low_freq.val))
         # other
         self.frac_moderator_changes = self.ts_init( util.divide_treatzero(self.n_moderator_changes.val, self.n_changes.val, 0, 0) )
         self.frac_cooldowncheat_changes = self.ts_init( util.divide_treatzero(self.n_cooldowncheat_changes.val, self.n_changes.val, 0, 0) )

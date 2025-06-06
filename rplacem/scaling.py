@@ -483,7 +483,6 @@ def kernel_smooth_xy(x, y, bandwidth=0.4, grid_size=100, weight_threshold_factor
     y_smooth = weighted_y_mean[valid]
     sem_x = sem_x[valid]
     sem_y = sem_y[valid]
-    print('sem_y', sem_y)
 
     return x_grid, x_smooth, y_smooth, sem_x, sem_y
 
@@ -802,6 +801,7 @@ def get_comp_scaling_data(
       will mean we have to decide exactly what to plot. Perhaps, in some cases, we'd wish to plot the mean? or the max? or the min? or maybe all of these.
       This motivates saving the entire array for the timestep, which also suggests that we may want to replace some of the summed values with the entire array instead.
     """
+    print(start_t_ind)
     if canvas_parts_file is not None:
         with open(canvas_parts_file, "rb") as file:
             canvas_comp_list = pickle.load(file)
@@ -839,6 +839,7 @@ def get_comp_scaling_data(
     n_ingrouponly_users_start = []
     n_outgrouponly_users_start = []
     n_bothinout_users_start = []
+    n_users_total_start = []
 
     instab = []
     streamer = []
@@ -955,6 +956,8 @@ def get_comp_scaling_data(
         if n_bothattdef_users[i] is None:
             n_bothattdef_users[i] = 0
 
+        f_new = cpart_stat.frac_users_new_vs_previoustime.val[1:start_t_ind]
+        n_users_total_start.append(np.sum(f_new*cpart_stat.n_users.val[1:start_t_ind]))
         if cpart_stat.n_defenseonly_users.val is None:
             n_defenseonly_users_start.append(0)
             n_attackonly_users_start.append(0)
@@ -989,15 +992,22 @@ def get_comp_scaling_data(
         #mean_attns.append(mean_attn)
         #med_attns.append(med_attn)
         #pix_norm_attns.append(pix_norm_attn)
-        dist_totals.append(np.nanmean(dist_total))
-        dist_means.append(np.nanmean(dist_mean))
-        dist_central_means.append(np.nanmean(dist_central_mean))
-        print(dist_central_means[i])
-        delta_ts.append(np.nanmean(delta_t))
-        speed_aves.append(np.nanmean(speed_ave))
+        if canvas_parts_file is not None:
+            dist_totals.append(np.nanmean(dist_total))
+            dist_means.append(np.nanmean(dist_mean))
+            dist_central_means.append(np.nanmean(dist_central_mean))
+            delta_ts.append(np.nanmean(delta_t))
+            speed_aves.append(np.nanmean(speed_ave))
+        else:
+            dist_totals.append(np.nan)
+            dist_means.append(np.nan)
+            dist_central_means.append(np.nan)
+            delta_ts.append(np.nan)
+            speed_aves.append(np.nan)
 
     # a few more vars
     lifetimes = np.array(tmax) - np.array(tmin)
+    #if canvas_parts_stats_file[-1]=='3':
     lifetimes_percent = lifetimes / (var.TIME_WHITEOUT - np.array(tmin))
     num_changes_tot = np.array(n_defense_changes) + np.array(n_attack_changes)
     num_users_tot = np.array(n_defenseonly_users) + np.array(n_attackonly_users) + np.array(n_bothattdef_users)
@@ -1053,7 +1063,8 @@ def get_comp_scaling_data(
         "dist_mean": dist_means,
         "dist_central_mean": dist_central_means,
         "delta_t": delta_ts,
-        "speed_ave": speed_aves
+        "speed_ave": speed_aves,
+        'Num users total start': n_users_total_start
         #"Mean Attention": mean_attns,
         #"Median Attention": med_attns,
         #"Pixel Norm Attention": pix_norm_attns,
