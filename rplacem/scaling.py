@@ -1007,6 +1007,7 @@ def get_comp_scaling_data(
 
     # a few more vars
     lifetimes = np.array(tmax) - np.array(tmin)
+    #if canvas_parts_stats_file[-1]=='3':
     lifetimes_percent = lifetimes / (var.TIME_WHITEOUT - np.array(tmin))
     num_changes_tot = np.array(n_defense_changes) + np.array(n_attack_changes)
     num_users_tot = np.array(n_defenseonly_users) + np.array(n_attackonly_users) + np.array(n_bothattdef_users)
