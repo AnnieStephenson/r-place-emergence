@@ -23,7 +23,7 @@ if not cp_fromfile:
     pixel_changes_all = util.get_all_pixel_changes()
     atlas, num = util.load_atlas()
 
-id = '6'#'tx5hwp_part1'#'tx6v2h'#'txkd33'#'u38eza' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
+id = '20'#'tx5hwp_part1'#'tx6v2h'#'txkd33'#'u38eza' #'000297' #'twoztm',#'twwgx2',#'twpx5e' # only if fromatlas 
 
 x1 = var.CANVAS_MINMAX[-1, 0, 0]
 x2 = var.CANVAS_MINMAX[-1, 0, 1]

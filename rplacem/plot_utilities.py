@@ -392,9 +392,9 @@ def cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(5,10), fontsize=5, save=Tr
                      #[cpstat.image_shift_slope, None, None],
                      #[cpstat.image_shift_min, -0.9, None],
                      #[cpstat.image_shift_minpos, 0, None],
-                     [cpstat.frac_pixdiff_inst_vs_inst_downsampled2, 0, None],
-                     [cpstat.frac_pixdiff_inst_vs_inst_downsampled4, 0, None],
-                     [cpstat.frac_pixdiff_inst_vs_inst_downsampled16pix, 0, None],
+                     [cpstat.wavelet_high_to_low, None, None],
+                     [cpstat.wavelet_mid_to_low, None, None],
+                     [cpstat.wavelet_high_to_low_tm, None, None],
 
                     ]
 

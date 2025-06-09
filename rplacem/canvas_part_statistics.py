@@ -701,6 +701,8 @@ class CanvasPartStatistics(object):
         # for wavelets
         self.wavelet_high_to_low = self.ts_init(util.divide_treatzero(self.wavelet_high_freq.val, self.wavelet_low_freq.val)) # sets nan to 1
         self.wavelet_mid_to_low = self.ts_init(util.divide_treatzero(self.wavelet_mid_freq.val, self.wavelet_low_freq.val))
+        self.wavelet_high_to_low_tm = self.ts_init(util.divide_treatzero(self.wavelet_high_freq_tm.val, self.wavelet_low_freq_tm.val)) # sets nan to 1
+
         # other
         self.frac_moderator_changes = self.ts_init( util.divide_treatzero(self.n_moderator_changes.val, self.n_changes.val, 0, 0) )
         self.frac_cooldowncheat_changes = self.ts_init( util.divide_treatzero(self.n_cooldowncheat_changes.val, self.n_changes.val, 0, 0) )
@@ -828,6 +830,22 @@ class CanvasPartStatistics(object):
         self.frac_bothattdef_users.label = 'frac_bothattdef_users'
         self.frac_bothattdef_users.savename = filepath('fraction_of_users_bothattackingdefending')
 
+        # same for wavelet_high_to_low, the ratio of wavelet high frequency to low frequency
+        self.wavelet_high_to_low.desc_long = 'Ratio of image spatial wavelet high frequency to low frequency.'
+        self.wavelet_high_to_low.desc_short = 'wavelet high to low frequency ratio'
+        self.wavelet_high_to_low.label = 'wavelet_high_to_low'
+        self.wavelet_high_to_low.savename = filepath('wavelet_high_to_low')
+
+        self.wavelet_mid_to_low.desc_long = 'Ratio of image spatial wavelet mid frequency to low frequency.'
+        self.wavelet_mid_to_low.desc_short = 'wavelet mid to low frequency ratio'
+        self.wavelet_mid_to_low.label = 'wavelet_mid_to_low'
+        self.wavelet_mid_to_low.savename = filepath('wavelet_mid_to_low')
+
+        self.wavelet_high_to_low_tm.desc_long = 'Ratio of temporal wavelet high frequency to low frequency.'
+        self.wavelet_high_to_low_tm.desc_short = 'wavelet high to low frequency ratio (temporal)'
+        self.wavelet_high_to_low_tm.label = 'wavelet_high_to_low_tm'
+        self.wavelet_high_to_low_tm.savename = filepath('wavelet_high_to_low_tm')
+
         if self.compute_vars['attackdefense'] > 0:
             self.returnrate.desc_long ='fraction of attacked pixels that recover within 5 minutes'
             self.returnrate.desc_short = 'return rate (fraction of recovered pixels)'
@@ -901,8 +919,6 @@ class CanvasPartStatistics(object):
             self.dist_average.desc_short = 'Average distance between pix changes'
             self.dist_average.label = 'distance_between_changes'
             self.dist_average.savename = filepath('distance_between_changes')
-
-
 
         self.cumul_attack_timefrac.desc_long = 'Fraction of the time that all pixels spent in an attack color [s]'
         self.cumul_attack_timefrac.desc_short = 'frac of time spent in attack colors [s]'
