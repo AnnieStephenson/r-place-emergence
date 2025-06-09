@@ -692,7 +692,7 @@ def main_variables(cpart,
             # fraction of differing pixels with downsampled images
             if previous_downsampled_im is None:
                 previous_downsampled_im = copy.deepcopy(downsampled_im)
-            cpst.diff_pixels_inst_vs_inst_downsampled2.val[i] = np.count_nonzero(downsampled_im[1]-previous_downsampled_im[1])
+            cpst.diff_pixels_inst_vs_inst_downsampled2.val[i] = np.count_nonzero(downsampled_im[1]-previous_downsampled_im[1]) if len(downsampled_im) > 1 else 0
             cpst.diff_pixels_inst_vs_inst_downsampled4.val[i] = np.count_nonzero(downsampled_im[2]-previous_downsampled_im[2]) if len(downsampled_im) > 2 else 0
             cpst.diff_pixels_inst_vs_inst_downsampled16pix.val[i] = np.count_nonzero(downsampled_im[-1]-previous_downsampled_im[-1]) if len(downsampled_im) > 1 else 0
             previous_downsampled_im = copy.deepcopy(downsampled_im)
