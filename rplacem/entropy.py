@@ -381,6 +381,8 @@ def downsampled_images(image, scales=None):
         max_scale = max(1, min(H, W) // 4)
         powers = int(np.log2(max_scale)) + 1
         scales = [1] + [2 ** i for i in range(1, powers + 1) if 2 ** i <= max_scale]
+        if len(scales) == 1:
+            scales.append(2)
     
     downsampled_images = []
     for r in scales:
