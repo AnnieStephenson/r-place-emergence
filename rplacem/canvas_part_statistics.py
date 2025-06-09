@@ -298,8 +298,10 @@ class CanvasPartStatistics(object):
         fraction of purple pixels in reference image versus time
 
     CLUSTERING -- need compute_vars['clustering'] > 0
-    ripley : array of 10 TimeSeries, n_pts = n_t_bins+1
+    ripley : array of [ripley_distances] TimeSeries, n_pts = n_t_bins+1
         Ripley's K function, for 10 different distance bins, recorded in cpst.ripley_distances
+    crosscorr : array of [crosscorr_distances] TimeSeries, n_pts = n_t_bins+1
+        Cross-correlation between images a t and t-1, for different radial shift values r, normalised by r^2
 
     methods
     -------
@@ -476,12 +478,22 @@ class CanvasPartStatistics(object):
         self.wavelet_high_freq_tm = ts.TimeSeries()
         self.ssim_stab_ref = ts.TimeSeries()
 
-        self.ripley = None # array of 4 TimeSeries, created in compute_variables
-        self.ripley_distances = np.array([2, 3, 4, 6, 8, 10, 15, 23, 35, 50])
+        self.ripley = None # array of TimeSeries, created in compute_variables
+        typicalsize = math.sqrt(self.area_rectangle)
+        self.ripley_distances = np.array([2, max(3, int(0.2*typicalsize)), max(5, int(0.5*typicalsize))]) #np.array([1, 2, 3, 4, 6, 8, 10, 15, 23, 35, 50])
         self.ripley_norm = None 
         self.dist_average = ts.TimeSeries()
         self.dist_average_norm = ts.TimeSeries()
-        self.moran = ts.TimeSeries()
+        self.crosscorr = None # array of TimeSeries, created in compute_variables
+        dist_tmp = [0, 1, 2, 3, 4, 5, 7, 9, 11, 14, 17, 20, 25, 30, 35, 40, 50, 70, 100, 150]
+        self.crosscorr_distances = []
+        for d in dist_tmp:
+            if d <= int(0.8 * typicalsize):
+                self.crosscorr_distances.append(d)
+        self.crosscorr_distances = np.array(self.crosscorr_distances)
+        self.image_shift_min = ts.TimeSeries()
+        self.image_shift_minpos = ts.TimeSeries()
+        self.image_shift_slope = ts.TimeSeries()
 
         self.transition_param = trans_param
         self.n_transitions = None
@@ -506,6 +518,23 @@ class CanvasPartStatistics(object):
         # ratio variables and normalizations
         self.ratios_and_normalizations()
 
+        # extract shift quantities from cross correlation: minimum, position of the minimum, and slope of a linear fit
+        crosscorr_all = np.array([self.crosscorr[i].val for i in range(1, len(self.crosscorr_distances))]).T
+        self.image_shift_minpos.val = self.crosscorr_distances[1+np.argmin(crosscorr_all, axis=1)]
+        self.image_shift_min.val = np.min(crosscorr_all, axis=1)
+        # slope using the direct least squares formula
+        w = np.asarray([1]*(int(len(self.crosscorr_distances)/2)-1) # weights to increase the influence of sparser high distance points
+                     + [2]*(len(self.crosscorr_distances)-int(len(self.crosscorr_distances)/2)))
+        w_sum = np.sum(w)
+        x_mean = np.sum(w * self.crosscorr_distances[1:]) / w_sum
+        y_mean = np.sum(w * crosscorr_all, axis=1, keepdims=True) / w_sum
+        x_c = self.crosscorr_distances[1:] - x_mean
+        y_c = crosscorr_all - y_mean
+        self.image_shift_slope.val = np.sum(w * x_c * y_c, axis=1) / np.sum(w * x_c ** 2)
+        del crosscorr_all, x_c, y_c, y_mean, x_mean, w, w_sum
+        if self.compute_vars['clustering'] <= 1:
+            del self.crosscorr
+
         if np.any(self.frac_users_new_vs_sw.val > 1):
             print('frac_users_new_vs_sw > 1 !!!!!!!')
         if np.any(self.variance2.val < 1):
@@ -527,7 +556,7 @@ class CanvasPartStatistics(object):
                 self.refimage_pretrans = None
                 self.refimage_posttrans = None
         else:
-            self.n_transitions == 0
+            self.n_transitions = 0
 
         # calculate variance over ~10 most recent timesteps
         def rolling_mean_squares(v, nroll):
@@ -639,6 +668,9 @@ class CanvasPartStatistics(object):
         self.frac_pixdiff_inst_vs_swref_forwardlook = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_swref_forwardlook.val, self.area_vst.val, 0, 0) )
         self.frac_pixdiff_inst_vs_inst_norm = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_inst.val / self.t_norm, self.area_vst.val, 0, 0) )
         self.frac_pixdiff_inst_vs_stable_norm = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_stable.val / self.t_norm, self.area_vst.val, 0, 0) )
+        self.frac_pixdiff_inst_vs_inst_downsampled2 = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_inst_downsampled2.val / self.t_norm, self.area_vst.val/2**2, 0, 0) )
+        self.frac_pixdiff_inst_vs_inst_downsampled4 = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_inst_downsampled4.val / self.t_norm, self.area_vst.val/4**2, 0, 0) )
+        self.frac_pixdiff_inst_vs_inst_downsampled16pix = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_inst_downsampled16pix.val / self.t_norm, self.area_vst.val/self.maxscale**2, 0, 0) )
 
         # users
         self.n_users_norm = self.ts_init( util.divide_treatzero(self.n_users.val / self.t_norm, self.area_vst.val, 0, 0) )
@@ -732,6 +764,21 @@ class CanvasPartStatistics(object):
         self.frac_pixdiff_inst_vs_inst_norm.label = 'frac_pixdiff_inst_vs_inst'
         self.frac_pixdiff_inst_vs_inst_norm.savename = filepath('fraction_of_differing_pixels_normalized')
 
+        self.frac_pixdiff_inst_vs_inst_downsampled2.desc_long = 'Fraction of pixels differing from the instantaneous image in the previous step, downscaled by factor 2.'
+        self.frac_pixdiff_inst_vs_inst_downsampled2.desc_short = 'frac of pixels differing from previous-step image / '+n_min_tunit+'downscaled by 2.'
+        self.frac_pixdiff_inst_vs_inst_downsampled2.label = 'frac_pixdiff_inst_vs_inst_downscaled2'
+        self.frac_pixdiff_inst_vs_inst_downsampled2.savename = filepath('fraction_of_differing_pixels_downscaled2')
+
+        self.frac_pixdiff_inst_vs_inst_downsampled4.desc_long = 'Fraction of pixels differing from the instantaneous image in the previous step, downscaled by factor 4.'
+        self.frac_pixdiff_inst_vs_inst_downsampled4.desc_short = 'frac of pixels differing from previous-step image / '+n_min_tunit+'downscaled by 4.'
+        self.frac_pixdiff_inst_vs_inst_downsampled4.label = 'frac_pixdiff_inst_vs_inst_downscaled4'
+        self.frac_pixdiff_inst_vs_inst_downsampled4.savename = filepath('fraction_of_differing_pixels_downscaled4')
+
+        self.frac_pixdiff_inst_vs_inst_downsampled16pix.desc_long = 'Fraction of pixels differing from the instantaneous image in the previous step, downscaled by factor 16.'
+        self.frac_pixdiff_inst_vs_inst_downsampled16pix.desc_short = 'frac of pixels differing from previous-step image / '+n_min_tunit+'downscaled to 16 pixels.'
+        self.frac_pixdiff_inst_vs_inst_downsampled16pix.label = 'frac_pixdiff_inst_vs_inst_downscaled16pix'
+        self.frac_pixdiff_inst_vs_inst_downsampled16pix.savename = filepath('fraction_of_differing_pixels_downscaled16pix')
+
         self.frac_pixdiff_inst_vs_swref.desc_long = 'Fraction of pixels differing from the reference image in the preceding sliding window'
         self.frac_pixdiff_inst_vs_swref.desc_short = 'frac of pixels differing from sliding-window ref image'
         self.frac_pixdiff_inst_vs_swref.label = 'frac_pixdiff_inst_vs_swref'
@@ -815,21 +862,47 @@ class CanvasPartStatistics(object):
             self.n_used_colors[k].savename = filepath(labs[k]+'_n_used_colors')
 
         if self.compute_vars['clustering'] > 0:
-            for k in range(0,10):
-                self.ripley[k].desc_long = 'Ripley\'s K function, at distance ' + str(self.ripley_distances[k])  
-                self.ripley[k].desc_short = 'Ripley\'s K function [' + str(self.ripley_distances[k]) + ']'
-                self.ripley[k].label = 'ripley_d='+str(self.ripley_distances[k])
-                self.ripley[k].savename = filepath('ripley_kfunction_d'+str(self.ripley_distances[k]))
+            dist = [str(self.ripley_distances[0]), '20\% of size', '50\% of size']
+            for k in range(0,len(self.ripley_distances)):
+                self.ripley[k].desc_long = 'Ripley\'s K function, at distance ' + dist[k]  
+                self.ripley[k].desc_short = 'Ripley\'s K function [d=' + dist[k] + ']'
+                self.ripley[k].label = 'ripley_d='+dist[k]
+                self.ripley[k].savename = filepath('ripley_kfunction_d'+dist[k])
 
-                self.ripley_norm[k].desc_long = 'Ripley\'s K function, at distance ' + str(self.ripley_distances[k]) + 'normalized to randomized pixel changes positions'
-                self.ripley_norm[k].desc_short = 'Ripley\'s K function [' + str(self.ripley_distances[k]) + '] normalized to randomized'
-                self.ripley_norm[k].label = 'ripley_norm_d='+str(self.ripley_distances[k])
-                self.ripley_norm[k].savename = filepath('ripley_k_norm_d'+str(self.ripley_distances[k]))
+                self.ripley_norm[k].desc_long = 'Ripley\'s K function, at distance ' + dist[k] + 'normalized to randomized pixel changes positions'
+                self.ripley_norm[k].desc_short = 'Ripley\'s K function [d=' + dist[k] + '] normalized to randomized'
+                self.ripley_norm[k].label = 'ripley_norm_d='+dist[k]
+                self.ripley_norm[k].savename = filepath('ripley_k_norm_d'+dist[k])
+
+            # same for crosscorr
+            if self.compute_vars['clustering'] > 1:
+                for k in range(0, len(self.crosscorr_distances)):
+                    self.crosscorr[k].desc_long = 'Cross-correlation between t and t-1 images at shift ' + str(self.crosscorr_distances[k])
+                    self.crosscorr[k].desc_short = 'Cross-correlation t vs t-1 [' + str(self.crosscorr_distances[k]) + ']'
+                    self.crosscorr[k].label = 'crosscorr_d='+str(self.crosscorr_distances[k])
+                    self.crosscorr[k].savename = filepath('crosscorr_d'+str(self.crosscorr_distances[k]))
+
+            self.image_shift_min.desc_long = 'Minimum of normalized cross-correlation (shift) between t and t-1 images'
+            self.image_shift_min.desc_short = 'min value cross-correlation shift t vs t-1'
+            self.image_shift_min.label = 'image_shift_min'
+            self.image_shift_min.savename = filepath('image_shift_min')
+
+            self.image_shift_minpos.desc_long = 'Shift at the minimum normalized cross-correlation between t and t-1 images'
+            self.image_shift_minpos.desc_short = 'Shift at min value cross-correlation shift t vs t-1'
+            self.image_shift_minpos.label = 'image_shift_minpos'
+            self.image_shift_minpos.savename = filepath('image_shift_minpos')
+
+            self.image_shift_slope.desc_long = 'Slope of the linear fit to the normalized cross-correlation between t and t-1 images'
+            self.image_shift_slope.desc_short = 'Slope of linear fit to cross-correlation (shift) t vs t-1'
+            self.image_shift_slope.label = 'image_shift_slope'
+            self.image_shift_slope.savename = filepath('image_shift_slope')
 
             self.dist_average.desc_long = 'Average distance between all pairs of pixel changes'
             self.dist_average.desc_short = 'Average distance between pix changes'
             self.dist_average.label = 'distance_between_changes'
             self.dist_average.savename = filepath('distance_between_changes')
+
+
 
         self.cumul_attack_timefrac.desc_long = 'Fraction of the time that all pixels spent in an attack color [s]'
         self.cumul_attack_timefrac.desc_short = 'frac of time spent in attack colors [s]'
