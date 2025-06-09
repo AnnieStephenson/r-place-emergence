@@ -84,7 +84,7 @@ if cps_fromfile:
 else: 
     cpstat = stat.CanvasPartStatistics(canpart, t_interval=300, #tmax=30000,
                                         compute_vars={'stability': 1, 'entropy' :3, 'transitions' : 1, 'attackdefense' : 1, 'other' : 1, 
-                                                      'ews' : 1, 'inout':0, 'lifetime_vars':0, 'void_attack':0, 'clustering':1},
+                                                      'ews' : 1, 'inout':0, 'lifetime_vars':0, 'void_attack':0, 'clustering':2},
                                         sliding_window=int(3*3600), 
                                         verbose=True, dont_keep_dir=False, compression='DEFLATE_BMP_PNG', flattening='ravel')
 
@@ -250,7 +250,13 @@ cpstat.frac_cooldowncheat_changes.plot1d(ymin=0)
 cpstat.frac_redundant_color_changes.plot1d(ymin=0)
 cpstat.frac_redundant_coloranduser_changes.plot1d(ymin=0)
 
-plot.cpstat_tseries(cpstat, nrows=11, ncols=2, figsize=(8,11.5), fontsize=10, save=True)
+print('all tseries')
+trange = [185000, 205000]
+plot.cpstat_tseries(cpstat, nrows=11, ncols=2, figsize=(8,11.5), fontsize=10, save=True, timerange=None)
+plot.cpstat_manytseries(cpstat, cpstat.ripley_norm, 'ripleyK_norm', ymin=0, timerange=None)
+plot.cpstat_manytseries(cpstat, cpstat.ripley, 'ripleyK', ymin=0, timerange=None)
+plot.cpstat_manytseries(cpstat, cpstat.crosscorr, 'cross-corr_tvst-1', timerange=None)
+plot.cpstat_manytseries_transposed(cpstat, cpstat.crosscorr, 'cross-corr_tvst-1_vsD', timerange=[185000,205000], x=cpstat.crosscorr_distances, save=True)
 
 # STUDY OF BMP FILE SIZE
 

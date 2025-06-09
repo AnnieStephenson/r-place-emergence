@@ -345,9 +345,13 @@ def draw_1d(xdata,
         plt.savefig(save, dpi=250, bbox_inches='tight')
         plt.close()
 
-def cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(5,10), fontsize=5, save=True):
+def cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(5,10), fontsize=5, save=True, timerange=None):
 
     itmin = np.argmax(cpstat.t_lims >= cpstat.tmin)
+    itmax = len(cpstat.t_lims) - 1
+    if timerange is not None:
+        itmin = np.argmax(cpstat.t_lims >= timerange[0])
+        itmax = np.argmax(cpstat.t_lims > timerange[1])
 
     fig, axes = plt.subplots(nrows, ncols, sharex=True, figsize=figsize)
 
@@ -359,7 +363,7 @@ def cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(5,10), fontsize=5, save=Tr
                      [cpstat.n_changes_norm, 0, None],
                      [cpstat.frac_attack_changes, 0, 1],
                      [cpstat.frac_users_new_vs_sw, 0, 1],
-                     [cpstat.runnerup_timeratio[0], 0, None],
+                     #[cpstat.runnerup_timeratio[0], 0, None],
                      [cpstat.n_used_colors[0], 1, None],
                      #[cpstat.frac_users_new_vs_previoustime, 0, 1],
                      [cpstat.n_users_sw_norm, 0, None],
@@ -370,32 +374,38 @@ def cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(5,10), fontsize=5, save=Tr
                      [cpstat.returntime[3], 0, None],
                      [cpstat.returntime[0], 0, None],
                      #[cpstat.cumul_attack_timefrac, 0, None],
-                     [cpstat.variance_multinom, 0, None],
-                      #[cpstat.variance_from_frac_pixdiff_inst, 0, 0.1],
-                      #[cpstat.variance2, 1, None],
-                      #[cpstat.autocorr_bycase, None, None],
-                      #[cpstat.autocorr_subdom, 0, None],
+                     #[cpstat.variance_multinom, 0, None],
+                     [cpstat.variance_from_frac_pixdiff_inst, 0, 0.1],
+                     #[cpstat.variance2, 1, None],
+                     #[cpstat.autocorr_bycase, None, None],
+                     [cpstat.autocorr_subdom, 0, None],
                      #[cpstat.autocorr_multinom, 0, None],
                      #[cpstat.returnrate, 0, 1],
                      [cpstat.ripley_norm[0], 0, None],
+                     [cpstat.ripley_norm[1], 0, None],
+                     #[cpstat.ripley_norm[5], 0, None],
+                     #[cpstat.ripley_norm[7], 0, None],
                      [cpstat.ripley_norm[2], 0, None],
-                     [cpstat.ripley_norm[4], 0, None],
-                     [cpstat.ripley_norm[5], 0, None],
-                     [cpstat.ripley_norm[7], 0, None],
-                     [cpstat.ripley_norm[9], 0, None],
                      #[cpstat.dist_average_norm, 0, None],
                      #[cpstat.n_users_norm, 0, None],
                      #[cpstat.frac_attackonly_users, 0, 1]
+                     #[cpstat.image_shift_slope, None, None],
+                     #[cpstat.image_shift_min, -0.9, None],
+                     #[cpstat.image_shift_minpos, 0, None],
+                     [cpstat.wavelet_high_to_low, None, None],
+                     [cpstat.wavelet_mid_to_low, None, None],
+                     [cpstat.wavelet_high_to_low_tm, None, None],
+
                     ]
 
     for i, ax in enumerate(axes.T.flat):
         #print(i)
         #print(t_series_vars[i][0].desc_long)
         #print(t_series_vars[i][0].val[0:50])
-        ax.plot(cpstat.t_lims[itmin:], t_series_vars[i][0].val[itmin:])
+        ax.plot(cpstat.t_lims[itmin:itmax], t_series_vars[i][0].val[itmin:itmax])
         ax.patch.set_alpha(0)
 
-        ax.set_xlim([cpstat.t_lims[itmin], cpstat.t_lims[-1]])
+        ax.set_xlim([cpstat.t_lims[itmin], cpstat.t_lims[itmax]])
         ax.tick_params(axis='x', direction='in')
 
         reject_end = int(t_series_vars[0][0].n_pts * 6./300.) # reject ending white period, and the very beginning
@@ -414,6 +424,53 @@ def cpstat_tseries(cpstat, nrows=8, ncols=2, figsize=(5,10), fontsize=5, save=Tr
 
     if save:
         plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, 'all_time_series.pdf'), dpi=250, bbox_inches='tight')
+
+def cpstat_manytseries(cpstat, cpst_vars, title, denominator=None, save=True, ymin=0, timerange=None):
+    '''
+    cpst_vars is a list of cpstat TimeSeries objects
+    '''
+
+    itmin = np.argmax(cpstat.t_lims >= cpstat.tmin)
+    itmax = len(cpstat.t_lims) - 1
+    if timerange is not None:
+        itmin = np.argmax(cpstat.t_lims >= timerange[0])
+        itmax = np.argmax(cpstat.t_lims > timerange[1])
+    plt.figure(figsize=(10, 10))
+
+    for i in range(len(cpst_vars)):
+        plt.plot(cpstat.t_lims[itmin:itmax], (cpst_vars[i].val[itmin:itmax] if denominator is None else cpst_vars[i].val[itmin:itmax]/denominator[i].val[itmin:itmax]), label=cpst_vars[i].desc_short)
+
+        plt.xlim([cpstat.t_lims[itmin], cpstat.t_lims[itmax]])
+        reject_end = int(cpst_vars[i].n_pts * 6./300.) # reject ending white period, and the very beginning
+        ym = min([min(cpst_vars[i].val[4:-reject_end]) for i in range(len(cpst_vars))])
+        yM = max([max(cpst_vars[i].val[4:-reject_end]) for i in range(len(cpst_vars))])
+        plt.ylim([ym + 1e-6, yM - 1e-6])
+
+        plt.xlabel('time [s]')
+        sns.despine()
+    plt.legend()
+
+    if save:
+        plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, title+'.pdf'), dpi=250, bbox_inches='tight')
+
+def cpstat_manytseries_transposed(cpstat, cpst_vars, title, timerange, x, save=True):
+
+    idxrange = np.where((cpstat.t_lims >= timerange[0]) & (cpstat.t_lims <= timerange[1]))[0]
+
+    nplots = len(idxrange)
+    fig, axs = plt.subplots(nplots, 1, sharex=True, figsize=(6, nplots))
+    plt.subplots_adjust(hspace=0)  # remove vertical space
+
+    for i in range(nplots):
+        axs[i].plot(x[1:], [cpst_vars[l].val[idxrange[0]+i] for l in range(1, len(x))], label='t='+str(cpstat.t_lims[idxrange[0]+i]))
+        axs[i].legend(loc='upper right')
+
+    plt.title(title)
+    sns.despine()
+    plt.xlabel('shift [# of pixels]')
+
+    if save:
+        plt.savefig(os.path.join(var.FIGS_PATH, cpstat.id, title+'.pdf'), dpi=250, bbox_inches='tight')
 
 def draw_2dplot(x, y, z, 
                 xlab='', ylab='', zlab='',

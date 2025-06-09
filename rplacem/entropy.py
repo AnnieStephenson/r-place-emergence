@@ -276,7 +276,6 @@ def calc_Q_delta_vst(canvas_part_stat, flattening='hilbert_sweetsourcod', compre
             q[j, i] = calc_Q(pixels_vst[j], delta[i], flattening=flattening, compression=compression)
 
     return q, delta
-
         
 def fast_mode(x):
     '''
@@ -288,50 +287,137 @@ def fast_mode(x):
     '''
     return np.argmax(np.bincount(x))
 
-def compute_complexity_multiscale(image, scales=None):
+def mode_downsample(image, factor):
     """
-    Compute normalized Zhang complexity K for a single 2D image using mode-based
-    coarse-graining with fast bincount mode computation.
-
+    Downsample a 2D image by a given factor using mode-based coarse-graining.
+    Handles incomplete blocks at edges by computing mode of available pixels.
+    Uses efficient view_as_blocks for main grid and manual loops only for edges.
+    
     Parameters:
-        image (np.ndarray): 2D array of shape (H, W) with non-negative integers.
-        scales (list[int] or None): Optional list of block sizes. If None, uses powers of 2 up to min(H, W) // 4.
-
+    -----------
+    image : np.ndarray
+        2D array of shape (H, W) with non-negative integers
+    factor : int
+        Downsampling factor (block size)
+    
     Returns:
-        float: normalized complexity value for the image.
+    --------
+    np.ndarray
+        Downsampled 2D array of shape (ceil(H/factor), ceil(W/factor))
     """
     H, W = image.shape
+    
+    # Calculate output dimensions and main grid size
+    out_h = (H + factor - 1) // factor  # ceil(H / factor)
+    out_w = (W + factor - 1) // factor  # ceil(W / factor)
+    
+    # Main grid dimensions (complete blocks only)
+    main_h, main_w = H // factor, W // factor
+    
+    # Create output array
+    modes = np.zeros((out_h, out_w), dtype=image.dtype)
+    
+    # Process main grid efficiently using view_as_blocks
+    if main_h > 0 and main_w > 0:
+        # Extract complete blocks
+        main_region = image[:main_h * factor, :main_w * factor]
+        blocks = skimage.util.view_as_blocks(main_region, block_shape=(factor, factor))
+        
+        # Flatten blocks and compute modes
+        flattened_blocks = blocks.reshape(main_h, main_w, -1)
+        main_modes = np.apply_along_axis(fast_mode, -1, flattened_blocks)
+        
+        # Fill main region of output
+        modes[:main_h, :main_w] = main_modes
+    
+    # Handle right edge (incomplete width blocks)
+    if main_w < out_w:  # There are incomplete width blocks
+        for i in range(main_h):
+            start_h, end_h = i * factor, (i + 1) * factor
+            start_w, end_w = main_w * factor, W
 
-    # Auto-generate scales if not provided
+            block = image[start_h:end_h, start_w:end_w]
+            modes[i, main_w] = fast_mode(block.flatten())
+    
+    # Handle bottom edge (incomplete height blocks)
+    if main_h < out_h:  # There are incomplete height blocks
+        for j in range(main_w):
+            start_h, end_h = main_h * factor, H
+            start_w, end_w = j * factor, (j + 1) * factor
+            
+            block = image[start_h:end_h, start_w:end_w]
+            modes[main_h, j] = fast_mode(block.flatten())
+    
+    # Handle bottom-right corner (incomplete in both dimensions)
+    if main_h < out_h and main_w < out_w:
+        start_h, end_h = main_h * factor, H
+        start_w, end_w = main_w * factor, W
+        
+        corner_block = image[start_h:end_h, start_w:end_w]
+        modes[main_h, main_w] = fast_mode(corner_block.flatten())
+    
+    return modes 
+
+
+def downsampled_images(image, scales=None):
+    """
+    Compute mode-based downsampling for multiple scales and store results.
+    
+    Parameters:
+    -----------
+    image : np.ndarray
+        2D array of shape (H, W) with non-negative integers
+    scales : list[int] or None
+        Optional list of block sizes. If None, uses power-of-2 scales up to min(H,W)//4
+    
+    Returns:
+    --------
+    dict
+        Dictionary mapping scale -> downsampled 2D array
+    """
     if scales is None:
+        # Generate power-of-2 scales
+        H, W = image.shape
         max_scale = max(1, min(H, W) // 4)
         powers = int(np.log2(max_scale)) + 1
         scales = [1] + [2 ** i for i in range(1, powers + 1) if 2 ** i <= max_scale]
-
-    complexity = 0
-
+    
+    downsampled_images = []
     for r in scales:
-        # Crop image to nearest multiple of r
-        h_crop = (H // r) * r
-        w_crop = (W // r) * r
-        cropped = image[:h_crop, :w_crop]
+        downsampled_images.append(image.copy() if r == 1 else mode_downsample(image, r))
+    
+    return scales, downsampled_images
 
-        # Extract non-overlapping blocks
-        blocks = skimage.util.view_as_blocks(cropped, block_shape=(r, r))
-        h, w = blocks.shape[:2]
-        flattened_blocks = blocks.reshape(h, w, -1)
-
-        modes = np.apply_along_axis(fast_mode, -1, flattened_blocks)
-
+def compute_complexity_multiscale(image, scales, im_downsampled):
+    """
+    Compute normalized Zhang complexity K for a single 2D image using mode-based
+    coarse-graining with fast bincount mode computation.
+    
+    Parameters:
+    -----------
+    image : np.ndarray
+        2D array of shape (H, W) with non-negative integers
+    im_downsampled : dict
+        Dictionary mapping scale -> downsampled 2D array
+    
+    Returns:
+    --------
+    float
+        Normalized complexity value for the image
+    """
+    H, W = image.shape
+    
+    complexity = 0    
+    for r, im_down in zip(scales, im_downsampled):
         # Compute histogram of mode values
-        counts = collections.Counter(modes.flatten())
+        counts = collections.Counter(im_down.flatten())
         total = sum(counts.values())
         probs = np.array([c / total for c in counts.values()])
-
+        
         # Shannon entropy
         S_r = -np.sum(probs * np.log(probs))
         complexity += (r ** 2) * S_r
-
+    
     # Normalize by total number of pixels
     K_norm = complexity / (H * W)
     return K_norm
