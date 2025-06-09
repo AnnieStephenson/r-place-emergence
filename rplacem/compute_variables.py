@@ -692,7 +692,7 @@ def main_variables(cpart,
             # fraction of differing pixels with downsampled images
             if previous_downsampled_im is None:
                 previous_downsampled_im = copy.deepcopy(downsampled_im)
-            cpst.diff_pixels_inst_vs_inst_downsampled2.val[i] = np.count_nonzero(downsampled_im[1]-previous_downsampled_im[1]) if len(downsampled_im) > 1 else 0
+            cpst.diff_pixels_inst_vs_inst_downsampled2.val[i] = np.count_nonzero(downsampled_im[1]-previous_downsampled_im[1]) if len(downsampled_im) > 1    else 0
             cpst.diff_pixels_inst_vs_inst_downsampled4.val[i] = np.count_nonzero(downsampled_im[2]-previous_downsampled_im[2]) if len(downsampled_im) > 2 else 0
             cpst.diff_pixels_inst_vs_inst_downsampled16pix.val[i] = np.count_nonzero(downsampled_im[-1]-previous_downsampled_im[-1]) if len(downsampled_im) > 1 else 0
             previous_downsampled_im = copy.deepcopy(downsampled_im)
@@ -1210,9 +1210,9 @@ def cross_correlation(cpst, i, itmin, r, binning, crosscorr_radial_ref):
     crosscorr = None
     # compute colors present in the images
     cols = np.flatnonzero(np.isin(np.arange(var.NUM_COLORS), im1) & np.isin(np.arange(var.NUM_COLORS), im2))
-                
+
     # Calculate the cross-correlation between two images, for each shift value
-    for c in cols:
+    for c in (cols if cols != [] else [31]):
         mask1 = (im1 == c).astype(np.float32) # float32 faster for fftconvolve
         mask2 = (im2 == c).astype(np.float32)
         # for this color, subtract the crosscorr of the image with itself, from the crosscorr between t and t-1
