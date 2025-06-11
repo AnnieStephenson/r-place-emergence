@@ -16,6 +16,7 @@ import os
 import pickle
 import collections
 import skimage
+import warnings
 
 
 def calc_size(pixels):
@@ -503,7 +504,11 @@ def compute_wavelet_energies(img, wavelet='haar', mid_scale = 0.1, large_scale =
     min_dim = min(H, W)
     max_pywt_level = pywt.dwtn_max_level((H, W), wavelet)
     if max_pywt_level < 1:
-        raise ValueError(f"Image size {img.shape} is too small for wavelet '{wavelet}' decomposition.")
+        warnings.warn(
+            f"Image size {img.shape} is too small for wavelet '{wavelet}' decomposition. "
+            "Returning zero energies."
+        )
+        return 0.0, 0.0, 0.0
 
     target_mid = mid_scale * min_dim
     target_low = large_scale * min_dim
