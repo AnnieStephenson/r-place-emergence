@@ -338,7 +338,7 @@ def main_variables(cpart,
     if instant > 0 or tran > 0:
         previous_colors = cpart.white_image(2, images_number=cpst.sw_width) # image in the sw_width previous timesteps
     if cluster > 0:
-        previous_downsampled_im = None
+        previous_downscaled_im = None
     previous_stable_color = cpart.white_image(1)  # stable image in the previous timestep
     if save_memory:
         active_colors_vst = np.zeros((cpst.sw_width, cpart.num_pix(), var.NUM_COLORS), dtype=bool)
@@ -423,9 +423,9 @@ def main_variables(cpart,
     cpst.fractal_dim_mask_median = cpst.ts_init( np.full(n_tlims, 2) )
     cpst.complexity_multiscale = cpst.ts_init( np.zeros(n_tlims) )
     cpst.complexity_levenshtein = cpst.ts_init( np.zeros(n_tlims) )
-    cpst.diff_pixels_inst_vs_inst_downsampled2 = cpst.ts_init( np.zeros(n_tlims) )
-    cpst.diff_pixels_inst_vs_inst_downsampled4 = cpst.ts_init( np.zeros(n_tlims) )
-    cpst.diff_pixels_inst_vs_inst_downsampled16pix = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.diff_pixels_inst_vs_inst_downscaled2 = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.diff_pixels_inst_vs_inst_downscaled4 = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.diff_pixels_inst_vs_inst_downscaled16pix = cpst.ts_init( np.zeros(n_tlims) )
     cpst.maxscale = None
     cpst.wavelet_high_freq = cpst.ts_init( np.zeros(n_tlims) )
     cpst.wavelet_mid_freq = cpst.ts_init( np.zeros(n_tlims) )
@@ -684,18 +684,18 @@ def main_variables(cpart,
 
             # Multiscale complexity
             scales = None if cpst.maxscale is None else [2 ** i for i in range(0, int(np.log2(cpst.maxscale)+0.1)+1)]
-            scales, downsampled_im = entropy.downsampled_images(pix_tmp, scales=scales)
+            scales, downscaled_im = entropy.downsampled_images(pix_tmp, scales=scales)
             if cpst.maxscale is None:
                 cpst.maxscale = scales[-1]
-            cpst.complexity_multiscale.val[i] = entropy.compute_complexity_multiscale(pix_tmp, scales, downsampled_im)
+            cpst.complexity_multiscale.val[i] = entropy.compute_complexity_multiscale(pix_tmp, scales, downscaled_im)
 
-            # fraction of differing pixels with downsampled images
-            if previous_downsampled_im is None:
-                previous_downsampled_im = copy.deepcopy(downsampled_im)
-            cpst.diff_pixels_inst_vs_inst_downsampled2.val[i] = np.count_nonzero(downsampled_im[1]-previous_downsampled_im[1]) if len(downsampled_im) > 1    else 0
-            cpst.diff_pixels_inst_vs_inst_downsampled4.val[i] = np.count_nonzero(downsampled_im[2]-previous_downsampled_im[2]) if len(downsampled_im) > 2 else 0
-            cpst.diff_pixels_inst_vs_inst_downsampled16pix.val[i] = np.count_nonzero(downsampled_im[-1]-previous_downsampled_im[-1]) if len(downsampled_im) > 1 else 0
-            previous_downsampled_im = copy.deepcopy(downsampled_im)
+            # fraction of differing pixels with downscaled images
+            if previous_downscaled_im is None:
+                previous_downscaled_im = copy.deepcopy(downscaled_im)
+            cpst.diff_pixels_inst_vs_inst_downscaled2.val[i] = np.count_nonzero(downscaled_im[1]-previous_downscaled_im[1]) if len(downscaled_im) > 1 else 0
+            cpst.diff_pixels_inst_vs_inst_downscaled4.val[i] = np.count_nonzero(downscaled_im[2]-previous_downscaled_im[2]) if len(downscaled_im) > 2 else cpst.diff_pixels_inst_vs_inst_downscaled2.val[i]
+            cpst.diff_pixels_inst_vs_inst_downscaled16pix.val[i] = np.count_nonzero(downscaled_im[-1]-previous_downscaled_im[-1]) if len(downscaled_im) > 1 else 0
+            previous_downscaled_im = copy.deepcopy(downscaled_im)
 
             # Levenshtein complexity
             cpst.complexity_levenshtein.val[i] = entropy.compute_complexity_levenshtein(pix_tmp)

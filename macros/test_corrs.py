@@ -42,7 +42,7 @@ def reject_messy_times(inputvals, varnames):
 param_num = 0 # 0 is nominal result, 1 to 6 are sensitivity analysis #0,1,2,6
 param_str = var.param_str_fun(param_num)
 
-file_path = os.path.join(var.DATA_PATH, 'training_data_401variables_'+param_str+'.pickle') #3h-SW_widertimefromstart.pickle
+file_path = os.path.join(var.DATA_PATH, 'training_data_590variables_'+param_str+'.pickle') #3h-SW_widertimefromstart.pickle
 with open(file_path, 'rb') as f:
     [inputvals, outputval, varnames, eventtime, id_idx, id_dict,
      coarse_timerange, 
@@ -117,6 +117,9 @@ def plot_xy(featx, featy,
         x = x[sel]
         y = y[sel]
 
+    if featy[0] == "log(area)":
+        x = x / np.power(10, 0.5*y) # divide by sqrt(area) to get a more linear relation
+
     xlab = (featx[0] if diffx else featx[0][0]) if featx[1] is None else featx[1]
     ylab = (featy[0] if diffy else featy[0][0]) if featy[1] is None else featy[1]
 
@@ -137,6 +140,7 @@ def plot_xy(featx, featy,
 
     plt.xlabel(xlab)
     plt.ylabel(ylab)
+    print(x,y,np.min(x),np.max(x),np.min(y),np.max(y))
 
     meanxval, meanyval = None, None
 
@@ -180,7 +184,31 @@ plot_xy(('earliness','-log(time to transition)','earliness'),
         (('frac_pixdiff_inst_vs_stable_t-0-0', 'frac_pixdiff_inst_vs_stable_t-39-25'), 'fraction differing pixels inst (0-0) - (39-25)', 'fracpixdiffinst_0-0--39-25'),
         nbins=80, meany=True, ymin=-0.3, ymax=0.3)
 
+#plot_xy(('dist_average_norm_t-0-0', 'norm. average distance between changes', 'dist_changes'), 
+#        ('log(area)', 'log(area)', 'logarea'),
+#        nbins=120, meanx=True, meany=False,xmin=0,xmax=3)
 
+plot_xy(('ripley_norm_d=2_t-0-0', 'ripley d=2', 'ripley_d=2'),
+        ('log(area)', 'log(area)', 'logarea'),
+        nbins=120, meanx=True, meany=False,xmin=0,xmax=4)
+
+plot_xy(('image_shift_minpos_t-0-0', 'image_shift_minpos', 'image_shift_minpos'),
+        ('log(area)', 'log(area)', 'logarea'),
+        nbins=120, meanx=True, meany=False,xmin=0)
+
+plot_xy(('frac_pixdiff_inst_vs_inst_downscaled2_t-0-0', 'frac_pixdiff_inst_vs_inst_downscaled2', 'frac_pixdiff_inst_vs_inst_downscaled2'),
+        ('frac_pixdiff_inst_vs_inst_downscaled4_t-0-0', 'frac_pixdiff_inst_vs_inst_downscaled4', 'frac_pixdiff_inst_vs_inst_downscaled4'),
+        nbins=120, meanx=False, meany=False,xmin=0,xmax=0.35,ymin=0,ymax=0.35)
+
+plot_xy(('wavelet_high_to_low_t-0-0', 'wavelet_high_to_low', 'wavelet_high_to_low'),
+        ('wavelet_mid_to_low_t-0-0', 'wavelet_mid_to_low', 'wavelet_mid_to_low'),
+        nbins=120, meanx=False, meany=False,xmin=0)
+
+plot_xy(('wavelet_high_to_mid_t-0-0', 'wavelet_high_to_mid', 'wavelet_high_to_mid'),
+        ('wavelet_high_to_low_t-0-0', 'wavelet_high_to_low', 'wavelet_high_to_low'),
+        nbins=120, meanx=False, meany=False,xmin=0)
+
+sys.exit()
 
 plot_xy(('earliness','-log(time to transition)','earliness'), 
         (('frac_pixdiff_inst_vs_stable_t-0-0', 'frac_pixdiff_inst_vs_stable_t-84-70'), 'fraction differing pixels inst (0-0) - (84-70)', 'fracpixdiffinst_0-0--84-70'),
