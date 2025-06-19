@@ -37,19 +37,18 @@ ml_param = eval.AlgoParam(type='regression', # or 'classification
                           log_subtract_transform=1.5, 
                           weight_highEarliness=0.4,
                           calibrate_pred=True)
-ml_param.num_rounds = 100 if ml_param.test2023 else 160 # Max number of boosting rounds (iterations)
+ml_param.num_rounds = 100 if ml_param.test2023 else 140 # Max number of boosting rounds (iterations)
 ml_param.min_child_weight = 8 if ml_param.type == 'regression' else 4
 
 warning_threshold_sec = 3600
 warning_threshold = ml_param.transform_target(warning_threshold_sec)
 makeplots = False if (ml_param.type != 'regression') else True
 savefiles = True
-corrplots = False
+corrplots = True # deactivates exclusion of worst time features
 emax_test_hist2d = 1.3e3
 
 file_excludedvars = os.path.join(var.DATA_PATH, 'excluded_variables_fromSHAP.txt')
 exclude_timefeats = os.path.exists(file_excludedvars) if not corrplots else False
-arg.store_worstSHAP = False
 only_safetimemargin = False
 
 param_str = var.param_str_fun(arg.param_num)
@@ -512,7 +511,7 @@ def ROCAUC_1and3h_maxFPR0p2and1(pred, dtrain):
 
 # extract data from file
 print('get input data')
-file_path = os.path.join(var.DATA_PATH, 'training_data_401variables_'+param_str+'.pickle') #3h-SW_widertimefromstart.pickle
+file_path = os.path.join(var.DATA_PATH, 'training_data_590variables_'+param_str+'.pickle') #3h-SW_widertimefromstart.pickle
 with open(file_path, 'rb') as f:
     [inputvals, outputval, varnames, eventtime, id_idx, id_dict,
      coarse_timerange, 
@@ -556,7 +555,7 @@ nmaxcomp = 1e5
 
 # keep only certain variables
 # old variable selection [5,7,8,9,10,15,16,17,18,22,29,30,31,32,33]# old selection with old dataset [5,6,8,13,23,24,25,26,27,28]# best var selection [4,5,6,7,10,11,15,16,18,19,29,30,31,32,33]#[5,10,14,15,19,29,30,31,32,33]#[4,5,6,8,10,14,15,18,19,29,30,31,32,33]# 19 cumul, 4 instead of 5
-vars_toremove = [4,6,7,8,10,11,15,16,18,19,29,30,31,32,33,34] #unsure: 7,15,17
+vars_toremove = [4,6,7,8,10,11,15,16,18,19,45,46,47,48,49,50,22,30,33,35,37,39,43,44] #unsure: 7,15,17
 # exclude features with low SHAP values, from previous runs
 if exclude_timefeats:
     with open(file_excludedvars, 'r') as f:
@@ -763,7 +762,8 @@ gc.collect()
 
 if corrplots:
     # plot all variables at t_0-0 versus time-to-transition
-    fig, axis = plt.subplots(6, 4, figsize=(7, 10))
+    ncol = 7
+    fig, axis = plt.subplots(6, ncol, figsize=(7, 10))
     plt.subplots_adjust(wspace=0.1, hspace=0.6)
     plt.xticks(fontsize=6)
     plt.yticks(fontsize=6)
@@ -773,7 +773,7 @@ if corrplots:
         if not 't-0-0' in varnames[v] and 't-' in varnames[v]:
             continue
 
-        ax = axis[int(iaxis)//4, int(iaxis)%4]
+        ax = axis[int(iaxis)//ncol, int(iaxis)%ncol] 
         xlimits = np.percentile(X_test[:,v], [0.5, 99.5 if (varnames[v]!='log(area)') else 99.9])
         xlimits += np.array([-0.03, 0.03]) * (xlimits[1]-xlimits[0])
         nbins=50
@@ -1074,8 +1074,6 @@ if makeplots or arg.shapplots:
                 pickle.dump([shap_values, shap_eachvar, shap_eachrange, shap_eachrange_coarse, inds_onlyStableTimes, ml_param],
                             f, protocol=pickle.HIGHEST_PROTOCOL)
         
-        sys.exit()
-
         # get the 10 least performing (and not too correlated) features
         if arg.store_worstSHAP:
             shap_meanabs_perfeature = np.mean(np.abs(shap_values.values), axis=0)
@@ -1136,7 +1134,7 @@ if makeplots or arg.shapplots:
 
         print('shap figure 5')
         plt.figure(num=1, clear=True)
-        shap.plots.bar(shap_values, show=False, max_display=228)
+        shap.plots.bar(shap_values, show=False, max_display=350)
         plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_allvars'+('_excludeworstSHAP' if exclude_timefeats else '')+'.pdf'), dpi=250, bbox_inches='tight')
 
         #print('shap figure 6')

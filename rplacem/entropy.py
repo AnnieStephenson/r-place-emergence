@@ -379,7 +379,7 @@ def downsampled_images(image, scales=None):
     if scales is None:
         # Generate power-of-2 scales
         H, W = image.shape
-        max_scale = max(1, min(H, W) // 4)
+        max_scale = max(1, min(H, W) // 2)
         powers = int(np.log2(max_scale)) + 1
         scales = [1] + [2 ** i for i in range(1, powers + 1) if 2 ** i <= max_scale]
         if len(scales) == 1:
@@ -387,8 +387,10 @@ def downsampled_images(image, scales=None):
     
     downsampled_images = []
     for r in scales:
-        downsampled_images.append(image.copy() if r == 1 else mode_downsample(image, r))
-    
+        downsampled_im = image.copy() if r == 1 else mode_downsample(image, r)
+        if r==1 or downsampled_im.shape[0]*downsampled_im.shape[1] >= 16:
+            downsampled_images.append(downsampled_im)
+
     return scales, downsampled_images
 
 def compute_complexity_multiscale(image, scales, im_downsampled):
@@ -546,12 +548,6 @@ def compute_wavelet_energies(img, wavelet='haar', mid_scale = 0.1, large_scale =
 
     return low_freq_energy, mid_freq_energy, high_freq_energy
 
-
-def compute_wavelet_energies_time(time_series, wavelet='db4'):
-    ca, cd = pywt.dwt(time_series, wavelet=wavelet)
-    low_freq_energy = np.sum(ca**2)
-    high_freq_energy = np.sum(cd**2)
-    return low_freq_energy, high_freq_energy
 
 def compute_wavelet_energies_time(time_series, wavelet='db4'):
     ca, cd = pywt.dwt(time_series, wavelet=wavelet)

@@ -15,7 +15,7 @@ parser.add_argument("-r", "--run_rejecttimes", default=False)
 arg = parser.parse_args()
 
 param_str = var.param_str_fun(arg.param_num)
-file_path = os.path.join(var.DATA_PATH, 'cpart_stats_'+param_str+'_'+str(var.year)+'.pkl') 
+file_path = os.path.join(var.DATA_PATH, 'cpart_stats_'+param_str+'_'+str(var.year)+'_all.pkl') 
 
 def border_corner_center(xmin,xmax,ymin,ymax):
     # determines if the composition with the input x,y limits 
@@ -87,6 +87,22 @@ def variables_from_cpstat(cps):
                  (cps.frac_redundant_color_changes,     0, 0, 0),#26
                  (cps.entropy,                          1, 0, 0),#27
                  (cps.fractal_dim_weighted,             1, 0, 0),#28
+                 (cps.wavelet_high_to_low,              1, 0, 0),#29 take_ratio_to_average?
+                 (cps.wavelet_mid_to_low,               1, 0, 0),#30 take_ratio_to_average?
+                 (cps.wavelet_mid_to_low,               1, 0, 0),#31 take_ratio_to_average? #KEEP IT number 31, for making high_to_mid
+                 (cps.wavelet_high_to_low_tm,           0, 1, 0),#32
+                 (cps.complexity_multiscale,            1, 0, 0),#33
+                 (cps.complexity_levenshtein,           1, 0, 0),#34
+                 (cps.image_shift_slope,                0, 0, 0),#35
+                 (cps.image_shift_min,                  0, 0, 0),#36
+                 (cps.image_shift_minpos,               0, 0, 0),#37
+                 (cps.ripley_norm[0],                   0, 0, 0),#38
+                 (cps.ripley_norm[1],                   0, 0, 0),#39
+                 (cps.ripley_norm[2],                   0, 0, 0),#40
+                 (cps.dist_average_norm,                0, 0, 0),#41       
+                 (cps.frac_pixdiff_inst_vs_inst_downsampled2,0, 0, 0),#42
+                 (cps.frac_pixdiff_inst_vs_inst_downsampled4,0, 0, 0),#43       
+                 (cps.frac_pixdiff_inst_vs_inst_downsampled16pix,0, 0, 0),#44       
                  (cps.variance_multinom,                0, 0, 1),#
                  (cps.returntime[0],                    0, 0, 1),#
                  (cps.instability_norm[0],              0, 0, 1),#
@@ -103,6 +119,7 @@ def variables_from_cpstat(cps):
     return(vars, take_ratio_to_average, coarse_timeranges, take_kendall)
 
 def additional_vars_from_cpstat(cps, t, it, timerange, special_pos):
+    # could also include complexity_multiscale, complexity_levenshtein, wavelet_high_to_low, wavelet_mid_to_low over the sw
     entropy_sw = entropy.normalize_entropy(cps.entropy.val[it] / cps.entropy.ratio_to_sw_mean[it], 
                                       cps.area, t, minmax_entropy=minmax_entropy)
     quadrant_time = np.searchsorted(var.TIME_ENLARGE, t) - 1
@@ -371,14 +388,19 @@ for p in range(istart, math.ceil(ncompmax/period)):
 
         # enter names for all training variables
         if icps == istart: 
+            l=0 #remove the i when rerun
             for (coarse, v) in zip(allvars[2], allvars[0]):
                 timeidx = watch_timeidx_coarse if coarse else watch_timeidx
                 n_times = n_traintimes_coarse if coarse else n_traintimes
                 for i in range(0, n_times):
                     varnames.append(v.label + '_t' + 
                                     ((str(timeidx[i]) + str(timeidx[i+1]-1)) if (i < n_times-1) else '-0-0'))
+                    if l==31: #remove after rerun
+                        varnames[-1] = 'wavelet_high_to_mid_t' + \
+                                       ((str(timeidx[i]) + str(timeidx[i+1]-1)) if (i < n_times-1) else '-0-0')
+                l+=1
             varnames.extend(additional_vars_names())
-
+        
         # time range from the original borderpath of the atlas (though separated when disjoint in space or time)
         atlas_timerange = [ cps.info.border_path_times_orig_disjoint[0][0], 
                             cps.info.border_path_times_orig_disjoint[-1][1] ]
@@ -398,9 +420,12 @@ for p in range(istart, math.ceil(ncompmax/period)):
                     set_kendalls_and_ratio(allvars[0], allvars[1], allvars[3])
 
                 vars_thistime = []
+                l=0
                 for kendall, coarse, ratio_to_av, v in zip(allvars[3], allvars[2], allvars[1], allvars[0]):
-                    vals = get_vals_from_var(v.kendall_tau if kendall else v.ratio_to_sw_mean if ratio_to_av else v.val, it, coarse)
+                    #remove "else v.val/np.sqrt(cps.area_vst.val) if v ..." until v.val
+                    vals = get_vals_from_var(v.kendall_tau if kendall else (np.maximum(cps.wavelet_high_to_low.ratio_to_sw_mean, 5e-3)/np.maximum(cps.wavelet_mid_to_low.ratio_to_sw_mean, 5e-3) if l==31 else v.ratio_to_sw_mean) if ratio_to_av else v.val/np.sqrt(cps.area_vst.val) if (v.label=='ripley_norm_d=2' or v.label=='image_shift_minpos') else v.val, it, coarse)
                     vars_thistime.extend(vals)
+                    l+=1 #remove i after rerun
                 vars_thistime.extend(additional_vars_from_cpstat(cps, t, it, atlas_timerange, special_pos))
 
                 # input variables
