@@ -131,3 +131,5 @@ paper/
 rplacem/machine_learning/checks_xgboost_regression.py
 
 *.mp4
+
+data/2022/log_*

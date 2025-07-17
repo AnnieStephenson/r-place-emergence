@@ -855,6 +855,11 @@ class CanvasPartStatistics(object):
         self.wavelet_mid_to_low.label = 'wavelet_mid_to_low'
         self.wavelet_mid_to_low.savename = filepath('wavelet_mid_to_low')
 
+        self.wavelet_high_to_mid.desc_long = 'Ratio of image spatial wavelet high frequency to mid frequency.'
+        self.wavelet_high_to_mid.desc_short = 'wavelet high to mid frequency ratio'
+        self.wavelet_high_to_mid.label = 'wavelet_high_to_mid'
+        self.wavelet_high_to_mid.savename = filepath('wavelet_high_to_mid')
+
         self.wavelet_high_to_low_tm.desc_long = 'Ratio of temporal wavelet high frequency to low frequency.'
         self.wavelet_high_to_low_tm.desc_short = 'wavelet high to low frequency ratio (temporal)'
         self.wavelet_high_to_low_tm.label = 'wavelet_high_to_low_tm'

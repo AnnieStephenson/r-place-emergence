@@ -23,13 +23,14 @@ parser.add_argument("-t", "--test2023", default=False)
 parser.add_argument("-s", "--shapplots", default=False)
 parser.add_argument("-w", "--store_worstSHAP", default=False)
 arg = parser.parse_args()
+arg.shapplots = True if arg.store_worstSHAP else arg.shapplots
 
 # GLOBAL AND XGBOOST PARAMETERS
 ml_param = eval.AlgoParam(type='regression', # or 'classification
                           test2023=arg.test2023,
                           n_features=None,
                           num_rounds=None, 
-                          learning_rate=0.035, 
+                          learning_rate=0.035,    
                           max_depth=8, 
                           min_child_weight=None, 
                           subsample=0.8, #0.8
@@ -37,14 +38,14 @@ ml_param = eval.AlgoParam(type='regression', # or 'classification
                           log_subtract_transform=1.5, 
                           weight_highEarliness=0.4,
                           calibrate_pred=True)
-ml_param.num_rounds = 100 if ml_param.test2023 else 140 # Max number of boosting rounds (iterations)
+ml_param.num_rounds = 100 if ml_param.test2023 else 160 # Max number of boosting rounds (iterations)
 ml_param.min_child_weight = 8 if ml_param.type == 'regression' else 4
 
 warning_threshold_sec = 3600
 warning_threshold = ml_param.transform_target(warning_threshold_sec)
 makeplots = False if (ml_param.type != 'regression') else True
 savefiles = True
-corrplots = True # deactivates exclusion of worst time features
+corrplots = False # deactivates exclusion of worst time features
 emax_test_hist2d = 1.3e3
 
 file_excludedvars = os.path.join(var.DATA_PATH, 'excluded_variables_fromSHAP.txt')
@@ -237,16 +238,16 @@ def extremes_colormap(min=0):
     newcmp = colors.ListedColormap(newcols)
     return newcmp
 
-def correlation_heatmap(correlations, summary=False, zoom_extremes=True, vnames=None, annot=False):
+def correlation_heatmap(correlations, summary=False, zoom_extremes=True, vnames=None, annot=False, shap=False):
     fig= plt.subplots(figsize=(10,10), num=1, clear=True)
     sns.heatmap(correlations, vmax=1.0, vmin=-1.0, center=0, cmap=extremes_colormap(60 if zoom_extremes else 0), fmt='.2f', 
-                square=True, linewidths=.5, annot=annot, annot_kws={"fontsize":4}, cbar_kws={"shrink": .70},
+                square=True, linewidths=.0, annot=annot, annot_kws={"fontsize":3}, cbar_kws={"shrink": .70},
                 xticklabels=vnames,
-                yticklabels=vnames,
+                yticklabels=vnames, 
                 )
-    plt.xticks(fontsize=10 if summary else 4)
-    plt.yticks(fontsize=10 if summary else 4)
-    plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'correlation_matrix'+('_timevaraverage' if summary else '')+'.pdf'), bbox_inches='tight')
+    plt.xticks(fontsize=10 if summary else 3)
+    plt.yticks(fontsize=10 if summary else 3)
+    plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'correlation_matrix'+('_timevaraverage' if summary else '')+('_shap' if shap else '')+'.pdf'), bbox_inches='tight')
 
 def plot_probas_BinaryClassification(sig, bkg, warn_thres_str, add_name, classif=True, logy=True):
     plt.figure(num=1, clear=True)
@@ -511,7 +512,8 @@ def ROCAUC_1and3h_maxFPR0p2and1(pred, dtrain):
 
 # extract data from file
 print('get input data')
-file_path = os.path.join(var.DATA_PATH, 'training_data_590variables_'+param_str+'.pickle') #3h-SW_widertimefromstart.pickle
+olddata = False
+file_path = os.path.join(var.DATA_PATH, 'training_data_'+(str)('401' if olddata else '593')+'variables_'+param_str+'.pickle') #3h-SW_widertimefromstart.pickle
 with open(file_path, 'rb') as f:
     [inputvals, outputval, varnames, eventtime, id_idx, id_dict,
      coarse_timerange, 
@@ -521,8 +523,6 @@ with open(file_path, 'rb') as f:
      ] = pickle.load(f) 
 print(len(np.unique(id_idx)), 'unique compositions')
 outputval = -outputval
-inputvals[:, varnames=='area'] = np.log10(inputvals[:, varnames=='area']) #TODO remove when rerunning build_dataset.py
-varnames[varnames=='area'] = 'log(area)' #TODO remove when rerunning build_dataset.py
 if only_safetimemargin:
     outputval = outputval[np.all(safetimemargin, axis=1)] # satisfy both conditions of safetimemargin for each kept time instance
     inputvals = inputvals[np.all(safetimemargin, axis=1)] # satisfy both conditions of safetimemargin for each kept time instance
@@ -555,9 +555,16 @@ nmaxcomp = 1e5
 
 # keep only certain variables
 # old variable selection [5,7,8,9,10,15,16,17,18,22,29,30,31,32,33]# old selection with old dataset [5,6,8,13,23,24,25,26,27,28]# best var selection [4,5,6,7,10,11,15,16,18,19,29,30,31,32,33]#[5,10,14,15,19,29,30,31,32,33]#[4,5,6,8,10,14,15,18,19,29,30,31,32,33]# 19 cumul, 4 instead of 5
-vars_toremove = [4,6,7,8,10,11,15,16,18,19,45,46,47,48,49,50,22,30,33,35,37,39,43,44] #unsure: 7,15,17
+vars_toremove = [4,6,7,8,10,11,15,16,18,19, ]+ list(range(29,51))   #    30,33,35,37,39,40,43,      45,46,47,48,49,50] #3,22,   # 
 # exclude features with low SHAP values, from previous runs
-if exclude_timefeats:
+use_oldfeats_list = False
+if use_oldfeats_list:
+    # use external list of feature names to keep
+    file_keptfeatures = os.path.join(var.DATA_PATH, 'varnames_paper.txt')
+    with open(file_keptfeatures, 'r') as f:
+        features_tokeep = [l[:-1] for l in f.readlines()]
+        print('keeping these features: ', features_tokeep, len(features_tokeep))
+elif exclude_timefeats:
     with open(file_excludedvars, 'r') as f:
         features_toremove = [l[:-1] for l in f.readlines()]
         print('removing these features: ', features_toremove)
@@ -573,16 +580,23 @@ i_current = 0
 for i_var in range(len(coarse_timerange)):
     timesteps_thisvar = n_traintimes_coarse if coarse_timerange[i_var] else n_traintimes
     if i_var not in vars_toremove:
-        vars_toadd = [i for i in range(i_current, i_current+timesteps_thisvar) if varnames[i] not in features_toremove] 
+        vars_toadd = [i for i in range(i_current, i_current+timesteps_thisvar) if (use_oldfeats_list and varnames[i] in features_tokeep) or (not use_oldfeats_list and varnames[i] not in features_toremove)] 
         keptvars += vars_toadd
         feat_varchange.append(len(keptvars))
         vars_touse.append(i_var)
-        kept_timeranges.append([i for i in range(timesteps_thisvar) if varnames[i_current+i] not in features_toremove] )
+        kept_timeranges.append([i for i in range(timesteps_thisvar) if (use_oldfeats_list and varnames[i_current+i] in features_tokeep) or (not use_oldfeats_list and varnames[i_current+i] not in features_toremove) ] )
     i_current += timesteps_thisvar
-keptvars += range(len(varnames)-5, len(varnames))
+additional_vars = [i for i in range(len(varnames)-(5 if olddata else 8), len(varnames)) if (olddata or i not in [len(varnames)-1,      len(varnames)-3, len(varnames)-2 ]) and 
+                                                                                (not use_oldfeats_list or varnames[i] in features_tokeep)]
+n_addvars = len(additional_vars)
+keptvars += additional_vars
 
 keptvars = np.array(keptvars)
 ml_param.n_features = len(keptvars)
+
+#with open('data/2022/varnames_212.txt', 'w') as f:
+#    for v in np.sort(varnames[keptvars]):
+#        f.write(v + '\n')
 
 # SELECT KEPT VARIABLES
 print('select kept variables')
@@ -609,6 +623,22 @@ if ml_param.test2023:
 varnames = varnames[keptvars]
 coarse_timerange = coarse_timerange[vars_touse]
 
+# extend inputvals and varnames with 10 dummy variables that only contain random numbers between 0 and 1
+add_random_vars = False
+if add_random_vars:
+    n_random_vars = 20
+    print('adding '+str(n_random_vars)+' random variables')
+    random_vars = np.concatenate((np.random.rand(inputvals.shape[0], n_random_vars//2), 
+                                  np.random.randn(inputvals.shape[0], n_random_vars//2)), axis=1)
+    inputvals = np.concatenate((inputvals, random_vars), axis=1)
+    for i in range(n_random_vars//2):
+        varnames = np.append(varnames, 'rand_unif_'+str(i+1))
+    for i in range(n_random_vars//2):
+        varnames = np.append(varnames, 'rand_gaus_'+str(i+1))
+    keptvars = np.append(keptvars, np.arange(len(varnames)-n_random_vars, len(varnames)))
+else:
+    n_random_vars = 0
+
 id_idx = np.array(id_idx)[select]
 ididx_unique, ididx_pointer2unique = np.unique(id_idx, return_inverse=True) #needed because there are compositions that are totally skipped
 ncomp = len(ididx_unique)
@@ -622,7 +652,6 @@ if ml_param.test2023:
     ncomp_2023 = len(ididx_unique_2023) 
     n_events_2023 = len(outputval_2023)
     print('use',n_events_2023,'events from',ncomp_2023,'compositions for testing in 2023')
-
 
 
 # EVENT WEIGHTS
@@ -644,7 +673,7 @@ weights[outputval_orig < 3600] *= 1.
 
 # SPLIT THE DATA into training and testing sets
 test_size = 0 if ml_param.test2023 else 0.2 # 20% of data for testing
-if arg.param_num == 0:
+if arg.param_num == 0 and olddata:
     valid_size = 0.1 if ml_param.test2023 else 0.2
     # need to split in terms of compositions and not events, so that there are no train-test correlations (ie events from the same compo both in train and test sample)
     seed=1
@@ -659,11 +688,11 @@ if arg.param_num == 0:
     shufidx_intest = np.where(shuf < test_size * ncomp)[0]
     compidx_intest = ididx_unique[shufidx_intest]
     compid_intest = id_dict[compidx_intest]
-    np.savez(os.path.join(var.DATA_PATH, 'test_compositions_IDs.npz'), compid_intest = compid_intest, allow_pickle=True)
+    np.savez(os.path.join(var.DATA_PATH, 'test_compositions_IDs'+('_arXivVersion' if olddata else '')+'.npz'), compid_intest = compid_intest, allow_pickle=True)
     del shufidx_intest, compidx_intest, compid_intest
 else:
-    # grab with id_dict the compositions of the test sample determined with arg.param_num==0
-    with np.load(os.path.join(var.DATA_PATH, 'test_compositions_IDs.npz'), allow_pickle=True) as f:
+    # grab with id_dict the compositions of the test sample determined with arg.param_num==0, and keep the test sample used in the arXiv published version, for reproducibility
+    with np.load(os.path.join(var.DATA_PATH, 'test_compositions_IDs_arXivVersion.npz'), allow_pickle=True) as f:
         compid_intest = f['compid_intest']
     intest = np.isin(id_dict[id_idx], compid_intest)
     test_inds = np.where(intest)[0]
@@ -714,16 +743,16 @@ if makeplots and corrplots:
                         zoom_extremes=True, vnames=varnames)
     
     # correlation matrix for variables
-    corrmat_pervar = np.zeros((len(feat_varchange)+5, len(feat_varchange)+5))
+    corrmat_pervar = np.zeros((len(feat_varchange)+n_addvars, len(feat_varchange)+n_addvars))
 
     vnames_eachvar = []
-    for i_var in range(len(feat_varchange)+5):
-        ivar_fullbkw = i_var-len(feat_varchange)-4
+    for i_var in range(len(feat_varchange)+n_addvars):
+        ivar_fullbkw = i_var-len(feat_varchange)-n_addvars+1
         vname = varnames[feat_varchange[i_var]].split('_t-')[0] if i_var < len(feat_varchange)-1 else (varnames[ivar_fullbkw] if ivar_fullbkw < 0 else 'time-to-transition')
         vnames_eachvar.append(vname)
 
-        for j_var in range(len(feat_varchange)+5):
-            jvar_fullbkw = j_var-len(feat_varchange)-4
+        for j_var in range(len(feat_varchange)+n_addvars):
+            jvar_fullbkw = j_var-len(feat_varchange)-n_addvars+1
             i_tokeep, j_tokeep = [], []
 
             # handle correlations with time-to-trans
@@ -747,8 +776,8 @@ if makeplots and corrplots:
                 correlations_tosum = corrs[np.array(i_tokeep), np.array(j_tokeep)]
                 corrmat_pervar[i_var, j_var] = np.mean(correlations_tosum)
 
-
-    correlation_heatmap(corrmat_pervar, summary=True, zoom_extremes=False, vnames=vnames_eachvar, annot=True)
+    reindex = np.arange(corrmat_pervar.shape[0])
+    correlation_heatmap(corrmat_pervar[reindex][:, reindex], summary=True, zoom_extremes=False, vnames=vnames_eachvar, annot=True)
     with open(os.path.join(var.DATA_PATH, 'correlation_matrix.pickle'), 'wb') as f:
         pickle.dump([corrmat_pervar, vnames_eachvar], f, protocol=pickle.HIGHEST_PROTOCOL)
     #print('plot training variables')
@@ -762,7 +791,7 @@ gc.collect()
 
 if corrplots:
     # plot all variables at t_0-0 versus time-to-transition
-    ncol = 7
+    ncol = 8
     fig, axis = plt.subplots(6, ncol, figsize=(7, 10))
     plt.subplots_adjust(wspace=0.1, hspace=0.6)
     plt.xticks(fontsize=6)
@@ -1041,9 +1070,9 @@ if makeplots or arg.shapplots:
         for v in range(nvar_tintegrated):
             shap_eachvar_vals[:, v] = np.sum(shap_values.values[:,varmap_eachvar[v]], axis=1)
             shap_eachvar_data[:, v] = np.mean(shap_values.data[:,varmap_eachvar[v]], axis=1)
-        shap_eachvar.values = np.hstack((shap_eachvar_vals, shap_values.values[:, -5:]))
-        shap_eachvar.data = np.hstack((shap_eachvar_data, shap_values.data[:, -5:]))
-        shap_eachvar.feature_names = varnames_eachvar+shap_values.feature_names[-5:]
+        shap_eachvar.values = np.hstack((shap_eachvar_vals, shap_values.values[:, -n_addvars:]))
+        shap_eachvar.data = np.hstack((shap_eachvar_data, shap_values.data[:, -n_addvars:]))
+        shap_eachvar.feature_names = varnames_eachvar+shap_values.feature_names[-n_addvars:]
 
         print('Compute SHAP per timerange')
         # New SHAP values for each time range
@@ -1074,22 +1103,104 @@ if makeplots or arg.shapplots:
                 pickle.dump([shap_values, shap_eachvar, shap_eachrange, shap_eachrange_coarse, inds_onlyStableTimes, ml_param],
                             f, protocol=pickle.HIGHEST_PROTOCOL)
         
-        # get the 10 least performing (and not too correlated) features
+        # get the correlation matrix of the SHAP values
+        print('plot correlations of SHAP values')
+        shap_corrs = np.corrcoef(shap_values.values, rowvar=False)
+        # correlation matrix for features
+        correlation_heatmap(shap_corrs, shap=True,
+                            zoom_extremes=False, vnames=shap_values.feature_names)
+            
+        # get the 10 or 20 least performing (and not too correlated) features
+        n_shaptolook = 60 + n_random_vars
+        n_toexclude = 20
+        lowshap_highcorr = True # if True, then exclude features with low SHAP and high correlation with kept features
+        no_corr_with_excluded = True # if True, then do not exclude features that are very correlated with other rejected features
+        lowershap_than_rdm = True # if True, then exclude features with lower SHAP than the maximum SHAP of the 'rand_' random features
         if arg.store_worstSHAP:
             shap_meanabs_perfeature = np.mean(np.abs(shap_values.values), axis=0)
             feature_idx_sortedshap = np.argsort(shap_meanabs_perfeature)
-            feat_idx_mayexclude = feature_idx_sortedshap[0:20]
+            feat_idx_mayexclude = feature_idx_sortedshap[0:n_shaptolook]
+            feat_idx_keep = feature_idx_sortedshap[n_toexclude:]
+
+            corr_badSHAP = np.corrcoef(X_test[:, feat_idx_mayexclude], rowvar=False)
+            corr_cross = np.corrcoef(X_test[:, feat_idx_mayexclude], X_test[:, feature_idx_sortedshap[n_shaptolook:]], rowvar=False)
+            np.fill_diagonal(corr_cross, 0)
+            max_corr_with_keep = np.max(np.abs(corr_cross[:n_shaptolook, n_toexclude:]), axis=1)
+            np.fill_diagonal(shap_corrs, 0)
+            max_shapcorr_with_keep = np.max(np.abs(shap_corrs[:n_shaptolook, n_toexclude:]), axis=1)
+            mayexclude = np.arange(n_shaptolook)
+            # feature name giving the max shap correlation
+            max_shapcorr_featname = [varnames[feat_idx_keep[np.argmax(shap_corrs[:n_shaptolook, n_toexclude:], axis=1)[i]]] for i in mayexclude]
+            # feature name giving the max correlation with kept features
+            max_corr_featname = [varnames[feat_idx_keep[np.argmax(corr_cross[:n_shaptolook, n_toexclude:], axis=1)[i]]] for i in mayexclude]
+
+            # get the highest shap value of the 'rand_' random features within shap_meanabs_perfeature
+            rand_shap_max = 1e5
+            if n_random_vars > 0 and lowershap_than_rdm:
+                rand_shap = shap_meanabs_perfeature[[feat_idx_mayexclude[i] for i in range(len(feat_idx_mayexclude)) if 'rand_' in varnames[feat_idx_mayexclude[i]]]]
+                rand_shap_max = np.amax(rand_shap)
+                print('max shap value of random features', rand_shap_max)
+
+            # select the features to exclude
+            feat_idx_exclude = []
+            for i in range(0, len(mayexclude)):
+                idx = mayexclude[i]
+                shap_this = shap_meanabs_perfeature[feat_idx_mayexclude[idx]]
+                print('                  ', f"{idx}: {varnames[feat_idx_mayexclude[idx]]} ------ mean abs SHAP = {shap_this}")
+                if 'rand_' not in varnames[feat_idx_mayexclude[idx]]:
+                    corr_with_kept = max_corr_with_keep[idx]
+                    print('max corr with kept features', corr_with_kept, '------ feature name:', max_corr_featname[idx])
+                    print('corrs with previously removed features', corr_badSHAP[feat_idx_exclude, idx])
+                    #print('corrs with kept features', corr_cross[idx, n_shaptolook:])
+                    max_shapcorr_this = max_shapcorr_with_keep[idx]
+                    shap_mostcorr_feat = shap_meanabs_perfeature[feat_idx_keep[np.argmax(shap_corrs[idx, n_toexclude:])]]
+                    # if that mostcorrelated feature has already been excluded, then set max_shapcorr_this=0.
+                    shap_mostcorr_feat_name = varnames[feat_idx_keep[np.argmax(shap_corrs[idx, n_toexclude:])]]
+                    if shap_mostcorr_feat_name in varnames[feat_idx_exclude]:
+                        max_shapcorr_this = 0.
+
+                    print('max shap value correlation with kept features', max_shapcorr_this, '------ feature name:', max_shapcorr_featname[idx], 
+                          '------ shap value of this feature', shap_mostcorr_feat)
+                    # get the shap value of the feature whose shap is most correlated with the current feature
+                    addfeat = len(feat_idx_exclude)==0
+                    if not addfeat:
+                        corr_rejectedshap = np.max(np.abs(corr_badSHAP[feat_idx_exclude, idx])) if no_corr_with_excluded else 0
+                        addfeat = ((lowshap_highcorr and 
+                                        #(shap_this < 6e-5 or (shap_this < 1e-4 and corr_with_kept > 0.6) or (shap_this < 2.5e-4 and corr_with_kept > 0.8))) or 
+                                        (shap_this < 6e-5 or 
+                                         (shap_this < 1e-4 and (max_shapcorr_this > 0.25 or corr_with_kept > 0.8)) or 
+                                         (shap_this < 2.5e-4 and (max_shapcorr_this > 0.5 or corr_with_kept > 0.9)) or 
+                                         (shap_this < 5e-4 and (max_shapcorr_this > 0.7 or corr_with_kept > 0.95)) or 
+                                         (shap_this < 1e-3 and (max_shapcorr_this > 0.85 or corr_with_kept > 0.98)))) or 
+                                        (not lowshap_highcorr)) and corr_rejectedshap < 0.8 and shap_this < rand_shap_max
+                    if addfeat: 
+                        feat_idx_exclude.append(idx)
+                        print('add', idx)
+                    else:   
+                        print('skip', idx)
+                if len(feat_idx_exclude) == n_toexclude:
+                    break
+
+            print(np.array(feat_idx_exclude))
+            feat_idx_exclude = feat_idx_mayexclude[np.array(feat_idx_exclude)]
+
+            '''
+            shap_meanabs_perfeature = np.mean(np.abs(shap_values.values), axis=0)
+            feature_idx_sortedshap = np.argsort(shap_meanabs_perfeature)
+            feat_idx_mayexclude = feature_idx_sortedshap[0:n_shaptolook]
             corr_badSHAP = np.corrcoef(X_test[:, feat_idx_mayexclude], rowvar=False)
             feat_idx_exclude = [0]
             for i in range(1, len(feat_idx_mayexclude)):
                 print('corrs with previous vars', corr_badSHAP[feat_idx_exclude, i])
-                if np.max(np.abs(corr_badSHAP[feat_idx_exclude, i])) < 1:#0.6:
+                if np.max(np.abs(corr_badSHAP[feat_idx_exclude, i])) < 0.6:
                     feat_idx_exclude.append(i)
                     print('add',i)
-                if len(feat_idx_exclude) == 10:
+                if len(feat_idx_exclude) == n_toexclude:
                     break
             print(np.array(feat_idx_exclude))
             feat_idx_exclude = feat_idx_mayexclude[np.array(feat_idx_exclude)]
+            '''
+            
             print(np.array(feat_idx_exclude))
             print('lowest abs mean shap value = ', shap_meanabs_perfeature[feat_idx_exclude])
 
@@ -1106,7 +1217,7 @@ if makeplots or arg.shapplots:
 
         print('shap figure 1')
         plt.figure(num=1, clear=True)
-        shap.plots.bar(shap_eachvar, show=False, max_display=40)
+        shap.plots.bar(shap_eachvar, show=False, max_display=45)
         plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_timeIntegrated'+('_excludeworstSHAP' if exclude_timefeats else '')+'.pdf'), dpi=250, bbox_inches='tight')
 
         #plt.figure(num=1, clear=True)
@@ -1115,7 +1226,7 @@ if makeplots or arg.shapplots:
 
         print('shap figure 2')
         plt.figure(num=1, clear=True)
-        shap.plots.bar(shap_eachrange, show=False, max_display=40)
+        shap.plots.bar(shap_eachrange, show=False, max_display=45)
         plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_perTimerange'+('_excludeworstSHAP' if exclude_timefeats else '')+'.pdf'), dpi=250, bbox_inches='tight')
 
         #plt.figure(num=1, clear=True)
@@ -1124,12 +1235,12 @@ if makeplots or arg.shapplots:
 
         print('shap figure 3')
         plt.figure(num=1, clear=True)
-        shap.plots.bar(shap_eachrange_coarse, show=False, max_display=40)
+        shap.plots.bar(shap_eachrange_coarse, show=False, max_display=45)
         plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar_perCoarseTimerange'+('_excludeworstSHAP' if exclude_timefeats else '')+'.pdf'), dpi=250, bbox_inches='tight')
             
         print('shap figure 4')
         plt.figure(num=1, clear=True)
-        shap.plots.bar(shap_values, show=False, max_display=40) 
+        shap.plots.bar(shap_values, show=False, max_display=45) 
         plt.savefig(os.path.join(var.FIGS_PATH, 'ML', 'SHAP','SHAP_bar'+('_excludeworstSHAP' if exclude_timefeats else '')+'.pdf'), dpi=250, bbox_inches='tight')
 
         print('shap figure 5')

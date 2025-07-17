@@ -2,6 +2,7 @@ import numpy as np
 import pickle
 import os, sys
 from rplacem import var as var
+import rplacem.utilities as util
 import rplacem.transitions as tran
 import rplacem.entropy as entropy
 import math
@@ -89,7 +90,7 @@ def variables_from_cpstat(cps):
                  (cps.fractal_dim_weighted,             1, 0, 0),#28
                  (cps.wavelet_high_to_low,              1, 0, 0),#29 take_ratio_to_average?
                  (cps.wavelet_mid_to_low,               1, 0, 0),#30 take_ratio_to_average?
-                 (cps.wavelet_mid_to_low,               1, 0, 0),#31 take_ratio_to_average? #KEEP IT number 31, for making high_to_mid
+                 (cps.wavelet_high_to_mid,              1, 0, 0),#31 take_ratio_to_average?
                  (cps.wavelet_high_to_low_tm,           0, 1, 0),#32
                  (cps.complexity_multiscale,            1, 0, 0),#33
                  (cps.complexity_levenshtein,           1, 0, 0),#34
@@ -100,9 +101,9 @@ def variables_from_cpstat(cps):
                  (cps.ripley_norm[1],                   0, 0, 0),#39
                  (cps.ripley_norm[2],                   0, 0, 0),#40
                  (cps.dist_average_norm,                0, 0, 0),#41       
-                 (cps.frac_pixdiff_inst_vs_inst_downsampled2,0, 0, 0),#42
-                 (cps.frac_pixdiff_inst_vs_inst_downsampled4,0, 0, 0),#43       
-                 (cps.frac_pixdiff_inst_vs_inst_downsampled16pix,0, 0, 0),#44       
+                 (cps.frac_pixdiff_inst_vs_inst_downscaled2,0, 0, 0),#42
+                 (cps.frac_pixdiff_inst_vs_inst_downscaled4,0, 0, 0),#43       
+                 (cps.frac_pixdiff_inst_vs_inst_downscaled16pix,0, 0, 0),#44       
                  (cps.variance_multinom,                0, 0, 1),#
                  (cps.returntime[0],                    0, 0, 1),#
                  (cps.instability_norm[0],              0, 0, 1),#
@@ -124,10 +125,13 @@ def additional_vars_from_cpstat(cps, t, it, timerange, special_pos):
                                       cps.area, t, minmax_entropy=minmax_entropy)
     quadrant_time = np.searchsorted(var.TIME_ENLARGE, t) - 1
     pos_importance = special_pos[0][quadrant_time] + special_pos[1][quadrant_time] + special_pos[2][quadrant_time]
-    return [np.log10(cps.area), t - timerange[0], cps.quadrant, entropy_sw, pos_importance ]
+    wavelet_high_to_mid_sw = cps.wavelet_high_to_mid.val[it] / cps.wavelet_high_to_mid.ratio_to_sw_mean[it] if cps.wavelet_high_to_mid.ratio_to_sw_mean[it]!=0 else 0
+    wavelet_high_to_low_sw = cps.wavelet_high_to_low.val[it] / cps.wavelet_high_to_low.ratio_to_sw_mean[it] if cps.wavelet_high_to_low.ratio_to_sw_mean[it]!=0 else 0
+    wavelet_mid_to_low_sw = cps.wavelet_mid_to_low.val[it] / cps.wavelet_mid_to_low.ratio_to_sw_mean[it] if cps.wavelet_mid_to_low.ratio_to_sw_mean[it]!=0 else 0
+    return [np.log10(cps.area), t - timerange[0], cps.quadrant, entropy_sw, pos_importance, wavelet_high_to_mid_sw, wavelet_high_to_low_sw, wavelet_mid_to_low_sw]
 
 def additional_vars_names():
-    return ['log(area)', 'age', 'canvas_quadrant', 'entropy_sw', 'border_corner_center']
+    return ['log(area)', 'age', 'canvas_quadrant', 'entropy_sw', 'border_corner_center', 'wavelet_high_to_mid_sw', 'wavelet_high_to_low_sw', 'wavelet_mid_to_low_sw']
 
 def set_kendalls_and_ratio(vars, take_ratio, take_kendall):
     for i in np.arange(vars.shape[0]):
@@ -339,7 +343,7 @@ coarse_timerange = cpstatvars[2]
 kendall_tau = cpstatvars[3]
 n_cpstatvars = np.count_nonzero(coarse_timerange == 0)
 n_cpstatvars_coarse = np.count_nonzero(coarse_timerange == 1)
-n_trainingvars = n_cpstatvars * n_traintimes + n_cpstatvars_coarse * n_traintimes_coarse + 5
+n_trainingvars = n_cpstatvars * n_traintimes + n_cpstatvars_coarse * n_traintimes_coarse + 8
 
 ncompmax = 14300 if var.year == 2022 else 6950
 nevents_max = 3600000 # hard-coded (conservative) !!
@@ -388,17 +392,12 @@ for p in range(istart, math.ceil(ncompmax/period)):
 
         # enter names for all training variables
         if icps == istart: 
-            l=0 #remove the i when rerun
             for (coarse, v) in zip(allvars[2], allvars[0]):
                 timeidx = watch_timeidx_coarse if coarse else watch_timeidx
                 n_times = n_traintimes_coarse if coarse else n_traintimes
                 for i in range(0, n_times):
-                    varnames.append(v.label + '_t' + 
+                    varnames.append(("wavelet_high_to_mid" if v.label=='' else v.label) + '_t' +  #remove after rerun
                                     ((str(timeidx[i]) + str(timeidx[i+1]-1)) if (i < n_times-1) else '-0-0'))
-                    if l==31: #remove after rerun
-                        varnames[-1] = 'wavelet_high_to_mid_t' + \
-                                       ((str(timeidx[i]) + str(timeidx[i+1]-1)) if (i < n_times-1) else '-0-0')
-                l+=1
             varnames.extend(additional_vars_names())
         
         # time range from the original borderpath of the atlas (though separated when disjoint in space or time)
@@ -420,12 +419,9 @@ for p in range(istart, math.ceil(ncompmax/period)):
                     set_kendalls_and_ratio(allvars[0], allvars[1], allvars[3])
 
                 vars_thistime = []
-                l=0
                 for kendall, coarse, ratio_to_av, v in zip(allvars[3], allvars[2], allvars[1], allvars[0]):
-                    #remove "else v.val/np.sqrt(cps.area_vst.val) if v ..." until v.val
-                    vals = get_vals_from_var(v.kendall_tau if kendall else (np.maximum(cps.wavelet_high_to_low.ratio_to_sw_mean, 5e-3)/np.maximum(cps.wavelet_mid_to_low.ratio_to_sw_mean, 5e-3) if l==31 else v.ratio_to_sw_mean) if ratio_to_av else v.val/np.sqrt(cps.area_vst.val) if (v.label=='ripley_norm_d=2' or v.label=='image_shift_minpos') else v.val, it, coarse)
+                    vals = get_vals_from_var(v.kendall_tau if kendall else v.ratio_to_sw_mean if ratio_to_av else v.val, it, coarse)
                     vars_thistime.extend(vals)
-                    l+=1 #remove i after rerun
                 vars_thistime.extend(additional_vars_from_cpstat(cps, t, it, atlas_timerange, special_pos))
 
                 # input variables
