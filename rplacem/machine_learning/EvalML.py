@@ -171,6 +171,7 @@ class EvalML:
             with np.errstate(divide='ignore', invalid='ignore'):
                 self.purity = self.TP / (self.TP + self.FP)
             self.treatNaNs(self.purity)
+            self.purity[self.purity < 1e-10] = 1 # to avoid 0's at low TPRs
 
     def set_F1(self):
         if self.F1 is None:
@@ -270,11 +271,13 @@ class EvalML:
                 self.ROCAUC = auc
         return auc if maxFPR != 1 else self.ROCAUC
     
-    def calc_PRAUC(self):
+    def calc_PRAUC(self, verbose=False):
         if self.PRAUC == None:
             self.set_purity()
             self.set_TPR()
             self.PRAUC = simpson(self.precision(), self.TPR)
+            if verbose:
+                print('TPR, purity, PRAUC = ', self.TPR, self.purity, self.PRAUC)
         return self.PRAUC
 
     def FPRatSomeTPR(self, TPRval=0.5):
