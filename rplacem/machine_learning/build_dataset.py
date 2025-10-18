@@ -13,7 +13,9 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("-p", "--param_num", default=0) # 0 is nominal result, 1 to 6 are sensitivity analysis
 parser.add_argument("-r", "--run_rejecttimes", default=False)
+parser.add_argument("-k", "--keep_patchworks", default=False)
 arg = parser.parse_args()
+arg.param_num = int(arg.param_num)
 
 param_str = var.param_str_fun(arg.param_num)
 file_path = os.path.join(var.DATA_PATH, 'cpart_stats_'+param_str+'_'+str(var.year)+'_all.pkl') 
@@ -94,9 +96,9 @@ def variables_from_cpstat(cps):
                  (cps.wavelet_high_to_low_tm,           0, 1, 0),#32
                  (cps.complexity_multiscale,            1, 0, 0),#33
                  (cps.complexity_levenshtein,           1, 0, 0),#34
-                 (cps.image_shift_slope,                0, 0, 0),#35
-                 (cps.image_shift_min,                  0, 0, 0),#36
-                 (cps.image_shift_minpos,               0, 0, 0),#37
+                 (cps.image_shift_slope,                0, 1, 0),#35
+                 (cps.image_shift_min,                  0, 1, 0),#36
+                 (cps.image_shift_minpos,               0, 1, 0),#37
                  (cps.ripley_norm[0],                   0, 0, 0),#38
                  (cps.ripley_norm[1],                   0, 0, 0),#39
                  (cps.ripley_norm[2],                   0, 0, 0),#40
@@ -173,7 +175,7 @@ def get_earliness(cpstat, t, trans_starttimes):
         else: # take the closest transition happening after t
             return - min(np.min(possible_earlinesses), earliness_notrans)
 
-def keep_in_sample(cpstat, it, t, trans_starttimes, reject_times, atlas_timerange):
+def keep_in_sample(cpstat, it, t, trans_starttimes, reject_times, atlas_timerange, keep_patchworks=False):
     '''
     Says if this timestep for this composition must be kept in the training+evaluation sample
     '''
@@ -183,7 +185,7 @@ def keep_in_sample(cpstat, it, t, trans_starttimes, reject_times, atlas_timerang
             # exclude times after official end of composition in the atlas. Leave some margin for transition at the end of compositions
             t < atlas_timerange[1] + (3600 if np.any(trans_starttimes) > atlas_timerange[1] else 0) and 
             # exclude times before official beginning of composition in the atlas + sw_width
-            t > atlas_timerange[0] + cpstat.sw_width_sec and
+            (t > atlas_timerange[0] + cpstat.sw_width_sec or keep_patchworks) and
 
             # excludes times where the composition has transition-like values for frac_pixdiff
             (cpstat.frac_pixdiff_inst_vs_swref.val[it] < trans_param[0] or 
@@ -396,7 +398,7 @@ for p in range(istart, math.ceil(ncompmax/period)):
                 timeidx = watch_timeidx_coarse if coarse else watch_timeidx
                 n_times = n_traintimes_coarse if coarse else n_traintimes
                 for i in range(0, n_times):
-                    varnames.append(("wavelet_high_to_mid" if v.label=='' else v.label) + '_t' +  #remove after rerun
+                    varnames.append(v.label + '_t' +
                                     ((str(timeidx[i]) + str(timeidx[i+1]-1)) if (i < n_times-1) else '-0-0'))
             varnames.extend(additional_vars_names())
         
@@ -410,7 +412,7 @@ for p in range(istart, math.ceil(ncompmax/period)):
 
         i_event_thiscomp = 0
         for it, t in enumerate(cps.t_lims):
-            keep = keep_in_sample(cps, it, t, trans_starttimes, reject_times, atlas_timerange)
+            keep = keep_in_sample(cps, it, t, trans_starttimes, reject_times, atlas_timerange, keep_patchworks=arg.keep_patchworks)
             if keep[0]:
                 i_event += 1
                 i_event_thiscomp += 1
@@ -453,7 +455,7 @@ id_idx = id_idx[0:i_event+1]
 print(inputvals.shape)
 print(outputval.shape)
 
-file_path_out = os.path.join(var.DATA_PATH, 'training_data_'+str(n_trainingvars)+'variables_'+param_str+'.pickle')
+file_path_out = os.path.join(var.DATA_PATH, 'training_data_'+str(n_trainingvars)+'variables_'+param_str+('_keeppatchworks' if arg.keep_patchworks else '')+'.pickle')
 with open(file_path_out, 'wb') as handle:
     pickle.dump([inputvals, outputval, varnames, eventtime, id_idx, id_dict, coarse_timerange, kendall_tau, n_traintimes, n_traintimes_coarse, safetimemargin],
                 handle,
