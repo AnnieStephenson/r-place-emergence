@@ -119,6 +119,7 @@ data/2023/ML*.json
 
 # additional scripts
 my_scripts/
+scratch/
 
 # modules
 sweetsourcod_source/
