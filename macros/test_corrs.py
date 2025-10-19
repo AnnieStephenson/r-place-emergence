@@ -42,7 +42,7 @@ def reject_messy_times(inputvals, varnames):
 param_num = 0 # 0 is nominal result, 1 to 6 are sensitivity analysis #0,1,2,6
 param_str = var.param_str_fun(param_num)
 
-file_path = os.path.join(var.DATA_PATH, 'training_data_590variables_'+param_str+'.pickle') #3h-SW_widertimefromstart.pickle
+file_path = os.path.join(var.DATA_PATH, 'training_data_584variables_'+param_str+'.pickle') #3h-SW_widertimefromstart.pickle
 with open(file_path, 'rb') as f:
     [inputvals, outputval, varnames, eventtime, id_idx, id_dict,
      coarse_timerange, 
@@ -75,13 +75,15 @@ ml_param = EvalML.AlgoParam(type='regression', # or 'classification
 
 earliness = -ml_param.transform_target(-outputval)
 
-def plot_1D(featx):
+def plot_1D(featx, xmin=None):
     x = earliness if featx[0]=='earliness' else inputvals[:, np.where(varnames == featx[0])[0][0]]
     plt.figure()
     plt.hist(x, bins=100)
     plt.xlabel(featx[0] if featx[1] is None else featx[1])
     plt.ylabel('count')
     nameout = featx[0] if featx[2] is None else featx[2]
+    if xmin is not None:
+        plt.xlim(xmin, None)
     plt.savefig(os.path.join(var.FIGS_PATH, 'trainingvars_scatter', nameout+'_variation'+str(param_num)+'.png'))
 
 def plot_xy(featx, featy,
@@ -131,16 +133,19 @@ def plot_xy(featx, featy,
         y = rankdata(y) / n
         ylab += ' (percentile)'
 
+    x[np.abs(x) > 1e10] = 0
+    y[np.abs(y) > 1e10] = 0
+    if xmax is not None:
+        x[x>xmax] = xmax
+    if ymax is not None:
+        y[y>ymax] = ymax
+
     plt.figure()
     if scat:
         plt.scatter(x, y, s=0.1, alpha=0.2)
     else:
         _, xedges, yedges, _ = plt.hist2d(x, y, bins=nbins, norm=mpl.colors.LogNorm())
         plt.colorbar()
-
-    plt.xlabel(xlab)
-    plt.ylabel(ylab)
-    print(x,y,np.min(x),np.max(x),np.min(y),np.max(y))
 
     meanxval, meanyval = None, None
 
@@ -171,12 +176,17 @@ def plot_xy(featx, featy,
         plt.xlim(0 if xmin is None else xmin, xmax)
     if ymax is not None:
         plt.ylim(0 if ymin is None else ymin, ymax)
+
+    plt.xlabel(xlab)
+    plt.ylabel(ylab)
     plt.savefig(os.path.join(var.FIGS_PATH, 'trainingvars_scatter', nameout+'_variation'+str(param_num)+'.png'))
 
     print(featx[2], featy[2], np.corrcoef(x, y)[0,1])
 
     return x, y, meanxval, meanyval
 
+plot_1D(('image_shift_minpos_t-0-0', 'image_shift_minpos', 'image_shift_minpos'))
+plot_1D(('image_shift_min_t-0-0', 'image_shift_min', 'image_shift_min'),-1)
 plot_1D(('returntime_mean_t-0-0', 'return time mean 0-0', 'returntime_mean'))
 plot_1D(('returntime_mean_t-84-70', 'return time mean 84-70', 'returntime_mean_84-70'))
 
@@ -207,6 +217,17 @@ plot_xy(('wavelet_high_to_low_t-0-0', 'wavelet_high_to_low', 'wavelet_high_to_lo
 plot_xy(('wavelet_high_to_mid_t-0-0', 'wavelet_high_to_mid', 'wavelet_high_to_mid'),
         ('wavelet_high_to_low_t-0-0', 'wavelet_high_to_low', 'wavelet_high_to_low'),
         nbins=120, meanx=False, meany=False,xmin=0)
+
+plot_xy(('wavelet_high_to_mid_sw', 'wavelet_high_to_mid_sw', 'wavelet_high_to_mid_sw'),
+        ('wavelet_high_to_low_sw', 'wavelet_high_to_low_sw', 'wavelet_high_to_low_sw'),
+        nbins=120, meanx=False, meany=False,xmin=0,xmax=100,ymin=0,ymax=100)
+
+plot_xy(('wavelet_high_to_mid_sw', 'wavelet_high_to_mid_sw', 'wavelet_high_to_mid_sw'),
+        ('wavelet_mid_to_low_sw', 'wavelet_mid_to_low_sw', 'wavelet_mid_to_low_sw'),
+        nbins=120, meanx=False, meany=False,xmin=0,xmax=100,ymin=0,ymax=100)
+plot_xy(('wavelet_high_to_low_sw', 'wavelet_high_to_low_sw', 'wavelet_high_to_low_sw'),
+        ('wavelet_mid_to_low_sw', 'wavelet_mid_to_low_sw', 'wavelet_mid_to_low_sw'),
+        nbins=120, meanx=False, meany=False,xmin=0,xmax=100,ymin=0,ymax=100)
 
 sys.exit()
 

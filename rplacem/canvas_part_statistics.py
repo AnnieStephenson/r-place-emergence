@@ -530,7 +530,7 @@ class CanvasPartStatistics(object):
         self.image_shift_slope.val = np.sum(w * x_c * y_c, axis=1) / np.sum(w * x_c ** 2)
         del crosscorr_all, x_c, y_c, y_mean, x_mean, w, w_sum
         if self.compute_vars['clustering'] <= 1:
-            del self.crosscorr, self.ripley, self.dist_average # keep only ripley_norm
+            del self.crosscorr, self.ripley, self.dist_average # keep only ripley_norm and dist_average_norm
 
         # ratio variables and normalizations
         self.ratios_and_normalizations()
