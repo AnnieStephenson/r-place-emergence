@@ -402,8 +402,8 @@ def compute_complexity_multiscale(image, scales, im_downsampled):
     -----------
     image : np.ndarray
         2D array of shape (H, W) with non-negative integers
-    im_downsampled : dict
-        Dictionary mapping scale -> downsampled 2D array
+    im_downsampled : list
+        list of downsampled images
     
     Returns:
     --------
@@ -421,7 +421,7 @@ def compute_complexity_multiscale(image, scales, im_downsampled):
         
         # Shannon entropy
         S_r = -np.sum(probs * np.log(probs))
-        complexity += (r ** 2) * S_r
+        complexity += (r ** 2) * S_r # linear-r Riemann with delta_r = r/2 (scales grow by powers of two)
     
     # Normalize by total number of pixels
     K_norm = complexity / (H * W)
