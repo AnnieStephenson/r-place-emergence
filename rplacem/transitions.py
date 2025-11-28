@@ -64,7 +64,7 @@ def merge_similar_transitions(transitions, require_same_posttrans=False):
 
 def merge_close_transitions(transitions, sw_width):
     '''
-    Merge the transitions if they are closer than sw_dth to each other 
+    Merge the transitions if they are closer than sw_width to each other 
     '''
     deleted_idx = []
     trans_merged = []
@@ -129,7 +129,7 @@ def find_transitions(t_lims,
     not_at_borderpath_change = np.zeros(t_lims.shape, dtype=bool)
     for i_range in range(len(stable_area_timeranges)):
         not_at_borderpath_change = np.logical_or(not_at_borderpath_change, 
-                                                  np.array((t_lims >= stable_area_timeranges[i_range, 0] + sw_width) & (t_lims <= stable_area_timeranges[i_range, 1])))
+                                                 np.array((t_lims >= stable_area_timeranges[i_range, 0] + sw_width) & (t_lims <= stable_area_timeranges[i_range, 1])))
     intrans_cond = np.logical_and(intrans_cond, not_at_borderpath_change)
     pasttrans_cond = np.array((testvar_post_abs < cutoff_abs) | (testvar_post_rel < 1/cutoff_rel))
 
