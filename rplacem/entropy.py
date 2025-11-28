@@ -1,6 +1,7 @@
 import numpy as np
 import zlib
 import math
+import pywt
 from hilbertcurve.hilbertcurve import HilbertCurve
 from numba import jit
 import sweetsourcod
@@ -8,10 +9,14 @@ from sweetsourcod.lempel_ziv import lempel_ziv_complexity
 from sweetsourcod.hilbert import get_hilbert_mask
 from sweetsourcod.zipper_compress import get_comp_size_bytes
 from sweetsourcod.block_entropy import block_entropy
+from Levenshtein import distance as levenshtein_distance
 import scipy
 from rplacem import var as var
 import os
 import pickle
+import collections
+import skimage
+import warnings
 
 
 def calc_size(pixels):
@@ -272,6 +277,283 @@ def calc_Q_delta_vst(canvas_part_stat, flattening='hilbert_sweetsourcod', compre
             q[j, i] = calc_Q(pixels_vst[j], delta[i], flattening=flattening, compression=compression)
 
     return q, delta
+        
+def fast_mode(x):
+    '''
+    Fast mode computation using bincount for 1D array of non-negative integers.
+    Parameters:
+        x (np.ndarray): 1D array of non-negative integers.
+    Returns:
+        int: The mode of the array (most frequent value).
+    '''
+    return np.argmax(np.bincount(x))
+
+def mode_downsample(image, factor):
+    """
+    Downsample a 2D image by a given factor using mode-based coarse-graining.
+    Handles incomplete blocks at edges by computing mode of available pixels.
+    Uses efficient view_as_blocks for main grid and manual loops only for edges.
+    
+    Parameters:
+    -----------
+    image : np.ndarray
+        2D array of shape (H, W) with non-negative integers
+    factor : int
+        Downsampling factor (block size)
+    
+    Returns:
+    --------
+    np.ndarray
+        Downsampled 2D array of shape (ceil(H/factor), ceil(W/factor))
+    """
+    H, W = image.shape
+    
+    # Calculate output dimensions and main grid size
+    out_h = (H + factor - 1) // factor  # ceil(H / factor)
+    out_w = (W + factor - 1) // factor  # ceil(W / factor)
+    
+    # Main grid dimensions (complete blocks only)
+    main_h, main_w = H // factor, W // factor
+    
+    # Create output array
+    modes = np.zeros((out_h, out_w), dtype=image.dtype)
+    
+    # Process main grid efficiently using view_as_blocks
+    if main_h > 0 and main_w > 0:
+        # Extract complete blocks
+        main_region = image[:main_h * factor, :main_w * factor]
+        blocks = skimage.util.view_as_blocks(main_region, block_shape=(factor, factor))
+        
+        # Flatten blocks and compute modes
+        flattened_blocks = blocks.reshape(main_h, main_w, -1)
+        main_modes = np.apply_along_axis(fast_mode, -1, flattened_blocks)
+        
+        # Fill main region of output
+        modes[:main_h, :main_w] = main_modes
+    
+    # Handle right edge (incomplete width blocks)
+    if main_w < out_w:  # There are incomplete width blocks
+        for i in range(main_h):
+            start_h, end_h = i * factor, (i + 1) * factor
+            start_w, end_w = main_w * factor, W
+
+            block = image[start_h:end_h, start_w:end_w]
+            modes[i, main_w] = fast_mode(block.flatten())
+    
+    # Handle bottom edge (incomplete height blocks)
+    if main_h < out_h:  # There are incomplete height blocks
+        for j in range(main_w):
+            start_h, end_h = main_h * factor, H
+            start_w, end_w = j * factor, (j + 1) * factor
+            
+            block = image[start_h:end_h, start_w:end_w]
+            modes[main_h, j] = fast_mode(block.flatten())
+    
+    # Handle bottom-right corner (incomplete in both dimensions)
+    if main_h < out_h and main_w < out_w:
+        start_h, end_h = main_h * factor, H
+        start_w, end_w = main_w * factor, W
+        
+        corner_block = image[start_h:end_h, start_w:end_w]
+        modes[main_h, main_w] = fast_mode(corner_block.flatten())
+    
+    return modes 
+
+
+def downsampled_images(image, scales=None):
+    """
+    Compute mode-based downsampling for multiple scales and store results.
+    
+    Parameters:
+    -----------
+    image : np.ndarray
+        2D array of shape (H, W) with non-negative integers
+    scales : list[int] or None
+        Optional list of block sizes. If None, uses power-of-2 scales up to min(H,W)//4
+    
+    Returns:
+    --------
+    dict
+        Dictionary mapping scale -> downsampled 2D array
+    """
+    if scales is None:
+        # Generate power-of-2 scales
+        H, W = image.shape
+        max_scale = max(1, min(H, W) // 2)
+        powers = int(np.log2(max_scale)) + 1
+        scales = [1] + [2 ** i for i in range(1, powers + 1) if 2 ** i <= max_scale]
+        if len(scales) == 1:
+            scales.append(2)
+    
+    downsampled_images = []
+    for r in scales:
+        downsampled_im = image.copy() if r == 1 else mode_downsample(image, r)
+        if r==1 or downsampled_im.shape[0]*downsampled_im.shape[1] >= 16:
+            downsampled_images.append(downsampled_im)
+
+    return scales, downsampled_images
+
+def compute_complexity_multiscale(image, scales, im_downsampled):
+    """
+    Compute normalized Zhang complexity K for a single 2D image using mode-based
+    coarse-graining with fast bincount mode computation.
+    
+    Parameters:
+    -----------
+    image : np.ndarray
+        2D array of shape (H, W) with non-negative integers
+    im_downsampled : dict
+        Dictionary mapping scale -> downsampled 2D array
+    
+    Returns:
+    --------
+    float
+        Normalized complexity value for the image
+    """
+    H, W = image.shape
+    
+    complexity = 0    
+    for r, im_down in zip(scales, im_downsampled):
+        # Compute histogram of mode values
+        counts = collections.Counter(im_down.flatten())
+        total = sum(counts.values())
+        probs = np.array([c / total for c in counts.values()])
+        
+        # Shannon entropy
+        S_r = -np.sum(probs * np.log(probs))
+        complexity += (r ** 2) * S_r
+    
+    # Normalize by total number of pixels
+    K_norm = complexity / (H * W)
+    return K_norm
+
+
+def compute_complexity_levenshtein(image):
+    """
+    Computes the Levenshtein-based spatial complexity CL for a single 2D image.
+
+    Parameters:
+        image (2D numpy array): array of shape (R, C) with values 0–31 representing colors.
+
+    Returns:
+        float: the CL complexity score for the image
+    """
+    R, C = image.shape
+    V_r = np.zeros(R - 1, dtype=np.uint8)
+    V_c = np.zeros(C - 1, dtype=np.uint8)
+
+    # Row-wise Levenshtein distances
+    for i in range(R - 1):
+        row1 = ''.join(map(chr, image[i]))
+        row2 = ''.join(map(chr, image[i + 1]))
+        V_r[i] = levenshtein_distance(row1, row2)
+
+    # Column-wise Levenshtein distances
+    for j in range(C - 1):
+        col1 = ''.join(map(chr, image[:, j]))
+        col2 = ''.join(map(chr, image[:, j + 1]))
+        V_c[j] = levenshtein_distance(col1, col2)
+
+    # Outer product and mean for CL
+    A = np.outer(V_r, V_c)
+    CL = A.mean()
+
+    return CL
+
+def compute_wavelet_energies(img, wavelet='haar', mid_scale = 0.1, large_scale = 0.4):
+    """
+    Compute high-, mid-, and low-frequency wavelet energies for a 2D integer-valued image.
+
+    This function performs a multi-level 2D discrete wavelet transform (DWT) on an image of shape (H, W)
+    and extracts three energy measures:
+      1. High-frequency energy   → detail coefficients at level 1 (finest scale)
+      2. Mid-frequency energy    → detail coefficients at the level whose center wavelength is closest
+                                   to 10% of the smaller image dimension
+      3. Low-frequency energy    → detail coefficients at the level whose center wavelength is closest
+                                   to 40% of the smaller image dimension
+
+    Level selection logic:
+      • “level_high_f” is fixed to 1 (detail coefficients of the first DWT).
+      • “level_mid_f” is chosen by finding L in [1..max_level] whose band-center (1.5·2^L) is nearest
+        to 0.10 · min(H, W). If that coincides with level_high_f, it is bumped by +1.
+      • “level_low_f” is chosen by finding L whose band-center is nearest to 0.40 · min(H, W),
+        then adjusted upward if it collides with level_high_f or level_mid_f.
+
+    After selecting levels, the function reconstructs all DWT subbands up through level_low_f and
+    computes:
+      • high_freq_energy = sum of squares of (LH, HL, HH) at level_high_f
+      • mid_freq_energy  = sum of squares of (LH, HL, HH) at level_mid_f
+      • low_freq_energy  = sum of squares of (LH, HL, HH) at level_low_f
+
+    Parameters:
+        img (np.ndarray of shape (H, W)):
+            A 2D array of integer pixel labels (e.g., 0–31). Must be at least large enough to support
+            the chosen wavelet decomposition for the desired levels.
+        wavelet (str):
+            Name of the wavelet to use for DWT (default: 'haar').
+
+    Returns:
+        tuple of floats:
+            (low_freq_energy, mid_freq_energy, high_freq_energy)
+            where each value is the sum of squared detail coefficients (LH, HL, HH) at the corresponding level.
+
+    Raises:
+        ValueError:
+            If the image dimensions are too small to perform at least one level of DWT with the specified wavelet.
+    """
+    # Compute the maximum valid DWT level for this image + wavelet
+    H, W = img.shape
+    min_dim = min(H, W)
+    max_pywt_level = pywt.dwtn_max_level((H, W), wavelet)
+    if max_pywt_level < 1:
+        warnings.warn(
+            f"Image size {img.shape} is too small for wavelet '{wavelet}' decomposition. "
+            "Returning zero energies."
+        )
+        return 0.0, 0.0, 0.0
+
+    target_mid = mid_scale * min_dim
+    target_low = large_scale * min_dim
+
+    levels = np.arange(1, max_pywt_level + 1)
+    scale_centers = 1.5 * (2 ** levels)
+
+    l_ind_mid = np.argmin(np.abs(scale_centers - target_mid))
+    l_ind_low = np.argmin(np.abs(scale_centers - target_low))
+
+    level_high_f = 1
+    level_mid_f = levels[l_ind_mid]
+    level_low_f = levels[l_ind_low]
+
+    # Ensure distinct levels for high, mid, and low
+    if max(levels) > 1:
+        if level_high_f == level_mid_f:
+            level_mid_f = min(level_mid_f + 1, max(levels))
+        if level_low_f == level_high_f or level_low_f == level_mid_f:
+            level_low_f = min(level_low_f + 1, max(levels))
+
+    coeffs = []
+    current = img.copy()
+    for i in range(level_low_f + 1):
+        LL, (LH, HL, HH) = pywt.dwt2(current, wavelet)
+        coeffs.append((LL, LH, HL, HH))
+        current = LL
+
+        if i == level_high_f:
+            high_freq_energy = np.sum(LH**2 + HL**2 + HH**2)
+        if i == level_mid_f:
+            mid_freq_energy = np.sum(LH**2 + HL**2 + HH**2)
+        if i == level_low_f:
+            low_freq_energy = np.sum(LH**2 + HL**2 + HH**2)
+
+    return low_freq_energy, mid_freq_energy, high_freq_energy
+
+
+def compute_wavelet_energies_time(time_series, wavelet='db4'):
+    ca, cd = pywt.dwt(time_series, wavelet=wavelet)
+    low_freq_energy = np.sum(ca**2)
+    high_freq_energy = np.sum(cd**2)
+    return low_freq_energy, high_freq_energy
 
 ###############################################################################################
 # The following functions come from:

@@ -95,6 +95,8 @@ ENV/
 *.bmp
 
 figs/
+data/*.pkl
+data/*.pickle
 data/2022/*.pickle
 data/2023/*.pickle
 data/2022/*.pkl
@@ -129,3 +131,5 @@ paper/
 rplacem/machine_learning/checks_xgboost_regression.py
 
 *.mp4
+
+data/2022/log_*

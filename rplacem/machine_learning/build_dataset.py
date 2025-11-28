@@ -2,6 +2,7 @@ import numpy as np
 import pickle
 import os, sys
 from rplacem import var as var
+import rplacem.utilities as util
 import rplacem.transitions as tran
 import rplacem.entropy as entropy
 import math
@@ -12,10 +13,12 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("-p", "--param_num", default=0) # 0 is nominal result, 1 to 6 are sensitivity analysis
 parser.add_argument("-r", "--run_rejecttimes", default=False)
+parser.add_argument("-k", "--keep_patchworks", default=False)
 arg = parser.parse_args()
+arg.param_num = int(arg.param_num)
 
 param_str = var.param_str_fun(arg.param_num)
-file_path = os.path.join(var.DATA_PATH, 'cpart_stats_'+param_str+'_'+str(var.year)+'.pkl') 
+file_path = os.path.join(var.DATA_PATH, 'cpart_stats_'+param_str+'_'+str(var.year)+'_all.pkl') 
 
 def border_corner_center(xmin,xmax,ymin,ymax):
     # determines if the composition with the input x,y limits 
@@ -87,6 +90,22 @@ def variables_from_cpstat(cps):
                  (cps.frac_redundant_color_changes,     0, 0, 0),#26
                  (cps.entropy,                          1, 0, 0),#27
                  (cps.fractal_dim_weighted,             1, 0, 0),#28
+                 (cps.wavelet_high_to_low,              1, 0, 0),#29 take_ratio_to_average?
+                 (cps.wavelet_mid_to_low,               1, 0, 0),#30 take_ratio_to_average?
+                 (cps.wavelet_high_to_mid,              1, 0, 0),#31 take_ratio_to_average?
+                 (cps.wavelet_high_to_low_tm,           0, 1, 0),#32
+                 (cps.complexity_multiscale,            1, 0, 0),#33
+                 (cps.complexity_levenshtein,           1, 0, 0),#34
+                 (cps.image_shift_slope,                0, 1, 0),#35
+                 (cps.image_shift_min,                  0, 1, 0),#36
+                 (cps.image_shift_minpos,               0, 1, 0),#37
+                 (cps.ripley_norm[0],                   0, 0, 0),#38
+                 (cps.ripley_norm[1],                   0, 0, 0),#39
+                 (cps.ripley_norm[2],                   0, 0, 0),#40
+                 (cps.dist_average_norm,                0, 0, 0),#41       
+                 (cps.frac_pixdiff_inst_vs_inst_downscaled2,0, 0, 0),#42
+                 (cps.frac_pixdiff_inst_vs_inst_downscaled4,0, 0, 0),#43       
+                 (cps.frac_pixdiff_inst_vs_inst_downscaled16pix,0, 0, 0),#44       
                  (cps.variance_multinom,                0, 0, 1),#
                  (cps.returntime[0],                    0, 0, 1),#
                  (cps.instability_norm[0],              0, 0, 1),#
@@ -103,14 +122,18 @@ def variables_from_cpstat(cps):
     return(vars, take_ratio_to_average, coarse_timeranges, take_kendall)
 
 def additional_vars_from_cpstat(cps, t, it, timerange, special_pos):
+    # could also include complexity_multiscale, complexity_levenshtein, wavelet_high_to_low, wavelet_mid_to_low over the sw
     entropy_sw = entropy.normalize_entropy(cps.entropy.val[it] / cps.entropy.ratio_to_sw_mean[it], 
                                       cps.area, t, minmax_entropy=minmax_entropy)
     quadrant_time = np.searchsorted(var.TIME_ENLARGE, t) - 1
     pos_importance = special_pos[0][quadrant_time] + special_pos[1][quadrant_time] + special_pos[2][quadrant_time]
-    return [np.log10(cps.area), t - timerange[0], cps.quadrant, entropy_sw, pos_importance ]
+    wavelet_high_to_mid_sw = cps.wavelet_high_to_mid.val[it] / cps.wavelet_high_to_mid.ratio_to_sw_mean[it] if cps.wavelet_high_to_mid.ratio_to_sw_mean[it]!=0 else 0
+    wavelet_high_to_low_sw = cps.wavelet_high_to_low.val[it] / cps.wavelet_high_to_low.ratio_to_sw_mean[it] if cps.wavelet_high_to_low.ratio_to_sw_mean[it]!=0 else 0
+    wavelet_mid_to_low_sw = cps.wavelet_mid_to_low.val[it] / cps.wavelet_mid_to_low.ratio_to_sw_mean[it] if cps.wavelet_mid_to_low.ratio_to_sw_mean[it]!=0 else 0
+    return [np.log10(cps.area), t - timerange[0], cps.quadrant, entropy_sw, pos_importance, wavelet_high_to_mid_sw, wavelet_high_to_low_sw, wavelet_mid_to_low_sw]
 
 def additional_vars_names():
-    return ['log(area)', 'age', 'canvas_quadrant', 'entropy_sw', 'border_corner_center']
+    return ['log(area)', 'age', 'canvas_quadrant', 'entropy_sw', 'border_corner_center', 'wavelet_high_to_mid_sw', 'wavelet_high_to_low_sw', 'wavelet_mid_to_low_sw']
 
 def set_kendalls_and_ratio(vars, take_ratio, take_kendall):
     for i in np.arange(vars.shape[0]):
@@ -152,7 +175,7 @@ def get_earliness(cpstat, t, trans_starttimes):
         else: # take the closest transition happening after t
             return - min(np.min(possible_earlinesses), earliness_notrans)
 
-def keep_in_sample(cpstat, it, t, trans_starttimes, reject_times, atlas_timerange):
+def keep_in_sample(cpstat, it, t, trans_starttimes, reject_times, atlas_timerange, keep_patchworks=False):
     '''
     Says if this timestep for this composition must be kept in the training+evaluation sample
     '''
@@ -162,7 +185,7 @@ def keep_in_sample(cpstat, it, t, trans_starttimes, reject_times, atlas_timerang
             # exclude times after official end of composition in the atlas. Leave some margin for transition at the end of compositions
             t < atlas_timerange[1] + (3600 if np.any(trans_starttimes) > atlas_timerange[1] else 0) and 
             # exclude times before official beginning of composition in the atlas + sw_width
-            t > atlas_timerange[0] + cpstat.sw_width_sec and
+            (t > atlas_timerange[0] + cpstat.sw_width_sec or keep_patchworks) and
 
             # excludes times where the composition has transition-like values for frac_pixdiff
             (cpstat.frac_pixdiff_inst_vs_swref.val[it] < trans_param[0] or 
@@ -322,7 +345,7 @@ coarse_timerange = cpstatvars[2]
 kendall_tau = cpstatvars[3]
 n_cpstatvars = np.count_nonzero(coarse_timerange == 0)
 n_cpstatvars_coarse = np.count_nonzero(coarse_timerange == 1)
-n_trainingvars = n_cpstatvars * n_traintimes + n_cpstatvars_coarse * n_traintimes_coarse + 5
+n_trainingvars = n_cpstatvars * n_traintimes + n_cpstatvars_coarse * n_traintimes_coarse + 8
 
 ncompmax = 14300 if var.year == 2022 else 6950
 nevents_max = 3600000 # hard-coded (conservative) !!
@@ -375,10 +398,10 @@ for p in range(istart, math.ceil(ncompmax/period)):
                 timeidx = watch_timeidx_coarse if coarse else watch_timeidx
                 n_times = n_traintimes_coarse if coarse else n_traintimes
                 for i in range(0, n_times):
-                    varnames.append(v.label + '_t' + 
+                    varnames.append(v.label + '_t' +
                                     ((str(timeidx[i]) + str(timeidx[i+1]-1)) if (i < n_times-1) else '-0-0'))
             varnames.extend(additional_vars_names())
-
+        
         # time range from the original borderpath of the atlas (though separated when disjoint in space or time)
         atlas_timerange = [ cps.info.border_path_times_orig_disjoint[0][0], 
                             cps.info.border_path_times_orig_disjoint[-1][1] ]
@@ -389,7 +412,7 @@ for p in range(istart, math.ceil(ncompmax/period)):
 
         i_event_thiscomp = 0
         for it, t in enumerate(cps.t_lims):
-            keep = keep_in_sample(cps, it, t, trans_starttimes, reject_times, atlas_timerange)
+            keep = keep_in_sample(cps, it, t, trans_starttimes, reject_times, atlas_timerange, keep_patchworks=arg.keep_patchworks)
             if keep[0]:
                 i_event += 1
                 i_event_thiscomp += 1
@@ -432,7 +455,7 @@ id_idx = id_idx[0:i_event+1]
 print(inputvals.shape)
 print(outputval.shape)
 
-file_path_out = os.path.join(var.DATA_PATH, 'training_data_'+str(n_trainingvars)+'variables_'+param_str+'.pickle')
+file_path_out = os.path.join(var.DATA_PATH, 'training_data_'+str(n_trainingvars)+'variables_'+param_str+('_keeppatchworks' if arg.keep_patchworks else '')+'.pickle')
 with open(file_path_out, 'wb') as handle:
     pickle.dump([inputvals, outputval, varnames, eventtime, id_idx, id_dict, coarse_timerange, kendall_tau, n_traintimes, n_traintimes_coarse, safetimemargin],
                 handle,

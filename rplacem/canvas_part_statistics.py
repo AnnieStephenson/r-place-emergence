@@ -297,6 +297,12 @@ class CanvasPartStatistics(object):
     frac_purple_ref: TimeSeries, npts = n_t_bins + 1
         fraction of purple pixels in reference image versus time
 
+    CLUSTERING -- need compute_vars['clustering'] > 0
+    ripley : array of [ripley_distances] TimeSeries, n_pts = n_t_bins+1
+        Ripley's K function, for 10 different distance bins, recorded in cpst.ripley_distances
+    crosscorr : array of [crosscorr_distances] TimeSeries, n_pts = n_t_bins+1
+        Cross-correlation between images a t and t-1, for different radial shift values r, normalised by r^2
+
     methods
     -------
     private:
@@ -321,7 +327,7 @@ class CanvasPartStatistics(object):
                  cpart,
                  t_interval=300,
                  tmax=var.TIME_TOTAL,
-                 compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1, 'ews': 0, 'void_attack': 0, 'inoutgroup': 0, 'lifetime_vars': 0},
+                 compute_vars={'stability': 3, 'entropy': 3, 'transitions': 3, 'attackdefense': 3, 'other': 1, 'ews': 0, 'void_attack': 0, 'inoutgroup': 0, 'lifetime_vars': 0, 'clustering': 1},
                  sliding_window=14400,
                  sliding_window_edge = 3600,
                  trans_param=[0.3, 6],#, 2*3600, 4*3600],
@@ -435,9 +441,11 @@ class CanvasPartStatistics(object):
         self.n_ingrouponly_users = ts.TimeSeries()
         self.n_outgrouponly_users = ts.TimeSeries()
         self.n_bothinout_users = ts.TimeSeries()
+        self.num_edge_pixels = ts.TimeSeries()
         self.n_bothinout_users_lifetime = None
         self.n_ingrouponly_users_lifetime = None
         self.n_outgrouponly_users_lifetime = None
+        self.outgroup_inds = None
 
         self.returntime = None
         self.returnrate = ts.TimeSeries()
@@ -461,7 +469,31 @@ class CanvasPartStatistics(object):
 
         self.fractal_dim_mask_median = ts.TimeSeries()
         self.fractal_dim_weighted = ts.TimeSeries()
+        self.complexity_multiscale = ts.TimeSeries()
+        self.complexity_levenshtein = ts.TimeSeries()
+        self.wavelet_high_freq = ts.TimeSeries()
+        self.wavelet_mid_freq = ts.TimeSeries()
+        self.wavelet_low_freq = ts.TimeSeries()
+        self.wavelet_low_freq_tm = ts.TimeSeries()
+        self.wavelet_high_freq_tm = ts.TimeSeries()
         self.ssim_stab_ref = ts.TimeSeries()
+
+        self.ripley = None # array of TimeSeries, created in compute_variables
+        typicalsize = math.sqrt(self.area_rectangle)
+        self.ripley_distances = np.array([2, max(3, int(0.2*typicalsize)), max(5, int(0.5*typicalsize))]) #np.array([1, 2, 3, 4, 6, 8, 10, 15, 23, 35, 50])
+        self.ripley_norm = None 
+        self.dist_average = ts.TimeSeries()
+        self.dist_average_norm = ts.TimeSeries()
+        self.crosscorr = None # array of TimeSeries, created in compute_variables
+        dist_tmp = [0, 1, 2, 3, 4, 5, 7, 9, 11, 14, 17, 20, 25, 30, 35, 40, 50, 70, 100, 150]
+        self.crosscorr_distances = []
+        for d in dist_tmp:
+            if d <= int(0.8 * typicalsize):
+                self.crosscorr_distances.append(d)
+        self.crosscorr_distances = np.array(self.crosscorr_distances)
+        self.image_shift_min = ts.TimeSeries()
+        self.image_shift_minpos = ts.TimeSeries()
+        self.image_shift_slope = ts.TimeSeries()
 
         self.transition_param = trans_param
         self.n_transitions = None
@@ -473,12 +505,32 @@ class CanvasPartStatistics(object):
         else:
             ref_im_const = None
 
+        # find continuous time ranges over which the border_path of the composition does not change significantly
+        self.stable_borders_timeranges = cpart.stable_borderpath_timeranges()
+
         # Magic happens here
         comp.main_variables(cpart, self, print_progress=self.verbose, delete_dir=dont_keep_dir,
                             flattening=flattening,
                             compression=compression,
                             start_pixels=start_pixels,
                             ref_im_const=ref_im_const)
+
+        # extract shift quantities from cross correlation: minimum, position of the minimum, and slope of a linear fit
+        crosscorr_all = np.array([self.crosscorr[i].val for i in range(1, len(self.crosscorr_distances))]).T
+        self.image_shift_minpos.val = self.crosscorr_distances[1+np.argmin(crosscorr_all, axis=1)]
+        self.image_shift_min.val = np.min(crosscorr_all, axis=1)
+        # slope using the direct least squares formula
+        w = np.asarray([1]*(int(len(self.crosscorr_distances)/2)-1) # weights to increase the influence of sparser high distance points
+                     + [2]*(len(self.crosscorr_distances)-int(len(self.crosscorr_distances)/2)))
+        w_sum = np.sum(w)
+        x_mean = np.sum(w * self.crosscorr_distances[1:]) / w_sum
+        y_mean = np.sum(w * crosscorr_all, axis=1, keepdims=True) / w_sum
+        x_c = self.crosscorr_distances[1:] - x_mean
+        y_c = crosscorr_all - y_mean
+        self.image_shift_slope.val = np.sum(w * x_c * y_c, axis=1) / np.sum(w * x_c ** 2)
+        del crosscorr_all, x_c, y_c, y_mean, x_mean, w, w_sum
+        if self.compute_vars['clustering'] <= 1:
+            del self.crosscorr, self.ripley, self.dist_average # keep only ripley_norm and dist_average_norm
 
         # ratio variables and normalizations
         self.ratios_and_normalizations()
@@ -497,9 +549,6 @@ class CanvasPartStatistics(object):
             util.save_movie(os.path.join(dirpath, 'attack_defense_ratio'), fps=15)
             util.save_movie(os.path.join(dirpath, 'attack_defense_Ising'), fps=6)
 
-        # find continuous time ranges over which the border_path of the composition does not change significantly
-        self.stable_borders_timeranges = cpart.stable_borderpath_timeranges()
-
         # find transitions
         if compute_vars['transitions'] > 0:
             self.search_transitions(cpart)
@@ -507,16 +556,14 @@ class CanvasPartStatistics(object):
                 self.refimage_pretrans = None
                 self.refimage_posttrans = None
         else:
-            self.n_transitions == 0
+            self.n_transitions = 0
 
         # calculate variance over ~10 most recent timesteps
-        self.frac_pixdiff_inst_vs_swref.set_variance()
-        self.frac_pixdiff_inst_vs_inst_norm.set_variance()
         def rolling_mean_squares(v, nroll):
             sq = pd.Series(0.5 * (nroll/(nroll-1)) * v**2)
             return np.array(sq.rolling(window=nroll, min_periods=1).mean())
         self.variance_from_frac_pixdiff_inst.val = rolling_mean_squares(self.frac_pixdiff_inst_vs_inst_norm.val, 
-                                                                        self.entropy.sw_width_ews)
+                                                                        self.frac_pixdiff_inst_vs_inst_norm.sw_width_ews)
 
         # calculate kendall tau's
         self.returnrate.set_kendall_tau()
@@ -532,9 +579,7 @@ class CanvasPartStatistics(object):
         self.autocorr_dissimil.set_kendall_tau()
 
         # Memory savings here 
-        # TODO: note from Annie: changed these to my preferences, but we should discuss
         if compute_vars['attackdefense'] < 2:
-            # note from Guillaume : these variables don't seem to be used anywhere, and the info is contained in the frac_X variables
             self.n_defense_changes = ts.TimeSeries()
             self.n_defenseonly_users = ts.TimeSeries()
             self.n_attack_users = ts.TimeSeries()
@@ -623,6 +668,9 @@ class CanvasPartStatistics(object):
         self.frac_pixdiff_inst_vs_swref_forwardlook = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_swref_forwardlook.val, self.area_vst.val, 0, 0) )
         self.frac_pixdiff_inst_vs_inst_norm = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_inst.val / self.t_norm, self.area_vst.val, 0, 0) )
         self.frac_pixdiff_inst_vs_stable_norm = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_stable.val / self.t_norm, self.area_vst.val, 0, 0) )
+        self.frac_pixdiff_inst_vs_inst_downscaled2 = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_inst_downscaled2.val / self.t_norm, self.area_vst.val/2**2, 0, 0) )
+        self.frac_pixdiff_inst_vs_inst_downscaled4 = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_inst_downscaled4.val / self.t_norm, self.area_vst.val/4**2, 0, 0) )
+        self.frac_pixdiff_inst_vs_inst_downscaled16pix = self.ts_init( util.divide_treatzero(self.diff_pixels_inst_vs_inst_downscaled16pix.val / self.t_norm, self.area_vst.val/self.maxscale**2, 0, 0) )
 
         # users
         self.n_users_norm = self.ts_init( util.divide_treatzero(self.n_users.val / self.t_norm, self.area_vst.val, 0, 0) )
@@ -650,6 +698,15 @@ class CanvasPartStatistics(object):
         self.entropy_bmpnorm.val[0] = 0
         idx_dividebyzero = np.where(self.area_vst.val == 0)
         self.entropy.val[idx_dividebyzero] = self.entropy_bmpnorm.val[idx_dividebyzero] * 3.2  # typical factor hard-coded here
+        # for wavelets
+        self.wavelet_high_to_low = self.ts_init(util.divide_treatzero(self.wavelet_high_freq.val, self.wavelet_low_freq.val)) # sets nan to 1
+        self.wavelet_mid_to_low = self.ts_init(util.divide_treatzero(self.wavelet_mid_freq.val, self.wavelet_low_freq.val))
+        self.wavelet_high_to_mid = self.ts_init(util.divide_treatzero(self.wavelet_high_freq.val, self.wavelet_mid_freq.val))
+        self.wavelet_high_to_low_tm = self.ts_init(util.divide_treatzero(self.wavelet_high_freq_tm.val, self.wavelet_low_freq_tm.val)) # sets nan to 1
+        #clustering
+        if self.ripley_distances[0] == 2:
+            self.ripley_norm[0] = self.ts_init( util.divide_treatzero(self.ripley_norm[0].val, np.sqrt(self.area_vst.val)) )
+        self.image_shift_minpos = self.ts_init( util.divide_treatzero(self.image_shift_minpos.val, np.sqrt(self.area_vst.val)) )
         # other
         self.frac_moderator_changes = self.ts_init( util.divide_treatzero(self.n_moderator_changes.val, self.n_changes.val, 0, 0) )
         self.frac_cooldowncheat_changes = self.ts_init( util.divide_treatzero(self.n_cooldowncheat_changes.val, self.n_changes.val, 0, 0) )
@@ -713,6 +770,21 @@ class CanvasPartStatistics(object):
         self.frac_pixdiff_inst_vs_inst_norm.label = 'frac_pixdiff_inst_vs_inst'
         self.frac_pixdiff_inst_vs_inst_norm.savename = filepath('fraction_of_differing_pixels_normalized')
 
+        self.frac_pixdiff_inst_vs_inst_downscaled2.desc_long = 'Fraction of pixels differing from the instantaneous image in the previous step, downscaled by factor 2.'
+        self.frac_pixdiff_inst_vs_inst_downscaled2.desc_short = 'frac of pixels differing from previous-step image / '+n_min_tunit+'downscaled by 2.'
+        self.frac_pixdiff_inst_vs_inst_downscaled2.label = 'frac_pixdiff_inst_vs_inst_downscaled2'
+        self.frac_pixdiff_inst_vs_inst_downscaled2.savename = filepath('fraction_of_differing_pixels_downscaled2')
+
+        self.frac_pixdiff_inst_vs_inst_downscaled4.desc_long = 'Fraction of pixels differing from the instantaneous image in the previous step, downscaled by factor 4.'
+        self.frac_pixdiff_inst_vs_inst_downscaled4.desc_short = 'frac of pixels differing from previous-step image / '+n_min_tunit+'downscaled by 4.'
+        self.frac_pixdiff_inst_vs_inst_downscaled4.label = 'frac_pixdiff_inst_vs_inst_downscaled4'
+        self.frac_pixdiff_inst_vs_inst_downscaled4.savename = filepath('fraction_of_differing_pixels_downscaled4')
+
+        self.frac_pixdiff_inst_vs_inst_downscaled16pix.desc_long = 'Fraction of pixels differing from the instantaneous image in the previous step, downscaled by factor 16.'
+        self.frac_pixdiff_inst_vs_inst_downscaled16pix.desc_short = 'frac of pixels differing from previous-step image / '+n_min_tunit+'downscaled to 16 pixels.'
+        self.frac_pixdiff_inst_vs_inst_downscaled16pix.label = 'frac_pixdiff_inst_vs_inst_downscaled16pix'
+        self.frac_pixdiff_inst_vs_inst_downscaled16pix.savename = filepath('fraction_of_differing_pixels_downscaled16pix')
+
         self.frac_pixdiff_inst_vs_swref.desc_long = 'Fraction of pixels differing from the reference image in the preceding sliding window'
         self.frac_pixdiff_inst_vs_swref.desc_short = 'frac of pixels differing from sliding-window ref image'
         self.frac_pixdiff_inst_vs_swref.label = 'frac_pixdiff_inst_vs_swref'
@@ -738,6 +810,16 @@ class CanvasPartStatistics(object):
         self.entropy.label = 'entropy'
         self.entropy.savename = filepath('entropy')
 
+        self.complexity_levenshtein.desc_long = 'Levenshtein-based spatial complexity CL score'
+        self.complexity_levenshtein.desc_short = 'Levenshtein complexity CL'
+        self.complexity_levenshtein.label = 'complexity_levenshtein'
+        self.complexity_levenshtein.savename = filepath('complexity_levenshtein')
+
+        self.complexity_multiscale.desc_long = 'normalized Zhang complexity K using mode-based coarse-graining'
+        self.complexity_multiscale.desc_short = 'multiscale complexity K'
+        self.complexity_multiscale.label = 'complexity_multiscale'
+        self.complexity_multiscale.savename = filepath('complexity_multiscale')
+
         self.frac_attack_changes.desc_long = 'Fraction of the number of pixel changes that are attacking. \
             Attack is defined compared to the stable reference image on a sliding window.'
         self.frac_attack_changes.desc_short = 'fraction of attack changes'
@@ -761,6 +843,27 @@ class CanvasPartStatistics(object):
         self.frac_bothattdef_users.desc_short = 'fraction of users both attacking and defending'
         self.frac_bothattdef_users.label = 'frac_bothattdef_users'
         self.frac_bothattdef_users.savename = filepath('fraction_of_users_bothattackingdefending')
+
+        # same for wavelet_high_to_low, the ratio of wavelet high frequency to low frequency
+        self.wavelet_high_to_low.desc_long = 'Ratio of image spatial wavelet high frequency to low frequency.'
+        self.wavelet_high_to_low.desc_short = 'wavelet high to low frequency ratio'
+        self.wavelet_high_to_low.label = 'wavelet_high_to_low'
+        self.wavelet_high_to_low.savename = filepath('wavelet_high_to_low')
+
+        self.wavelet_mid_to_low.desc_long = 'Ratio of image spatial wavelet mid frequency to low frequency.'
+        self.wavelet_mid_to_low.desc_short = 'wavelet mid to low frequency ratio'
+        self.wavelet_mid_to_low.label = 'wavelet_mid_to_low'
+        self.wavelet_mid_to_low.savename = filepath('wavelet_mid_to_low')
+
+        self.wavelet_high_to_mid.desc_long = 'Ratio of image spatial wavelet high frequency to mid frequency.'
+        self.wavelet_high_to_mid.desc_short = 'wavelet high to mid frequency ratio'
+        self.wavelet_high_to_mid.label = 'wavelet_high_to_mid'
+        self.wavelet_high_to_mid.savename = filepath('wavelet_high_to_mid')
+
+        self.wavelet_high_to_low_tm.desc_long = 'Ratio of temporal wavelet high frequency to low frequency.'
+        self.wavelet_high_to_low_tm.desc_short = 'wavelet high to low frequency ratio (temporal)'
+        self.wavelet_high_to_low_tm.label = 'wavelet_high_to_low_tm'
+        self.wavelet_high_to_low_tm.savename = filepath('wavelet_high_to_low_tm')
 
         if self.compute_vars['attackdefense'] > 0:
             self.returnrate.desc_long ='fraction of attacked pixels that recover within 5 minutes'
@@ -795,6 +898,54 @@ class CanvasPartStatistics(object):
             self.n_used_colors[k].label = 'n_colors_'+labs[k]
             self.n_used_colors[k].savename = filepath(labs[k]+'_n_used_colors')
 
+        if self.compute_vars['clustering'] > 0:
+            dist = [str(self.ripley_distances[0]), '20\% of size', '50\% of size']
+            for k in range(0,len(self.ripley_distances)):
+                if self.compute_vars['clustering'] > 1:
+                    self.ripley[k].desc_long = 'Ripley\'s K function, at distance ' + dist[k]  
+                    self.ripley[k].desc_short = 'Ripley\'s K function [d=' + dist[k] + ']'
+                    self.ripley[k].label = 'ripley_d='+dist[k]
+                    self.ripley[k].savename = filepath('ripley_kfunction_d'+dist[k])
+
+                self.ripley_norm[k].desc_long = 'Ripley\'s K function, at distance ' + dist[k] + 'normalized to randomized pixel changes positions and to size'
+                self.ripley_norm[k].desc_short = 'Ripley\'s K function [d=' + dist[k] + '] normalized to randomized'
+                self.ripley_norm[k].label = 'ripley_norm_d='+dist[k]
+                self.ripley_norm[k].savename = filepath('ripley_k_norm_d'+dist[k])
+
+            # same for crosscorr
+            if self.compute_vars['clustering'] > 1:
+                for k in range(0, len(self.crosscorr_distances)):
+                    self.crosscorr[k].desc_long = 'Cross-correlation between t and t-1 images at shift ' + str(self.crosscorr_distances[k])
+                    self.crosscorr[k].desc_short = 'Cross-correlation t vs t-1 [' + str(self.crosscorr_distances[k]) + ']'
+                    self.crosscorr[k].label = 'crosscorr_d='+str(self.crosscorr_distances[k])
+                    self.crosscorr[k].savename = filepath('crosscorr_d'+str(self.crosscorr_distances[k]))
+
+            self.image_shift_min.desc_long = 'Minimum of normalized cross-correlation (shift) between t and t-1 images'
+            self.image_shift_min.desc_short = 'min value cross-correlation shift t vs t-1'
+            self.image_shift_min.label = 'image_shift_min'
+            self.image_shift_min.savename = filepath('image_shift_min')
+
+            self.image_shift_minpos.desc_long = 'Shift at the minimum normalized cross-correlation between t and t-1 images'
+            self.image_shift_minpos.desc_short = 'Shift at min value cross-correlation shift t vs t-1'
+            self.image_shift_minpos.label = 'image_shift_minpos'
+            self.image_shift_minpos.savename = filepath('image_shift_minpos')
+
+            self.image_shift_slope.desc_long = 'Slope of the linear fit to the normalized cross-correlation between t and t-1 images'
+            self.image_shift_slope.desc_short = 'Slope of linear fit to cross-correlation (shift) t vs t-1'
+            self.image_shift_slope.label = 'image_shift_slope'
+            self.image_shift_slope.savename = filepath('image_shift_slope')
+
+            if self.compute_vars['clustering'] > 1:
+                self.dist_average.desc_long = 'Average distance between all pairs of pixel changes'
+                self.dist_average.desc_short = 'Average distance between pix changes'
+                self.dist_average.label = 'distance_between_changes'
+                self.dist_average.savename = filepath('distance_between_changes')
+
+            self.dist_average_norm.desc_long = 'Average distance between all pairs of pixel changes, normalized to randomized pixel changes positions and to size'
+            self.dist_average_norm.desc_short = 'Average distance between pix changes, norm to random'
+            self.dist_average_norm.label = 'distance_between_changes_norm'
+            self.dist_average_norm.savename = filepath('distance_between_changes_norm')
+
         self.cumul_attack_timefrac.desc_long = 'Fraction of the time that all pixels spent in an attack color [s]'
         self.cumul_attack_timefrac.desc_short = 'frac of time spent in attack colors [s]'
         self.cumul_attack_timefrac.label = 'cumulated_attack_timefrac'
@@ -802,6 +953,7 @@ class CanvasPartStatistics(object):
 
         self.frac_moderator_changes.desc_long = 'Fraction of active pixels changes issued from moderators'
         self.frac_moderator_changes.desc_short = 'fraction of moderator changes'
+        self.frac_moderator_changes.label = 'frac_mod_changes'
         self.frac_moderator_changes.savename = filepath('fraction_moderator_changes')
 
         self.frac_cooldowncheat_changes.desc_long = 'Fraction of active pixels changes that break the 5-minute per-user cooldown'

@@ -2,20 +2,15 @@ import os
 import pickle
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
-from PIL import Image
-import shutil
-import math
 from rplacem import var as var
 import rplacem.utilities as util
-import rplacem.plot_utilities as plot
 import rplacem.entropy as entropy
 import rplacem.fractal_dim as fractal_dim
-import scipy
 import warnings
-import sparse as sp
 from memory_profiler import profile
-import gc
+from scipy.spatial.distance import pdist
+from scipy.signal import fftconvolve
+import copy
 
 def count_image_differences(pixels1, pixels2, npix, coor_idx, indices=None):
     ''' Count the number of pixels (at given *indices* of coordinates of cpart *cpart*) that differ
@@ -122,6 +117,11 @@ def calc_stability(stable_timefrac, inds_active, compute_average):
         n_used_colors = num_used_colors_perpix
 
     return stability, runnerup_timeratio, n_used_colors
+
+def label_edge_map(label_img):
+    dy, dx = np.gradient(label_img.astype(float))
+    edges = (dx != 0) | (dy != 0)
+    return edges.astype(np.uint8)
 
 
 def calc_stable_cols(time_spent_in_col):
@@ -315,6 +315,7 @@ def main_variables(cpart,
     inout = cpst.compute_vars['inout']
     lifetm = cpst.compute_vars['lifetime_vars']
     void_attack = cpst.compute_vars['void_attack']
+    cluster = cpst.compute_vars['clustering']
     if save_memory is None:
         save_memory = (cpart.num_pix() > 3e5) # do the slower memory-saving method when the canvaspart is larger than 300,000 pixels
 
@@ -325,7 +326,7 @@ def main_variables(cpart,
         warnings.warn('Some images were required to be stored, but with delete_dir=True, the full directory will be removed! ')
 
     # Canvas part data
-    cpart.set_canvassection_coordinds(rerun=True) # TODO: can remove rerun=True after rerunning canvas part
+    cpart.set_canvassection_coordinds() 
     coor_offset = cpart.coords_offset()  # for transformation from 1D to 2D pixels
 
     # Initialize variables for first time iteration
@@ -336,6 +337,8 @@ def main_variables(cpart,
     current_color = cpart.white_image(1) if start_pixels is None else start_pixels
     if instant > 0 or tran > 0:
         previous_colors = cpart.white_image(2, images_number=cpst.sw_width) # image in the sw_width previous timesteps
+    if cluster > 0:
+        previous_downscaled_im = None
     previous_stable_color = cpart.white_image(1)  # stable image in the previous timestep
     if save_memory:
         active_colors_vst = np.zeros((cpst.sw_width, cpart.num_pix(), var.NUM_COLORS), dtype=bool)
@@ -403,6 +406,7 @@ def main_variables(cpart,
     cpst.n_ingrouponly_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.n_outgrouponly_users = cpst.ts_init(np.zeros(n_tlims))
     cpst.n_bothinout_users = cpst.ts_init(np.zeros(n_tlims))
+    cpst.num_edge_pixels = cpst.ts_init(np.zeros(n_tlims))
     cpst.frac_attack_changes_image = np.full((n_tlims, cpart.width(1), cpart.width(0)), 1, dtype=np.float16) if attdef > 1 else None
     cpst.size_uncompressed = cpst.ts_init(np.zeros(n_tlims))
     cpst.size_compressed = cpst.ts_init(np.zeros(n_tlims))
@@ -417,6 +421,17 @@ def main_variables(cpart,
     cpst.n_users_sw = cpst.ts_init( np.zeros(n_tlims) )
     cpst.fractal_dim_weighted = cpst.ts_init( np.full(n_tlims, 2) )
     cpst.fractal_dim_mask_median = cpst.ts_init( np.full(n_tlims, 2) )
+    cpst.complexity_multiscale = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.complexity_levenshtein = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.diff_pixels_inst_vs_inst_downscaled2 = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.diff_pixels_inst_vs_inst_downscaled4 = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.diff_pixels_inst_vs_inst_downscaled16pix = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.maxscale = None
+    cpst.wavelet_high_freq = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.wavelet_mid_freq = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.wavelet_low_freq = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.wavelet_low_freq_tm = cpst.ts_init( np.zeros(n_tlims) )
+    cpst.wavelet_high_freq_tm = cpst.ts_init( np.zeros(n_tlims) )
     cpst.frac_black_px = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.frac_purple_px = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
     cpst.frac_black_ref = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
@@ -427,6 +442,22 @@ def main_variables(cpart,
     ingroup_users = np.array([])
     outgroup_users = np.array([])
     bothinout_users = np.array([])
+    outgroup_inds = np.array([], dtype=np.int32)
+    if cluster > 0:
+        cpst.ripley = np.empty(len(cpst.ripley_distances), dtype=object)
+        cpst.ripley_norm = np.empty(len(cpst.ripley_distances), dtype=object)
+        for i in range(0, len(cpst.ripley_distances)):
+            cpst.ripley[i] = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
+            cpst.ripley_norm[i] = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
+        cpst.crosscorr = np.empty(len(cpst.crosscorr_distances), dtype=object)
+        for i in range(0, len(cpst.crosscorr_distances)):
+            cpst.crosscorr[i] = cpst.ts_init(np.zeros(n_tlims, dtype=np.float32))
+        cpst.dist_average = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
+        cpst.dist_average_norm = cpst.ts_init(np.ones(n_tlims, dtype=np.float32))
+        cpst.ripley_ref = None
+        cpst.avdist_ref = None
+
+
 
     # output paths
     out_path = os.path.join(var.FIGS_PATH, cpart.out_name())
@@ -480,6 +511,16 @@ def main_variables(cpart,
     # For identifying in/outgroup by comparing to sliding window looking forward and backward. Lists stay empty if inout is 0.
     agreeing_changes_vst = []
     t_inds_active_vst = []
+
+    # image with radial distance from the center, for cross-correlation computation
+    if cluster > 0:
+        dummy_image = cpart.white_image(2).astype(np.float32)
+        H, W = fftconvolve(dummy_image, dummy_image, mode='full').shape
+        y, x = np.indices((H, W))
+        image_radius_flat = np.round(np.sqrt((y - H//2)**2 + (x - W//2)**2)).astype(int).ravel()
+        del y, x, dummy_image, H, W
+        crosscorr_bins = np.append(cpst.crosscorr_distances, 10000)
+        crosscorr_radial_ref, _ = np.histogram(image_radius_flat, bins=crosscorr_bins)
 
     # LOOP over time steps
     i_fraction_print = 0
@@ -563,7 +604,6 @@ def main_variables(cpart,
                                 previous_colors, current_color )
             stable_colors_prev = np.copy(stable_colors)
             
-
         # ATTACK/DEFENSE VS REFERENCE IMAGE
         if attdef > 0:
             # Calculate the (normalized) cumulative attack time over all pixels in this timestep
@@ -604,6 +644,7 @@ def main_variables(cpart,
                     ingroup_users = np.concatenate((ingroup_users, np.atleast_1d(n_changes_and_users_result[4])))
                     outgroup_users = np.concatenate((outgroup_users, np.atleast_1d(n_changes_and_users_result[5])))
                     bothinout_users = np.concatenate((bothinout_users, np.atleast_1d(n_changes_and_users_result[6])))
+                    outgroup_inds = np.concatenate((outgroup_inds, np.atleast_1d(n_changes_and_users_result[7])))
 
 
         # INSTANTANEOUS IMAGES: includes entropy and fractal dimension calculations
@@ -616,7 +657,7 @@ def main_variables(cpart,
             cpst.diff_pixels_stable_vs_swref.val[i] = np.count_nonzero(stable_colors[inds_coor_active, 0] - ref_color[inds_coor_active])
             cpst.diff_pixels_inst_vs_stable.val[i] = np.count_nonzero(current_color[inds_coor_active] - previous_stable_color[inds_coor_active])
         if instant > 0 or tran > 1:
-            # ENTROPY
+            # ENTROPY AND OTHER COMPLEXITY METRICS
             cpst.diff_pixels_inst_vs_inst.val[i] = np.count_nonzero(current_color[inds_coor_active] - previous_colors[(i-1) % cpst.sw_width, inds_coor_active])
 
             # Create the png and bmp files from the current image, and store their sizes
@@ -632,10 +673,54 @@ def main_variables(cpart,
                                            cpst.size_compressed.val, cpst.size_uncompressed.val,
                                            cpart_dir(out_dir_time), True, instant < 3)
             else:
-                # TODO finish implementing this
-                #cpst.size_compressed_ref.val[i] = entropy.calc_compressed_size(ref_color, flattening=flattening, compression=compression) 
                 cpst.size_compressed.val[i] = entropy.calc_compressed_size(pix_tmp, flattening=flattening, compression=compression)
                 cpst.size_uncompressed.val[i] = entropy.calc_size(pix_tmp)
+            
+            # Wavelet analysis for complexity metric
+            cpst.wavelet_low_freq.val[i], cpst.wavelet_mid_freq.val[i], cpst.wavelet_high_freq.val[i] = entropy.compute_wavelet_energies(pix_tmp)
+
+            # Wavelet time series
+            cpst.wavelet_low_freq_tm.val[i], cpst.wavelet_high_freq_tm.val[i] = entropy.compute_wavelet_energies_time(cpst.diff_pixels_inst_vs_swref.val[max(0, i-cpst.sw_width):i])
+
+            # Multiscale complexity
+            scales = None if cpst.maxscale is None else [2 ** i for i in range(0, int(np.log2(cpst.maxscale)+0.1)+1)]
+            scales, downscaled_im = entropy.downsampled_images(pix_tmp, scales=scales)
+            if cpst.maxscale is None:
+                cpst.maxscale = scales[-1]
+            cpst.complexity_multiscale.val[i] = entropy.compute_complexity_multiscale(pix_tmp, scales, downscaled_im)
+
+            # fraction of differing pixels with downscaled images
+            if previous_downscaled_im is None:
+                previous_downscaled_im = copy.deepcopy(downscaled_im)
+            cpst.diff_pixels_inst_vs_inst_downscaled2.val[i] = np.count_nonzero(downscaled_im[1]-previous_downscaled_im[1]) if len(downscaled_im) > 1 else 0
+            cpst.diff_pixels_inst_vs_inst_downscaled4.val[i] = np.count_nonzero(downscaled_im[2]-previous_downscaled_im[2]) if len(downscaled_im) > 2 else cpst.diff_pixels_inst_vs_inst_downscaled2.val[i]
+            cpst.diff_pixels_inst_vs_inst_downscaled16pix.val[i] = np.count_nonzero(downscaled_im[-1]-previous_downscaled_im[-1]) if len(downscaled_im) > 1 else 0
+            previous_downscaled_im = copy.deepcopy(downscaled_im)
+
+            # Levenshtein complexity
+            cpst.complexity_levenshtein.val[i] = entropy.compute_complexity_levenshtein(pix_tmp)
+
+        # create instantaneous images.
+        if instant > 0 or tran > 1:
+            cpst.true_image[i] = np.copy(pix_tmp)
+            del pix_tmp
+
+        if cluster > 0:
+            # Ripley's K function and average distance between pixel changes
+            # When must the reference values (using random locations of pixels) be calculated? At t=0 or when the borders changed
+            # meaning whenever the current time is less than a time step away from the start of a cpst.stable_borders_timeranges
+            change_of_borders = np.any((t_lims[i] < cpst.stable_borders_timeranges[:, 0] + cpst.t_interval) & (t_lims[i] >= cpst.stable_borders_timeranges[:, 0]))
+            if change_of_borders:
+                cpst.ripley_ref = None
+                cpst.avdist_ref = None
+
+            # actual calculation
+            calc_changes_clustering(cpst, i, 
+                                    cpart.pixchanges_coords_offset(t_inds_active), coor_offset[:, inds_coor_active])
+
+            # cross correlation
+            cross_correlation(cpst, i, itmin, image_radius_flat, crosscorr_bins, crosscorr_radial_ref)
+            
         if tran > 0 or instant > 0:
             previous_colors[i_replace] = np.copy(current_color)
 
@@ -649,11 +734,6 @@ def main_variables(cpart,
                             stable_colors],
                             handle,
                             protocol=pickle.HIGHEST_PROTOCOL)
-
-        # create instantaneous images.
-        if instant > 0 or tran > 1:
-            cpst.true_image[i] = np.copy(pix_tmp)
-            del pix_tmp
 
         # Create attack/defense images.
         if tran > 0:
@@ -693,7 +773,7 @@ def main_variables(cpart,
         del time_spent_in_color
 
     
-    # FRACTAL DIMENSION
+    # FRACTAL DIMENSION AND OTHER COMPLEXITY MEASURES
     if instant > 0:
         [cpst.fractal_dim_mask_median.val,
          cpst.fractal_dim_weighted.val] = fractal_dim.calc_from_image(cpst, shift_avg=True)
@@ -747,6 +827,11 @@ def main_variables(cpart,
                 cpst.n_outgrouponly_users.val[back_index+1] = len(outgroup_users_step) - len(bothinout_users_step)
                 cpst.n_ingrouponly_users.val[back_index+1] = len(ingroup_users_step) - len(bothinout_users_step)
 
+                if inout > 1:
+                    edges = label_edge_map(cpst.refimage_sw[back_index])
+                    cpst.num_edge_pixels.val[back_index] = np.count_nonzero(edges)
+
+
             cpst.diff_pixels_inst_vs_swref_forwardlook.val[back_index+1] = np.count_nonzero(previous_colors[i_replace, inds_coor_active] - ref_color[inds_coor_active])
 
     # LIFETIME VALUES
@@ -762,6 +847,7 @@ def main_variables(cpart,
             cpst.n_outgrouponly_users_lifetime = len(np.unique(outgroup_users)) - n_intersect_in_out
             cpst.n_ingrouponly_users_lifetime = len(np.unique(ingroup_users)) - n_intersect_in_out
             cpst.n_bothinout_users_lifetime = len(np.unique(bothinout_users)) + n_intersect_in_out
+            cpst.outgroup_inds = outgroup_inds
 
     # These calculations can be done on the final arrays
     inds_active_all = inds_active_all = np.where((cpart.pixel_changes['active']==True) & (cpart.pixel_changes['seconds'] < cpst.tmax))[0]
@@ -968,7 +1054,6 @@ def num_changes_and_users(cpart, cpst,
         if t_step >= cpst.sw_width:
             # Determine the active indices 'forward' in time, accounting for the sliding window
             t_inds_active_fwd = t_inds_active_vst[t_step - cpst.sw_width]
-
             agreeing_changes_fwd = np.array(ref_image[cpart.coordidx(t_inds_active_fwd)] == cpart.color(t_inds_active_fwd), np.bool_)
             if t_step - cpst.sw_width >= cpst.sw_width_edge:
                 agreeing_changes_bkwd = agreeing_changes_vst[t_step - cpst.sw_width]
@@ -978,6 +1063,7 @@ def num_changes_and_users(cpart, cpst,
                 ingroup_changes = agreeing_changes_fwd
 
             outgroup_changes = np.invert(ingroup_changes)
+            outgroup_inds = t_inds_active_fwd[outgroup_changes]
             cpst.n_ingroup_changes.val[t_step + 1 - cpst.sw_width] = np.count_nonzero(ingroup_changes)
             cpst.n_outgroup_changes.val[t_step + 1 - cpst.sw_width] = np.count_nonzero(outgroup_changes)
 
@@ -1025,6 +1111,7 @@ def num_changes_and_users(cpart, cpst,
         result.append(ingroup_users)
         result.append(outgroup_users)
         result.append(inout_users)
+        result.append(outgroup_inds)
 
     return result
 
@@ -1056,6 +1143,94 @@ def returnrate(current_color, prev_color, ref_color, inds_coor_active, last_time
         inds_not_recovered = inds_att_prev[ np.where(current_color[inds_att_prev] != ref_color[inds_att_prev])[0] ]
         inds_recoveredthenlost = np.count_nonzero(last_time_installed_sw[ref_color[inds_not_recovered], inds_not_recovered] > t_lims[tstep-1]) # will also necessarily be < t_lims[tstep]
         return (n_att_prev - len(inds_not_recovered) + inds_recoveredthenlost) / n_att_prev
+
+
+
+def calc_changes_clustering(cpst, i, pixch_coor, pixel_coor, n_maxpix=100, n_MC=100, n_MC_trials=10):
+    """
+    Calculate Ripley's K function and average distance between pixel changes.
+    """
+
+    n_dist = len(cpst.ripley_distances)
+
+    if pixch_coor.shape[1] < 2:
+        for l in range(0, n_dist):
+            cpst.ripley[l].val[i] = -1
+        cpst.dist_average.val[i] = -1
+        return    
+
+    # at time step 0 or when the area changed, add a random set of pixel changes positions and calculate these values (MC). 
+    # Take an average of multiple trials/experiments
+    if (cpst.ripley_ref is None) or (cpst.avdist_ref is None):
+        ripley_ref_alltrials = np.zeros((n_MC_trials, n_dist))
+        avdist_ref_alltrials = np.zeros(n_MC_trials)
+        for t in range(0, n_MC_trials): 
+            mc_pixels = pixel_coor[:, np.random.choice(pixel_coor.shape[1], size=n_MC, replace=True)]
+            distances = pdist(np.transpose(mc_pixels)) # distances between all pixel changes pairs
+
+            for l,d in enumerate(cpst.ripley_distances):
+                count = np.sum(distances <= d)
+                ripley_ref_alltrials[t, l] = count * cpst.area_vst.val[i] / len(distances)
+            avdist_ref_alltrials[t] = np.mean(distances)
+
+        # average over trials
+        cpst.ripley_ref = np.mean(ripley_ref_alltrials, axis=0)
+        cpst.avdist_ref = np.mean(avdist_ref_alltrials)
+
+    # Actual (non reference) calculation starts here
+    # Randomly down sample the coordinates to speed up computation
+    if pixch_coor.shape[1] > n_maxpix:
+        inds_rdm = np.random.choice(np.arange(pixch_coor.shape[1]), size=n_maxpix, replace=False)
+        pixch_coor = pixch_coor[:, inds_rdm]
+
+    # Compute all pairwise distances
+    distances = pdist(np.transpose(pixch_coor))  # returns condensed distance matrix
+
+    # Ripley's K
+    for l,d in enumerate(cpst.ripley_distances):
+        count = np.sum(distances <= d)
+        cpst.ripley[l].val[i] = count * cpst.area_vst.val[i] / len(distances) 
+
+    # average distance between 2 pixel changes
+    cpst.dist_average.val[i] = np.mean(distances)
+
+    # normalized by reference values
+    for l in range(0, n_dist):
+        cpst.ripley_norm[l].val[i] = cpst.ripley[l].val[i] / cpst.ripley_ref[l]
+    cpst.dist_average_norm.val[i] = cpst.dist_average.val[i] / cpst.avdist_ref
+    return
+
+def cross_correlation(cpst, i, itmin, r, binning, crosscorr_radial_ref):
+    """
+    Cross-correlation between images at t and t-1, summed for each separate color, then summed for each shift value.
+    Use fftconvolve rather than correlate2d, to speed up the computation.
+    """
+    im1 = cpst.true_image[i]
+    im2 = cpst.true_image[i-1 if i >= itmin else i]
+    crosscorr = None
+    # compute colors present in the images
+    cols = np.flatnonzero(np.isin(np.arange(var.NUM_COLORS), im1) & np.isin(np.arange(var.NUM_COLORS), im2))
+
+    # Calculate the cross-correlation between two images, for each shift value
+    for c in (cols if cols != [] else [31]):
+        mask1 = (im1 == c).astype(np.float32) # float32 faster for fftconvolve
+        mask2 = (im2 == c).astype(np.float32)
+        # for this color, subtract the crosscorr of the image with itself, from the crosscorr between t and t-1
+        # which is equivalent to the crosscorr with the difference between the two images
+        crosscorr_thiscol = fftconvolve(mask1, (mask1 - mask2)[::-1, ::-1], mode='full') # must flip the second image to get the cross-correlation
+        if crosscorr is None:
+            crosscorr = crosscorr_thiscol           
+        else:
+            crosscorr += crosscorr_thiscol
+
+    # Calculate the number of non-zero crosscorr values at a certain radial shift
+    crosscorr_radial, _ = np.histogram(r, bins=binning, 
+                                       weights=crosscorr.ravel().astype(int)) # sum all the crosscorr values at some r value
+    
+    for l in range(len(cpst.crosscorr_distances)):
+        cpst.crosscorr[l].val[i] = crosscorr_radial[l] / crosscorr_radial_ref[l] / cpst.area_vst.val[i] # area not strictly necessary, but normalizes crosscorr for radius=0
+        cpst.crosscorr[l].val[i] /= 1 if (l==0 or cpst.crosscorr[0].val[i]==0) else cpst.crosscorr[0].val[i]
+    return
 
 def returntime(last_time_installed_sw, last_time_removed_sw,
                current_color, ref_color,
