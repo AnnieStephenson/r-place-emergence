@@ -35,7 +35,7 @@ def plot_loglog_fit(x_data_unfilt,
                     elinewidth=0,
                     linewidth=2.5,
                     nbins=None,
-                    bin_type='average', # 'average'
+                    bin_type='kernel_average', 
                     bin_axis='y', # 'x'
                     fit_type='TLS', # 'OLS'
                     TLS_weights=False,
@@ -45,7 +45,8 @@ def plot_loglog_fit(x_data_unfilt,
                     x_line_max=None,
                     semilog=False, fit=True, 
                     print_summary=False,
-                    plot_bin_data=False):
+                    plot_bin_data=False,
+                    grid_size=100):
     """
     Plots the data on a loglog plot with linear fit
 
@@ -132,7 +133,7 @@ def plot_loglog_fit(x_data_unfilt,
     log_x_data_raw = np.log10(x_data)
     log_y_data_raw = np.log10(y_data)
 
-    log_x_data, log_y_data, log_x_sem, log_y_sem = handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=max_bin_size)
+    log_x_data, log_y_data, log_x_sem, log_y_sem = handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=max_bin_size, grid_size=grid_size)
     
     if plot_bin_data:
         # Transform log-space means to linear
@@ -324,7 +325,7 @@ def plot_loglog_fit(x_data_unfilt,
         data = x_data, y_data
     return data
 
-def handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10, bandwidth=0.4, grid_size=80):
+def handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10, bandwidth='silverman', grid_size=80):
     """
     Binning or smoothing of log-log data based on bin_type.
     
@@ -363,7 +364,7 @@ def handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10,
 
     if bin_type == 'kernel_average':
         # Smooth log-log data using the kernel_smooth_xy()
-        x_grid, x_smooth, y_smooth, x_sem, y_sem = kernel_smooth_xy(log_y, log_x, bandwidth=bandwidth, grid_size=grid_size)
+        x_grid, x_smooth, y_smooth, x_sem, y_sem = kernel_smooth_xy(log_y, log_x, grid_size=grid_size)
         
         # x_smooth and y_smooth already correspond to smoothed x and y, with SEMs
         y_vals = x_smooth
@@ -420,9 +421,29 @@ def handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10,
 
     return result
 
-def kernel_smooth_xy(x, y, bandwidth=0.4, grid_size=100, weight_threshold_factor = 0.0005):
+def _silverman_bw(x, robust=True):
+    """Silverman's rule-of-thumb bandwidth for a Gaussian kernel."""
+    x = np.asarray(x)
+    n = x.size
+    if n < 2:
+        return 0.0
+    sigma = np.std(x, ddof=1)
+    if robust:
+        q75, q25 = np.percentile(x, [75, 25])
+        iqr = q75 - q25
+        sigma = min(sigma, iqr / 1.34) if iqr > 0 else sigma
+    return 1.06 * sigma * n ** (-1/5)
+
+def kernel_smooth_xy(x, y, 
+                     bandwidth="silverman",  # <— use "silverman" or a float
+                     grid_size=100, 
+                     robust_bw=True,
+                     weight_threshold_factor = 0.,
+                     alpha_eff_n = 0.001):
     """
-    Kernel smoothing for both x and y with SEM estimation.
+    Nadaraya–Watson kernel smoothing with SEMs (Gaussian kernel).
+    If bandwidth="silverman", choose bandwidth by Silverman's rule (robust by default).
+    x should already be log-transformed if that's your workflow.
     
     Parameters
     ----------
@@ -448,20 +469,26 @@ def kernel_smooth_xy(x, y, bandwidth=0.4, grid_size=100, weight_threshold_factor
     y_sem : 1D array
         Standard error of y at each grid point.
     """
-    
-    weight_threshold = weight_threshold_factor * len(x)
 
     x = np.asarray(x)
     y = np.asarray(y)
     
     x_grid = np.linspace(np.min(x), np.max(x), grid_size)
+    print(x_grid)
+
+    # choose bandwidth
+    if bandwidth == "silverman":
+        bandwidth = 2*_silverman_bw(x, robust=robust_bw)
+    else:
+        bandwidth = float(bandwidth)
+    print('bandwidth: ' +str(bandwidth))
     
-    distances = (x[:, None] - x_grid[None, :]) / bandwidth
-    weights = scipy.stats.norm.pdf(distances)
+    distances = (x[:, None] - x_grid[None, :]) / bandwidth # distance between each data point and each grid point, normalized by bandwidth
+    weights = scipy.stats.norm.pdf(distances) # probability at each distance, to weight each point
     
     sum_weights = np.sum(weights, axis=0)
     
-    # Weighted means
+    # Weighted means (NW estimators)
     weighted_x_mean = np.sum(weights * x[:, None], axis=0) / sum_weights
     weighted_y_mean = np.sum(weights * y[:, None], axis=0) / sum_weights
 
@@ -469,15 +496,22 @@ def kernel_smooth_xy(x, y, bandwidth=0.4, grid_size=100, weight_threshold_factor
     weighted_var_x = np.sum(weights * (x[:, None] - weighted_x_mean[None, :])**2, axis=0) / sum_weights
     weighted_var_y = np.sum(weights * (y[:, None] - weighted_y_mean[None, :])**2, axis=0) / sum_weights
     
-    # Effective sample size
+    # Effective sample size (Kish)
     eff_n = (sum_weights**2) / np.sum(weights**2, axis=0)
+    print('eff_n: ' +str(eff_n))
     
+    # SEMs
     with np.errstate(divide='ignore', invalid='ignore'):
-        sem_x = np.sqrt(weighted_var_x / eff_n)
+        sem_x = np.sqrt(weighted_var_x / eff_n) # to get std, take out division by eff_n
         sem_y = np.sqrt(weighted_var_y / eff_n)
 
     # Mask out low-support points
-    valid = sum_weights > weight_threshold
+    # (use eff_n primarily; keep the old threshold as a secondary guard)
+    weight_threshold = weight_threshold_factor * len(x)
+    min_eff_n = alpha_eff_n * len(x)
+    print('min_eff_n: ' + str(min_eff_n))
+    valid = (eff_n >= min_eff_n) & (sum_weights > weight_threshold)
+    print('valid pts: ' + str(len(x_grid[valid])))
     x_grid = x_grid[valid]
     x_smooth = weighted_x_mean[valid]
     y_smooth = weighted_y_mean[valid]
@@ -486,6 +520,18 @@ def kernel_smooth_xy(x, y, bandwidth=0.4, grid_size=100, weight_threshold_factor
 
     return x_grid, x_smooth, y_smooth, sem_x, sem_y
 
+
+def _silverman_bw(x, robust=True):
+    x = np.asarray(x)
+    n = x.size
+    if n < 2: return 0.0
+    sigma = np.std(x, ddof=1)
+    if robust:
+        q75, q25 = np.percentile(x, [75, 25])
+        iqr = q75 - q25
+        if iqr > 0:
+            sigma = min(sigma, iqr / 1.34)
+    return 1.06 * sigma * n**(-1/5)
 
 
 def handle_data_bins_old(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10):
@@ -781,7 +827,7 @@ def get_comp_scaling_data(
     canvas_parts_stats_file="canvas_part_stats_sw.pkl",
     canvas_parts_file=None,
     filename="reddit_place_composition_list_extended_sw.csv",
-    start_t_ind=12, # 12 five-min increments = 1 hour
+    start_t_ind=216, # 12 five-min increments = 1 hour
 ):
     """
     Calculate and save the scaling data as a .csv file
@@ -962,8 +1008,8 @@ def get_comp_scaling_data(
             n_defenseonly_users_start.append(0)
             n_attackonly_users_start.append(0)
             n_bothattdef_users_start.append(0)
-        else:
-            n_defenseonly_users_start.append(np.mean(cpart_stat.n_defenseonly_users.val[1:start_t_ind]))
+        else: # these arent exactly the number users in these full intervals, its the average number in each 5 min time step here
+            n_defenseonly_users_start.append(np.mean(cpart_stat.n_defenseonly_users.val[1:start_t_ind])) 
             n_attackonly_users_start.append(np.mean(cpart_stat.n_attackonly_users.val[1:start_t_ind]))
             n_bothattdef_users_start.append(np.mean(cpart_stat.n_bothattdef_users.val[1:6]))
 

@@ -12,6 +12,7 @@ import cv2
 
 
 def get_all_pixel_changes(data_file=var.FULL_DATA_FILE,
+                          data_path=var.DATA_PATH,
                           times_before_whiteout=True):
     '''
     load all the pixel change data and put it in a numpy array for easy access
@@ -25,7 +26,7 @@ def get_all_pixel_changes(data_file=var.FULL_DATA_FILE,
     pixel_changes_all : numpy structured array
             Contains all of the pixel change data from the entire dataset
     '''
-    pixel_changes_all_npz = np.load(os.path.join(var.DATA_PATH, data_file))
+    pixel_changes_all_npz = np.load(os.path.join(data_path, data_file))
 
     # save pixel changes as a structured array
     pixel_changes_all = np.zeros(len(pixel_changes_all_npz['seconds']),
