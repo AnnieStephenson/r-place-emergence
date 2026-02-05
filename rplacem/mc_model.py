@@ -663,10 +663,10 @@ def calc_coords_area(pixel_changes_all,
             counts = np.bincount(flat_ids + 1)
             prob[:, k] = counts[flat_ids + 1]
             coords_x, coords_y = coords_comp_time_dict[(-1 - k, i)]
-            coords_comb_nocomp = coords_y.astype(
-                'int') + coords_x.astype('int') * (x_max_tot + 1)
+            coords_comb_nocomp = coords_y.astype('int') + coords_x.astype('int') * (x_max_tot + 1)
             prob[coords_comb_nocomp, k] = 0
             prob[:, k] = prob[:, k]**exp + const # add the + const so that the no comps have some probability
+            # TODO from Nov 30th 2025: possibly need to rethink above. Why add a constant onto all the pixels? It seesms like we should just set the no_comps to 1. 
 
         # Select the pixel changes in the time range
         tstart = times_uniq[i]
