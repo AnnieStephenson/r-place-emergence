@@ -91,7 +91,7 @@ def sample_pixch_quarters(pixel_changes, inds_to_sample=None, prob=None, coords_
 
 def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl',
                             times_before_whiteout=True,
-                            num_layers=2):
+                            num_layers=1):
     '''
     Build or load a map of the canvas through time, where each pixel is assigned
     an integer based on the composition it belongs to. Supports overlapping
