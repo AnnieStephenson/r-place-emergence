@@ -3,7 +3,6 @@ import numpy as np
 from rplacem import var as var
 import pickle
 from rplacem import utilities as util
-import scipy
 
 
 # GLOBALS
@@ -15,6 +14,7 @@ y_max = int(var.CANVAS_MINMAX[:, 1, 1].max())
 x_dim = x_max - x_min + 1
 y_dim = y_max - y_min + 1
 tot_pix = x_dim * y_dim
+_coords_flat = np.arange(tot_pix)
 
 
 def sample_prob_pix_time(prob, pixel_changes, t_inds):
@@ -32,9 +32,8 @@ def sample_prob_pix_time(prob, pixel_changes, t_inds):
     t_inds : ndarray
         Indices into pixel_changes to resample.
     '''
-    coords_flat = np.arange(len(prob))
     prob_norm = prob / prob.sum()
-    samp_inds = np.random.choice(coords_flat, size=len(t_inds), p=prob_norm)
+    samp_inds = np.random.choice(_coords_flat, size=len(t_inds), p=prob_norm)
     pixel_changes['xcoor'][t_inds] = samp_inds // y_dim
     pixel_changes['ycoor'][t_inds] = samp_inds % y_dim
 
@@ -123,15 +122,14 @@ def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl',
         with open(canvas_parts_file, "rb") as file:
             canvas_comp_list = pickle.load(file)
 
-        times_uniq = np.array([])
         canvas_comp_list.sort(key=lambda x: x.num_pix(), reverse=True)
         n_comps = len(canvas_comp_list)
+        all_times = []
         for i in range(n_comps):
             comp_coords_times = canvas_comp_list[i].coords_timerange
             comp_coords_times = np.concatenate(comp_coords_times).flatten()
-            times_uniq = np.concatenate(
-                (times_uniq, np.unique(comp_coords_times)))
-        times_uniq = np.unique(times_uniq)
+            all_times.append(np.unique(comp_coords_times))
+        times_uniq = np.unique(np.concatenate(all_times))
         if times_before_whiteout:
             times_uniq = np.concatenate(
                 (times_uniq[times_uniq < var.TIME_WHITEOUT],
@@ -169,15 +167,16 @@ def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl',
                         comp_coords_times_new[
                             k, 0:len(comp_coords_times_1d)] = comp_coords_times_1d
 
-                    coord_inds_in_time = np.array([])
+                    coord_inds_list = []
                     for m in range(0, comp_coords_times_new.shape[1], 2):
                         inds = np.where(
                             (comp_coords_times_new[:, m] <= tstart)
                             & (comp_coords_times_new[:, m + 1] >= tend))[0]
                         if len(inds) > 0:
-                            coord_inds_in_time = np.concatenate(
-                                (coord_inds_in_time, inds))
-                    coord_inds_in_time = coord_inds_in_time.astype(int)
+                            coord_inds_list.append(inds)
+                    coord_inds_in_time = (np.concatenate(coord_inds_list).astype(int)
+                                          if coord_inds_list
+                                          else np.array([], dtype=int))
 
                 # Get real coords and convert to 0-based for map indexing and dict storage
                 coords_real = comp_coords[:, coord_inds_in_time]
@@ -354,26 +353,28 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
     for t in range(len(times_uniq) - 1):
         print(f"Processing time index {t}/{len(times_uniq) - 2}")
         for k in range(num_layers):
-            if t > 0:
-                diff = comp_pix_tm_map[:, :, t - 1, k] - comp_pix_tm_map[:, :, t, k]
-                indsx, indsy = np.where(diff != 0)
-                c_ints = np.unique(comp_pix_tm_map[indsx, indsy, t, k])
-            else:
-                c_ints = np.unique(comp_pix_tm_map[:, :, t, k])
-            for c in c_ints:
-                if c == -1:
-                    # c-k indexes -1 for layer 0, -2 for layer 1
-                    coords_x, coords_y = coords_comp_time_dict[(c - k, t)]
-                    coords_comb = coords_x.astype('int64') * y_dim + coords_y.astype('int64')
-                    prob[coords_comb, k] = const
-                else:
-                    coords_x, coords_y = coords_comp_time_dict[(c, t)]
-                    coords_comb = coords_x.astype('int64') * y_dim + coords_y.astype('int64')
-                    mask = (comp_pix_tm_map[:, :, t, k] == c)
-                    eroded_mask = scipy.ndimage.binary_erosion(mask)
-                    perimeter_mask = mask & ~eroded_mask
-                    perimeter_count = np.sum(perimeter_mask)
-                    prob[coords_comb, k] = perimeter_count + const
+            map_t = comp_pix_tm_map[:, :, t, k]
+
+            # Detect perimeter pixels: composition pixels with at least one
+            # neighbor of a different value. Pad with -1 so canvas edges count
+            # as perimeter (matching scipy.ndimage.binary_erosion behavior).
+            padded = np.pad(map_t, 1, constant_values=-1)
+            is_perim = (
+                (map_t != padded[:-2, 1:-1]) |
+                (map_t != padded[2:, 1:-1]) |
+                (map_t != padded[1:-1, :-2]) |
+                (map_t != padded[1:-1, 2:])
+            ) & (map_t >= 0)
+
+            # Count perimeter pixels per composition
+            flat_ids = map_t.ravel()
+            perim_counts = np.bincount(
+                flat_ids[is_perim.ravel()] + 1,
+                minlength=flat_ids.max() + 2)
+
+            # Each pixel gets weight = (perimeter count of its composition) + const
+            # Unassigned pixels (-1) get perim_counts[0] + const = 0 + const = const
+            prob[:, k] = perim_counts[flat_ids + 1] + const
 
         tstart = times_uniq[t]
         tend = times_uniq[t + 1]
@@ -430,6 +431,19 @@ def calc_coords_loyalty(pixel_changes_all,
     pix_changes_user_sorted['xcoor'] -= x_min
     pix_changes_user_sorted['ycoor'] -= y_min
 
+    # Precompute time bins and compositions for ALL changes at once
+    t_all = np.searchsorted(times_uniq, pix_changes_user_sorted['seconds'], side='right') - 1
+    comp_all = comp_pix_tm_map[
+        pix_changes_user_sorted['xcoor'],
+        pix_changes_user_sorted['ycoor'],
+        t_all, 0]
+    if num_layers > 1:
+        missing = (comp_all == -1)
+        comp_all[missing] = comp_pix_tm_map[
+            pix_changes_user_sorted['xcoor'][missing],
+            pix_changes_user_sorted['ycoor'][missing],
+            t_all[missing], 1]
+
     # Reassign coordinates for each user's changes to random pixels
     # within the composition of their first change that lands in a known composition
     for i, start_change_ind in enumerate(inds_new_user):
@@ -437,28 +451,24 @@ def calc_coords_loyalty(pixel_changes_all,
             print('User Number: ' + str(i) + ' out of ' + str(len(inds_new_user)))
 
         end_change_ind = inds_new_user[i + 1] if i < (len(inds_new_user) - 1) else len(pix_changes_user_sorted)
-        user_change_inds = np.arange(start_change_ind, end_change_ind)
 
-        for j in range(user_change_inds.shape[0]):
-            idx = user_change_inds[j]
-            xj = pix_changes_user_sorted['xcoor'][idx]
-            yj = pix_changes_user_sorted['ycoor'][idx]
-            tj = np.searchsorted(times_uniq, [pix_changes_user_sorted['seconds'][idx]], side='right')[0] - 1
+        user_comps = comp_all[start_change_ind:end_change_ind]
+        first_valid = np.argmax(user_comps != -1)
 
-            compj = comp_pix_tm_map[xj, yj, tj, 0]
-            if compj == -1 and num_layers > 1:
-                compj = comp_pix_tm_map[xj, yj, tj, 1]
+        # argmax returns 0 when no True found, so check the actual value
+        if user_comps[first_valid] == -1:
+            continue
 
-            if compj != -1:
-                coords_comp_t = coords_comp_time_dict[(compj, tj)]
-                len_coords = coords_comp_t.shape[1]
+        compj = user_comps[first_valid]
+        tj = t_all[start_change_ind + first_valid]
+        idx = start_change_ind + first_valid
 
-                num_remaining_changes = end_change_ind - idx
-                coords_inds_sampled = np.random.choice(len_coords, size=num_remaining_changes)
+        coords_comp_t = coords_comp_time_dict[(compj, tj)]
+        num_remaining_changes = end_change_ind - idx
+        coords_inds_sampled = np.random.choice(coords_comp_t.shape[1], size=num_remaining_changes)
 
-                pix_changes_user_sorted['xcoor'][idx:end_change_ind] = coords_comp_t[0, coords_inds_sampled]
-                pix_changes_user_sorted['ycoor'][idx:end_change_ind] = coords_comp_t[1, coords_inds_sampled]
-                break
+        pix_changes_user_sorted['xcoor'][idx:end_change_ind] = coords_comp_t[0, coords_inds_sampled]
+        pix_changes_user_sorted['ycoor'][idx:end_change_ind] = coords_comp_t[1, coords_inds_sampled]
 
     # Re-sort by time
     pixel_changes_loyalty = np.sort(pix_changes_user_sorted, order='seconds')
