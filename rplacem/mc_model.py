@@ -267,10 +267,11 @@ def calc_coords_area(pixel_changes_all,
                      comp_pix_tm_map,
                      coords_comp_time_dict,
                      times_uniq,
-                     exp=1, const=1):
+                     exp=1):
     """
     Reassigns pixel coordinates based on a probability distribution weighted by
     the area (raised to exp) of compositions containing each pixel.
+    Non-composition pixels are treated as single-pixel compositions (weight = 1).
 
     Parameters
     ----------
@@ -280,10 +281,6 @@ def calc_coords_area(pixel_changes_all,
     times_uniq : ndarray
     exp : float
         Exponent applied to composition area weights.
-    const : float
-        Constant added to all pixel weights (gives unassigned pixels nonzero probability).
-        # TODO from Nov 30th 2025: possibly rethink this. Why add a constant onto all pixels?
-        # It seems like we should just set the no_comps to 1.
     """
     num_layers = comp_pix_tm_map.shape[-1]
     pixel_changes_area = pixel_changes_all.copy()
@@ -302,11 +299,8 @@ def calc_coords_area(pixel_changes_all,
 
             # bincount with +1 offset to handle -1 (unassigned) values
             counts = np.bincount(flat_ids + 1)
-            prob[:, k] = counts[flat_ids + 1]
-            coords_x, coords_y = coords_comp_time_dict[(-1 - k, i)]
-            coords_comb_nocomp = coords_x.astype('int') * y_dim + coords_y.astype('int')
-            prob[coords_comb_nocomp, k] = 0
-            prob[:, k] = prob[:, k]**exp + const
+            prob[:, k] = counts[flat_ids + 1]**exp
+            prob[flat_ids == -1, k] = 1
 
         tstart = times_uniq[i]
         tend = times_uniq[i + 1]
@@ -324,14 +318,11 @@ def calc_coords_area(pixel_changes_all,
 
 
 def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
-                          coords_comp_time_dict, const=1):
+                          coords_comp_time_dict):
     """
     Reassigns pixel coordinates by sampling proportional to the perimeter size
-    of compositions. Perimeters are computed using binary erosion.
-
-    For t > 0, only compositions whose boundaries changed since the previous
-    time step are recomputed (probabilities for unchanged compositions carry
-    over from the previous step).
+    of compositions. Non-composition pixels are treated as single-pixel
+    compositions (weight = 1).
 
     Parameters
     ----------
@@ -339,8 +330,6 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
     comp_pix_tm_map : ndarray, shape (x_dim, y_dim, n_times, num_layers)
     times_uniq : ndarray
     coords_comp_time_dict : dict
-    const : float
-        Base probability weight for unassigned pixels.
     """
     num_layers = comp_pix_tm_map.shape[-1]
     prob = np.zeros((tot_pix, num_layers))
@@ -372,9 +361,8 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
                 flat_ids[is_perim.ravel()] + 1,
                 minlength=flat_ids.max() + 2)
 
-            # Each pixel gets weight = (perimeter count of its composition) + const
-            # Unassigned pixels (-1) get perim_counts[0] + const = 0 + const = const
-            prob[:, k] = perim_counts[flat_ids + 1] + const
+            prob[:, k] = perim_counts[flat_ids + 1]
+            prob[flat_ids == -1, k] = 1
 
         tstart = times_uniq[t]
         tend = times_uniq[t + 1]
