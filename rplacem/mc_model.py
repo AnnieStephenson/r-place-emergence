@@ -2,6 +2,7 @@ import os
 import numpy as np
 from rplacem import var as var
 import pickle
+from scipy.spatial import ConvexHull, QhullError
 from rplacem import utilities as util
 
 
@@ -376,6 +377,71 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
     pixel_changes_perim['ycoor'] += y_min
 
     return pixel_changes_perim
+
+
+def calc_coords_mean_width(pixel_changes_all, comp_pix_tm_map,
+                           coords_comp_time_dict, times_uniq):
+    """
+    Reassigns pixel coordinates by sampling proportional to the mean width
+    of the convex hull of each composition (proportional to convex hull
+    perimeter, since mean width = perimeter / pi and the constant pi factor
+    cancels during normalization). Non-composition pixels get weight 1.
+
+    Parameters
+    ----------
+    pixel_changes_all : structured ndarray
+    comp_pix_tm_map : ndarray, shape (x_dim, y_dim, n_times, num_layers)
+    coords_comp_time_dict : dict
+    times_uniq : ndarray
+    """
+    num_layers = comp_pix_tm_map.shape[-1]
+    pixel_changes_mw = pixel_changes_all.copy()
+
+    # Shift to 0-based
+    pixel_changes_mw['xcoor'] -= x_min
+    pixel_changes_mw['ycoor'] -= y_min
+
+    prob = np.zeros((tot_pix, num_layers))
+
+    for i in range(len(times_uniq) - 1):
+        print(f"Processing time interval {i + 1}/{len(times_uniq) - 1}")
+        for k in range(num_layers):
+            flat_ids = comp_pix_tm_map[:, :, i, k].ravel()
+            unique_comps = np.unique(flat_ids)
+            unique_comps = unique_comps[unique_comps >= 0]
+
+            # Build lookup: mean_widths[comp_id + 1] = convex hull perimeter
+            # (proportional to mean width; pi factor omitted as it cancels)
+            # Index 0 reserved for -1 (no composition)
+            mean_widths = np.zeros(flat_ids.max() + 2)
+            for comp_id in unique_comps:
+                coords = coords_comp_time_dict[(comp_id, i)]
+                n_pixels = coords.shape[1]
+                if n_pixels < 3:
+                    mean_widths[comp_id + 1] = n_pixels
+                    continue
+                try:
+                    hull = ConvexHull(coords.T)
+                    mean_widths[comp_id + 1] = hull.area
+                except QhullError:
+                    mean_widths[comp_id + 1] = n_pixels
+
+            prob[:, k] = mean_widths[flat_ids + 1]
+            prob[flat_ids == -1, k] = 1
+
+        tstart = times_uniq[i]
+        tend = times_uniq[i + 1]
+        t_inds = np.where((pixel_changes_mw['seconds'] >= tstart)
+                          & (pixel_changes_mw['seconds'] < tend))[0]
+
+        prob_sum_ov = np.sum(prob, axis=1)
+        sample_prob_pix_time(prob_sum_ov, pixel_changes_mw, t_inds)
+
+    # Shift back to real
+    pixel_changes_mw['xcoor'] += x_min
+    pixel_changes_mw['ycoor'] += y_min
+
+    return pixel_changes_mw
 
 
 def calc_coords_loyalty(pixel_changes_all,
