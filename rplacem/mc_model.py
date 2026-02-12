@@ -18,6 +18,19 @@ tot_pix = x_dim * y_dim
 _coords_flat = np.arange(tot_pix)
 
 
+def _active_canvas_mask_flat(tstart):
+    """Return flat boolean mask (tot_pix,) that is True for pixels within the active canvas at time tstart."""
+    exp_state = np.searchsorted(var.TIME_ENLARGE, tstart, side='right') - 1
+    bounds = var.CANVAS_MINMAX[exp_state]
+    x0 = int(bounds[0, 0]) - x_min
+    x1 = int(bounds[0, 1]) - x_min
+    y0 = int(bounds[1, 0]) - y_min
+    y1 = int(bounds[1, 1]) - y_min
+    mask_2d = np.zeros((x_dim, y_dim), dtype=bool)
+    mask_2d[x0:x1+1, y0:y1+1] = True
+    return mask_2d.ravel()
+
+
 def sample_prob_pix_time(prob, pixel_changes, t_inds):
     '''
     Sample pixel coordinates from a probability distribution and assign them.
@@ -303,6 +316,9 @@ def calc_coords_area(pixel_changes_all,
             prob[:, k] = counts[flat_ids + 1]**exp
             prob[flat_ids == -1, k] = 1
 
+        active = _active_canvas_mask_flat(times_uniq[i])
+        prob[~active, :] = 0
+
         tstart = times_uniq[i]
         tend = times_uniq[i + 1]
         t_inds = np.where((pixel_changes_area['seconds'] >= tstart)
@@ -364,6 +380,9 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
 
             prob[:, k] = perim_counts[flat_ids + 1]
             prob[flat_ids == -1, k] = 1
+
+        active = _active_canvas_mask_flat(times_uniq[t])
+        prob[~active, :] = 0
 
         tstart = times_uniq[t]
         tend = times_uniq[t + 1]
@@ -428,6 +447,9 @@ def calc_coords_mean_width(pixel_changes_all, comp_pix_tm_map,
 
             prob[:, k] = mean_widths[flat_ids + 1]
             prob[flat_ids == -1, k] = 1
+
+        active = _active_canvas_mask_flat(times_uniq[i])
+        prob[~active, :] = 0
 
         tstart = times_uniq[i]
         tend = times_uniq[i + 1]
