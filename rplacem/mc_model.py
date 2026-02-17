@@ -281,7 +281,8 @@ def calc_coords_area(pixel_changes_all,
                      comp_pix_tm_map,
                      coords_comp_time_dict,
                      times_uniq,
-                     exp=1):
+                     exp=1,
+                     prob_noncomp=0):
     """
     Reassigns pixel coordinates based on a probability distribution weighted by
     the area (raised to exp) of compositions containing each pixel.
@@ -314,7 +315,7 @@ def calc_coords_area(pixel_changes_all,
             # bincount with +1 offset to handle -1 (unassigned) values
             counts = np.bincount(flat_ids + 1)
             prob[:, k] = counts[flat_ids + 1]**exp
-            prob[flat_ids == -1, k] = 1
+            prob[flat_ids == -1, k] = prob_noncomp
 
         active = _active_canvas_mask_flat(times_uniq[i])
         prob[~active, :] = 0
@@ -335,7 +336,7 @@ def calc_coords_area(pixel_changes_all,
 
 
 def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
-                          coords_comp_time_dict):
+                          coords_comp_time_dict, prob_noncomp=0):
     """
     Reassigns pixel coordinates by sampling proportional to the perimeter size
     of compositions. Non-composition pixels are treated as single-pixel
@@ -379,7 +380,7 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
                 minlength=flat_ids.max() + 2)
 
             prob[:, k] = perim_counts[flat_ids + 1]
-            prob[flat_ids == -1, k] = 1
+            prob[flat_ids == -1, k] = prob_noncomp
 
         active = _active_canvas_mask_flat(times_uniq[t])
         prob[~active, :] = 0
@@ -399,7 +400,8 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
 
 
 def calc_coords_mean_width(pixel_changes_all, comp_pix_tm_map,
-                           coords_comp_time_dict, times_uniq):
+                           coords_comp_time_dict, times_uniq,
+                           prob_noncomp=0):
     """
     Reassigns pixel coordinates by sampling proportional to the mean width
     of the convex hull of each composition (proportional to convex hull
@@ -446,7 +448,7 @@ def calc_coords_mean_width(pixel_changes_all, comp_pix_tm_map,
                     mean_widths[comp_id + 1] = n_pixels
 
             prob[:, k] = mean_widths[flat_ids + 1]
-            prob[flat_ids == -1, k] = 1
+            prob[flat_ids == -1, k] = prob_noncomp
 
         active = _active_canvas_mask_flat(times_uniq[i])
         prob[~active, :] = 0
