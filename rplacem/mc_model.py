@@ -401,7 +401,7 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
 
 def calc_coords_mean_width(pixel_changes_all, comp_pix_tm_map,
                            coords_comp_time_dict, times_uniq,
-                           prob_noncomp=0):
+                           prob_noncomp=0, use_edge_hull=True):
     """
     Reassigns pixel coordinates by sampling proportional to the mean width
     of the convex hull of each composition (proportional to convex hull
@@ -442,7 +442,14 @@ def calc_coords_mean_width(pixel_changes_all, comp_pix_tm_map,
                     mean_widths[comp_id + 1] = n_pixels
                     continue
                 try:
-                    hull = ConvexHull(coords.T)
+                    if use_edge_hull:
+                        corners = np.column_stack([
+                            np.repeat(coords[0], 4) + np.tile([-0.5, 0.5, 0.5, -0.5], n_pixels),
+                            np.repeat(coords[1], 4) + np.tile([-0.5, -0.5, 0.5, 0.5], n_pixels),
+                        ])
+                        hull = ConvexHull(corners)
+                    else:
+                        hull = ConvexHull(coords.T)
                     mean_widths[comp_id + 1] = hull.area
                 except QhullError:
                     mean_widths[comp_id + 1] = n_pixels
