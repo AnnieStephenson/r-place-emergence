@@ -103,6 +103,19 @@ def sample_pixch_quarters(pixel_changes, inds_to_sample=None, prob=None, coords_
     return pixel_changes
 
 
+def _combine_layer_probs(prob, comp_pix_tm_map, time_idx):
+    """Average per-pixel probabilities over active layers (comp_id >= 0).
+    Single-layer pixels are unchanged; overlap pixels are averaged."""
+    num_layers = prob.shape[1]
+    if num_layers == 1:
+        return prob[:, 0]
+    n_active = np.zeros(prob.shape[0])
+    for k in range(num_layers):
+        n_active += (comp_pix_tm_map[:, :, time_idx, k].ravel() >= 0)
+    n_active = np.maximum(n_active, 1)
+    return np.sum(prob, axis=1) / n_active
+
+
 def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl',
                             times_before_whiteout=True,
                             num_layers=1):
@@ -325,7 +338,7 @@ def calc_coords_area(pixel_changes_all,
         t_inds = np.where((pixel_changes_area['seconds'] >= tstart)
                           & (pixel_changes_area['seconds'] < tend))[0]
 
-        prob_sum_ov = np.sum(prob, axis=1)
+        prob_sum_ov = _combine_layer_probs(prob, comp_pix_tm_map, i)
         sample_prob_pix_time(prob_sum_ov, pixel_changes_area, t_inds)
 
     # Shift back to real
@@ -389,7 +402,7 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
         tend = times_uniq[t + 1]
         t_inds = np.where((pixel_changes_perim['seconds'] >= tstart)
                           & (pixel_changes_perim['seconds'] < tend))[0]
-        prob_sum_ov = np.sum(prob, axis=1)
+        prob_sum_ov = _combine_layer_probs(prob, comp_pix_tm_map, t)
         sample_prob_pix_time(prob_sum_ov, pixel_changes_perim, t_inds)
 
     # Shift back to real
@@ -465,7 +478,7 @@ def calc_coords_mean_width(pixel_changes_all, comp_pix_tm_map,
         t_inds = np.where((pixel_changes_mw['seconds'] >= tstart)
                           & (pixel_changes_mw['seconds'] < tend))[0]
 
-        prob_sum_ov = np.sum(prob, axis=1)
+        prob_sum_ov = _combine_layer_probs(prob, comp_pix_tm_map, i)
         sample_prob_pix_time(prob_sum_ov, pixel_changes_mw, t_inds)
 
     # Shift back to real
