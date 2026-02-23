@@ -88,7 +88,7 @@ def plot_loglog_fit(x_data_unfilt,
 
     if nbins is None:
         nbins = round(len(x_data) / 100)
-        print('number of ' + bin_axis + ' bins in which to subsample: ' + str(nbins))
+        #print('number of ' + bin_axis + ' bins in which to subsample: ' + str(nbins))
     if semilog is True:
         plt.semilogy(
             x_data,
@@ -319,11 +319,25 @@ def plot_loglog_fit(x_data_unfilt,
                                 color=line_color, alpha=alpha_error)
 
 
+    fit_info = {
+        'slope': slope,
+        'intercept': intercept,
+        'slope_conf': slope_conf,
+        'intercept_conf': intercept_conf,
+    }
+    if fit_type == 'TLS':
+        fit_info['R_squared'] = R_squared
+        fit_info['RMS_error'] = RMS_error
+    if fit_type == 'bilinear':
+        fit_info['slope2'] = slope2
+        fit_info['slope2_conf'] = slope2_conf
+        fit_info['breakpt'] = breakpt
+        fit_info['breakpt_conf'] = breakpt_conf
+
     if z_data_unfilt is not None:
-        data = x_data, y_data, z_data
+        return x_data, y_data, z_data, fit_info
     else:
-        data = x_data, y_data
-    return data
+        return x_data, y_data, fit_info
 
 def handle_data_bins(x_data, y_data, nbins, bin_type, bin_axis, max_bin_size=10, bandwidth='silverman', grid_size=80):
     """
@@ -474,7 +488,6 @@ def kernel_smooth_xy(x, y,
     y = np.asarray(y)
     
     x_grid = np.linspace(np.min(x), np.max(x), grid_size)
-    print(x_grid)
 
     # choose bandwidth
     if bandwidth == "silverman":
@@ -498,7 +511,7 @@ def kernel_smooth_xy(x, y,
     
     # Effective sample size (Kish)
     eff_n = (sum_weights**2) / np.sum(weights**2, axis=0)
-    print('eff_n: ' +str(eff_n))
+    #print('eff_n: ' +str(eff_n))
     
     # SEMs
     with np.errstate(divide='ignore', invalid='ignore'):
