@@ -103,17 +103,30 @@ def sample_pixch_quarters(pixel_changes, inds_to_sample=None, prob=None, coords_
     return pixel_changes
 
 
-def _combine_layer_probs(prob, comp_pix_tm_map, time_idx):
-    """Average per-pixel probabilities over active layers (comp_id >= 0).
-    Single-layer pixels are unchanged; overlap pixels are averaged."""
+def _combine_layer_probs(prob, comp_pix_tm_map, time_idx, overlap="max"):
+    """Combine per-pixel probabilities across layers.
+
+    overlap : str
+        "max"  — at overlap pixels, use the larger probability (supersede)
+        "mean" — average probabilities over active layers
+        "sum"  — sum probabilities across layers
+    """
     num_layers = prob.shape[1]
     if num_layers == 1:
         return prob[:, 0]
-    n_active = np.zeros(prob.shape[0])
-    for k in range(num_layers):
-        n_active += (comp_pix_tm_map[:, :, time_idx, k].ravel() >= 0)
-    n_active = np.maximum(n_active, 1)
-    return np.sum(prob, axis=1) / n_active
+
+    if overlap == "sum":
+        return np.sum(prob, axis=1)
+    elif overlap == "max":
+        return np.max(prob, axis=1)
+    elif overlap == "mean":
+        n_active = np.zeros(prob.shape[0])
+        for k in range(num_layers):
+            n_active += (comp_pix_tm_map[:, :, time_idx, k].ravel() >= 0)
+        n_active = np.maximum(n_active, 1)
+        return np.sum(prob, axis=1) / n_active
+    else:
+        raise ValueError(f"Unknown overlap mode: {overlap!r}. Use 'max', 'mean', or 'sum'.")
 
 
 def get_pixel_comp_time_map(filepath='canvas_comps_feb27_14221.pkl',
@@ -295,6 +308,7 @@ def calc_coords_area(pixel_changes_all,
                      coords_comp_time_dict,
                      times_uniq,
                      exp=1,
+                     overlap="max",
                      prob_noncomp=0):
     """
     Reassigns pixel coordinates based on a probability distribution weighted by
@@ -338,7 +352,7 @@ def calc_coords_area(pixel_changes_all,
         t_inds = np.where((pixel_changes_area['seconds'] >= tstart)
                           & (pixel_changes_area['seconds'] < tend))[0]
 
-        prob_sum_ov = _combine_layer_probs(prob, comp_pix_tm_map, i)
+        prob_sum_ov = _combine_layer_probs(prob, comp_pix_tm_map, i, overlap=overlap)
         sample_prob_pix_time(prob_sum_ov, pixel_changes_area, t_inds)
 
     # Shift back to real
@@ -349,7 +363,7 @@ def calc_coords_area(pixel_changes_all,
 
 
 def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
-                          coords_comp_time_dict, prob_noncomp=0):
+                          coords_comp_time_dict, prob_noncomp=0, overlap="max"):
     """
     Reassigns pixel coordinates by sampling proportional to the perimeter size
     of compositions. Non-composition pixels are treated as single-pixel
@@ -402,7 +416,7 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
         tend = times_uniq[t + 1]
         t_inds = np.where((pixel_changes_perim['seconds'] >= tstart)
                           & (pixel_changes_perim['seconds'] < tend))[0]
-        prob_sum_ov = _combine_layer_probs(prob, comp_pix_tm_map, t)
+        prob_sum_ov = _combine_layer_probs(prob, comp_pix_tm_map, t, overlap=overlap)
         sample_prob_pix_time(prob_sum_ov, pixel_changes_perim, t_inds)
 
     # Shift back to real
@@ -414,7 +428,7 @@ def calc_coords_perimeter(pixel_changes_all, comp_pix_tm_map, times_uniq,
 
 def calc_coords_mean_width(pixel_changes_all, comp_pix_tm_map,
                            coords_comp_time_dict, times_uniq,
-                           prob_noncomp=0, use_edge_hull=True):
+                           prob_noncomp=0, use_edge_hull=True, overlap="max"):
     """
     Reassigns pixel coordinates by sampling proportional to the mean width
     of the convex hull of each composition (proportional to convex hull
@@ -478,7 +492,7 @@ def calc_coords_mean_width(pixel_changes_all, comp_pix_tm_map,
         t_inds = np.where((pixel_changes_mw['seconds'] >= tstart)
                           & (pixel_changes_mw['seconds'] < tend))[0]
 
-        prob_sum_ov = _combine_layer_probs(prob, comp_pix_tm_map, i)
+        prob_sum_ov = _combine_layer_probs(prob, comp_pix_tm_map, i, overlap=overlap)
         sample_prob_pix_time(prob_sum_ov, pixel_changes_mw, t_inds)
 
     # Shift back to real
