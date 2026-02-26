@@ -1039,7 +1039,7 @@ def get_comp_scaling_data(
 
         tmin.append(cpart_stat.tmin)
         tmax.append(cpart_stat.tmax)
-        #tmin_quad.append(canvas_comp.tmin_quadrant())
+        tmin_quad.append(var.TIME_ENLARGE[cpart_stat.quadrant])
         stability.append(cpart_stat.stability[0].val)  # may be an array
         instab.append(np.mean(cpart_stat.instability_norm[0].val))  # may be an array
         if cpart_stat.size_compressed.val is None:
@@ -1107,7 +1107,7 @@ def get_comp_scaling_data(
         "Alliance": alliance,
         "Start time (s)": tmin,
         "End time (s)": tmax,
-        #"Start time quadrant (s)": tmin_quad,
+        "Start time quadrant (s)": tmin_quad,
         "Stability": stability,
         "Compressed size": compressed_size,
         "Entropy": entropy,
