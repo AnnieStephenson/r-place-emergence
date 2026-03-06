@@ -1206,15 +1206,20 @@ def get_survivorship(df,
                             & (binning_var < size_maxs[k])
                             & (df["Start time quadrant (s)"] == start_time)]
         else:
-            # include only compositions that end before the experiment ends. 
+            # Exclude compositions that started after start_time and survived
+            # to whiteout (unknown true death time). Keep compositions that
+            # started before start_time even if they hit whiteout (known
+            # full-experiment lifetime).
             df_size_bin = df[(binning_var > size_mins[k])
                             & (binning_var < size_maxs[k])
                             & (df["Start time quadrant (s)"] == start_time)
-                            & (df["End time (s)"] < var.TIME_WHITEOUT)]
+                            & ((df["Start time (s)"] < start_time)
+                               | (df["End time (s)"] < var.TIME_WHITEOUT))
+                            ]
             
         for i in range(len(df_size_bin)):
             t_end = np.array(df_size_bin["End time (s)"])[i]
-            if t_end >= var.TIME_WHITEOUT:
+            if extend_lifetimes and t_end >= var.TIME_WHITEOUT:
                 t_end = 10000000 * 3600
             t_start = np.array(df_size_bin["Start time (s)"])[i]
             t_survive = t_end - t_start
@@ -1250,6 +1255,7 @@ def get_taus(df,
              binning_var,
              sizes,
              start_time,
+             times,
              norm=False,
              plot=True,
              plot_surv=True,
@@ -1257,7 +1263,6 @@ def get_taus(df,
     
     size_mins = sizes[0:-1]
     size_maxs = sizes[1:]
-    times = np.arange(0, var.TIME_WHITEOUT - start_time - 10 * 30 * 60, 30 * 60)
     times, survive_curves, df_list = get_survivorship(df, binning_var,
                                              size_mins,
                                              size_maxs,
@@ -1271,24 +1276,24 @@ def get_taus(df,
         plt.figure()
     num = len(survive_curves)
     taus = np.zeros(num)
+    t_shifted = times - times[0]
     for i in range(num):
-        initial_guess = (
-            max(survive_curves[i]),
-            10000)
-            #min(survive_curves[i])) # Initial guess for (A, tau, C)
-        params, covariance = scipy.optimize.curve_fit(exponential_decay,
-                                                      times,
+        A_fit = max(survive_curves[i])
+        exp_fixed_A = lambda t, tau: A_fit * np.exp(-t / tau)
+        params, covariance = scipy.optimize.curve_fit(exp_fixed_A,
+                                                      t_shifted,
                                                       survive_curves[i],
-                                                      p0=initial_guess)
-        A_fit, tau_fit = params
-       # print(C_fit)
+                                                      p0=[10000])
+        tau_fit = params[0]
         taus[i] = tau_fit
         if plot:
             plt.semilogy(times, survive_curves[i])
             plt.plot(
                 times,
-                exponential_decay(times, A_fit, tau_fit),
+                exp_fixed_A(t_shifted, tau_fit),
                 "--",
                 label="Fit",
             )
+            plt.ylim(10**-3, 2)
+            #plt.yscale('linear')
     return taus, df_list
